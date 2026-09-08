@@ -19,8 +19,8 @@ public class EspecieEntity {
     // columnDefinition explícito: la migración Flyway (sección 7) declara estas
     // columnas como NUMERIC(4,1); sin esto Hibernate valida un `double` contra
     // FLOAT por defecto y ddl-auto=validate (RO-07) rompe el arranque.
-    @Column(name = "temp_min") private double tempMin;
-    @Column(name = "temp_max") private double tempMax;
+    @Column(name = "temp_min", columnDefinition = "NUMERIC(4,1)") private double tempMin;
+    @Column(name = "temp_max", columnDefinition = "NUMERIC(4,1)") private double tempMax;
     @Column(name = "hum_min",  columnDefinition = "NUMERIC(4,1)") private double humMin;
     @Column(name = "hum_max",  columnDefinition = "NUMERIC(4,1)") private double humMax;
     @Column(name = "luz_min")  private int    luzMin;
