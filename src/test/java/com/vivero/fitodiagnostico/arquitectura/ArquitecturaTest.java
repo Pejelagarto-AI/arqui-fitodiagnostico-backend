@@ -57,6 +57,15 @@ class ArquitecturaTest {
     static final ArchRule sin_inyeccion_por_campo =
         noFields().should().beAnnotatedWith(Autowired.class);
 
+    // RA-02 (DIP): la aplicación colabora con el dominio a través de sus puertos.
+    // No basta con prohibir org.springframework.data: nombrar el repositorio
+    // concreto que vive en infraestructura invierte la flecha de dependencia
+    // igual de mal, y esa es la forma en que la violación suele colarse.
+    @ArchTest
+    static final ArchRule la_aplicacion_no_depende_de_infraestructura =
+        noClasses().that().resideInAPackage("..aplicacion..")
+            .should().dependOnClassesThat().resideInAPackage("..infraestructura..");
+
     // Complemento de RA-01/RA-03: aplicación no depende de web.
     @ArchTest
     static final ArchRule la_aplicacion_no_depende_de_web =
