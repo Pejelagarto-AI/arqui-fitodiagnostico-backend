@@ -98,4 +98,6 @@ El proyecto se escribió con Claude Code en una sola sesión, con este reparto:
 
 ---
 
-Santiago Ortegón · Arquitectura de Software · U. Sergio Arboleda · 2026-2
+**Santiago Ortegón** · **Santiago Castellanos**
+
+Arquitectura de Software · U. Sergio Arboleda · 2026-2
