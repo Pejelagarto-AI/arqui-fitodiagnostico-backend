@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.infraestructura.configuracion;
 
 import com.vivero.fitodiagnostico.dominio.estado.*;
+import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,11 +15,17 @@ import java.util.List;
 public class ConfiguracionDominio {
 
     @Bean
-    EvaluadorDeEstado evaluadorDeEstado() {
+    ClasificadorDeParametros clasificadorDeParametros() {
+        return new ClasificadorDeParametros();
+    }
+
+    @Bean
+    EvaluadorDeEstado evaluadorDeEstado(ClasificadorDeParametros clasificadorDeParametros) {
         return new EvaluadorDeEstado(List.of(
                 new EstadoNecesitaAbrigo(),
                 new EstadoNecesitaAgua(),
                 new EstadoNecesitaLuz(),
-                new EstadoOptimo()));
+                new EstadoOptimo()),
+                clasificadorDeParametros);
     }
 }

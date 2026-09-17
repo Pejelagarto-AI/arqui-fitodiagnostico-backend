@@ -12,9 +12,11 @@ import java.util.List;
 public final class EvaluadorDeEstado {
 
     private final List<EstadoPlanta> estadosPorPrioridad;
+    private final ClasificadorDeParametros clasificador;
 
-    public EvaluadorDeEstado(List<EstadoPlanta> estadosPorPrioridad) {
+    public EvaluadorDeEstado(List<EstadoPlanta> estadosPorPrioridad, ClasificadorDeParametros clasificador) {
         this.estadosPorPrioridad = List.copyOf(estadosPorPrioridad);
+        this.clasificador = clasificador;
     }
 
     public Diagnostico evaluar(Especie especie, Medicion medicion) {
@@ -27,6 +29,7 @@ public final class EvaluadorDeEstado {
                 especie, medicion,
                 estado.obtenerEstado(),
                 estado.describir(especie, medicion),
+                clasificador.clasificar(especie, medicion),
                 Instant.now());
     }
 }

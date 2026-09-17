@@ -9,6 +9,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
+import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -61,6 +62,7 @@ class DiagnosticoControllerTest {
         Diagnostico diagnostico = new Diagnostico(
                 especie, medicion, "NECESITA_AGUA",
                 "humedad relativa 42.0 % por debajo del mínimo 55.0 %",
+                new ClasificadorDeParametros().clasificar(especie, medicion),
                 Instant.parse("2026-09-08T14:22:03Z"));
 
         when(servicio.diagnosticar(anyString(), any(Medicion.class))).thenReturn(diagnostico);
@@ -79,6 +81,13 @@ class DiagnosticoControllerTest {
                 .andExpect(jsonPath("$.lectura.luzLux").value(850))
                 .andExpect(jsonPath("$.estado").value("NECESITA_AGUA"))
                 .andExpect(jsonPath("$.detalle").value("humedad relativa 42.0 % por debajo del mínimo 55.0 %"))
+                .andExpect(jsonPath("$.parametros.length()").value(3))
+                .andExpect(jsonPath("$.parametros[1].nombre").value("humedad"))
+                .andExpect(jsonPath("$.parametros[1].valor").value(42.0))
+                .andExpect(jsonPath("$.parametros[1].unidad").value("%"))
+                .andExpect(jsonPath("$.parametros[1].rangoOptimo[0]").value(55.0))
+                .andExpect(jsonPath("$.parametros[1].rangoOptimo[1]").value(80.0))
+                .andExpect(jsonPath("$.parametros[1].estado").value("BAJO"))
                 .andExpect(jsonPath("$.evaluadoEn").value("2026-09-08T14:22:03Z"));
     }
 

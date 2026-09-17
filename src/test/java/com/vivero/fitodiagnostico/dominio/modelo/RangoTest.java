@@ -55,6 +55,31 @@ class RangoTest {
     }
 
     @Test
+    void clasificaBajoCuandoElValorEstaPorDebajoDelMinimo() {
+        assertThat(rango.clasificar(9.999)).isEqualTo(Clasificacion.BAJO);
+    }
+
+    @Test
+    void clasificaOptimoExactamenteEnElMinimo() {
+        assertThat(rango.clasificar(10.0)).isEqualTo(Clasificacion.OPTIMO);
+    }
+
+    @Test
+    void clasificaOptimoUnValorIntermedio() {
+        assertThat(rango.clasificar(15.0)).isEqualTo(Clasificacion.OPTIMO);
+    }
+
+    @Test
+    void clasificaOptimoExactamenteEnElMaximo() {
+        assertThat(rango.clasificar(20.0)).isEqualTo(Clasificacion.OPTIMO);
+    }
+
+    @Test
+    void clasificaAltoCuandoElValorEstaPorEncimaDelMaximo() {
+        assertThat(rango.clasificar(20.001)).isEqualTo(Clasificacion.ALTO);
+    }
+
+    @Test
     void unRangoInvertidoLanzaIllegalArgumentException() {
         assertThatThrownBy(() -> new Rango(20.0, 10.0))
                 .isInstanceOf(IllegalArgumentException.class);

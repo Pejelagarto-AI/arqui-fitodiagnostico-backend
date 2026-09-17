@@ -15,4 +15,15 @@ public record Rango(double minimo, double maximo) {
     public boolean contiene(double valor)   { return valor >= minimo && valor <= maximo; }
     public boolean porDebajo(double valor)  { return valor < minimo; }
     public boolean porEncima(double valor)  { return valor > maximo; }
+
+    /** Clasifica el valor frente a este rango; los extremos cuentan como OPTIMO. */
+    public Clasificacion clasificar(double valor) {
+        if (porDebajo(valor)) {
+            return Clasificacion.BAJO;
+        }
+        if (porEncima(valor)) {
+            return Clasificacion.ALTO;
+        }
+        return Clasificacion.OPTIMO;
+    }
 }

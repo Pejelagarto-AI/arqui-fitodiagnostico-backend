@@ -1,12 +1,14 @@
 package com.vivero.fitodiagnostico.dominio.servicio;
 
 import com.vivero.fitodiagnostico.dominio.estado.*;
+import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
+import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
 import org.junit.jupiter.api.Test;
 
 import java.util.EnumMap;
@@ -22,7 +24,8 @@ class EvaluadorDeEstadoTest {
             new EstadoNecesitaAbrigo(),
             new EstadoNecesitaAgua(),
             new EstadoNecesitaLuz(),
-            new EstadoOptimo()));
+            new EstadoOptimo()),
+            new ClasificadorDeParametros());
 
     // Monstera deliciosa: temp 18-29 °C, humedad 55-80 % HR, luz 1000-2500 lux
     private final Especie especie = new Especie(
@@ -87,9 +90,22 @@ class EvaluadorDeEstadoTest {
     }
 
     @Test
+    void elDiagnosticoTraeLosParametrosClasificados() {
+        // Solo la humedad está fuera de rango (BAJO); temperatura y luz OPTIMO.
+        Medicion medicion = medicion(20.0, 40.0, 1500);
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
+
+        assertThat(diagnostico.parametros()).extracting(ResultadoParametro::magnitud)
+                .containsExactly(Magnitud.TEMPERATURA, Magnitud.HUMEDAD, Magnitud.LUZ);
+        assertThat(diagnostico.parametros()).extracting(ResultadoParametro::clasificacion)
+                .containsExactly(Clasificacion.OPTIMO, Clasificacion.BAJO, Clasificacion.OPTIMO);
+    }
+
+    @Test
     void siNingunEstadoAplicaLanzaIllegalStateException() {
         // Sin un estado terminal en la lista, la cadena debe fallar explícitamente.
-        EvaluadorDeEstado evaluadorSinTerminal = new EvaluadorDeEstado(List.of(new EstadoNecesitaAgua()));
+        EvaluadorDeEstado evaluadorSinTerminal =
+                new EvaluadorDeEstado(List.of(new EstadoNecesitaAgua()), new ClasificadorDeParametros());
         Medicion medicion = medicion(20.0, 60.0, 1500);
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> evaluadorSinTerminal.evaluar(especie, medicion));
