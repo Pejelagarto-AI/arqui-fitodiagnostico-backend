@@ -6,7 +6,7 @@ import java.util.Optional;
 
 public interface EspecieJpaRepository extends JpaRepository<EspecieEntity, Long> {
 
-    Optional<EspecieEntity> findByNombreCientificoIgnoreCase(String nombreCientifico);
+    Optional<EspecieEntity> findByNombreIgnoreCase(String nombre);
 
-    List<EspecieEntity> findAllByOrderByNombreCientificoAsc();
+    List<EspecieEntity> findAllByOrderByNombreAsc();
 }

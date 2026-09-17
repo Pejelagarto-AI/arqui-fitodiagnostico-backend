@@ -22,13 +22,13 @@ public class AdaptadorEspecieJpa implements RangosPorEspecie, CatalogoDeEspecies
 
     @Override
     public Optional<Especie> buscar(String nombre) {
-        return jpa.findByNombreCientificoIgnoreCase(nombre)
+        return jpa.findByNombreIgnoreCase(nombre)
                   .map(mapeador::aDominio);
     }
 
     @Override
     public List<Especie> listar() {
-        return jpa.findAllByOrderByNombreCientificoAsc().stream()
+        return jpa.findAllByOrderByNombreAsc().stream()
                   .map(mapeador::aDominio)
                   .toList();
     }

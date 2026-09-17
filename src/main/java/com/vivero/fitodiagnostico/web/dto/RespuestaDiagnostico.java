@@ -9,14 +9,12 @@ import java.util.Locale;
 
 /** Forma exacta de la respuesta 200 (sección 2 del contrato). */
 public record RespuestaDiagnostico(
-        Especie especie,
+        String especie,
         Lectura lectura,
         String estado,
         List<Parametro> parametros,
         List<String> recomendaciones,
         Instant evaluadoEn) {
-
-    public record Especie(String nombreCientifico, String nombreComun) { }
 
     public record Lectura(double temperaturaC, double humedadRelativa, int luzLux) { }
 
@@ -25,9 +23,7 @@ public record RespuestaDiagnostico(
 
     public static RespuestaDiagnostico desde(Diagnostico diagnostico) {
         return new RespuestaDiagnostico(
-                new Especie(
-                        diagnostico.especie().nombreCientifico(),
-                        diagnostico.especie().nombreComun()),
+                diagnostico.especie().nombre(),
                 new Lectura(
                         diagnostico.medicion().valor(Magnitud.TEMPERATURA),
                         diagnostico.medicion().valor(Magnitud.HUMEDAD),

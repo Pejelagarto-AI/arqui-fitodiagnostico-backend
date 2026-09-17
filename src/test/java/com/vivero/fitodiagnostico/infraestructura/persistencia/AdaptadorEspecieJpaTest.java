@@ -15,8 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Prueba de integración (sección 11): contra H2 (perfil por defecto de
  * application.yml, sin Testcontainers). Confirma que Flyway corrió las
- * migraciones y sembró las 4 especies, que la búsqueda es insensible a
- * mayúsculas (RF-03) y que el mapeo arma bien los tres {@link com.vivero.fitodiagnostico.dominio.modelo.Rango}.
+ * migraciones y sembró las cinco especies del Anexo B, que la búsqueda es
+ * insensible a mayúsculas (RF-03) y que el mapeo arma bien los tres
+ * {@link com.vivero.fitodiagnostico.dominio.modelo.Rango}.
  *
  * Se usa {@code Replace.NONE} para que el test corra contra el datasource H2
  * ya declarado en application.yml (con {@code spring.flyway.enabled=true} y
@@ -35,37 +36,37 @@ class AdaptadorEspecieJpaTest {
     private AdaptadorEspecieJpa adaptador;
 
     @Test
-    void flywaySembroLasCuatroEspecies() {
-        assertThat(jpaRepository.count()).isEqualTo(4);
+    void flywaySembroLasCincoEspeciesDelAnexoB() {
+        assertThat(jpaRepository.count()).isEqualTo(5);
     }
 
     @Test
     void laBusquedaEsInsensibleAMayusculas() {
-        Optional<Especie> porMinusculas = adaptador.buscar("monstera deliciosa");
-        Optional<Especie> porMayusculas = adaptador.buscar("MONSTERA DELICIOSA");
+        Optional<Especie> porMinusculas = adaptador.buscar("sansevieria");
+        Optional<Especie> porMayusculas = adaptador.buscar("SANSEVIERIA");
 
         assertThat(porMinusculas).isPresent();
         assertThat(porMayusculas).isPresent();
-        assertThat(porMinusculas.get().nombreCientifico()).isEqualTo("Monstera deliciosa");
-        assertThat(porMayusculas.get().nombreCientifico()).isEqualTo("Monstera deliciosa");
+        assertThat(porMinusculas.get().nombre()).isEqualTo("sansevieria");
+        assertThat(porMayusculas.get().nombre()).isEqualTo("sansevieria");
     }
 
     @Test
     void unaEspecieInexistenteDevuelveOptionalVacio() {
-        assertThat(adaptador.buscar("Especie inexistens")).isEmpty();
+        assertThat(adaptador.buscar("especie inexistens")).isEmpty();
     }
 
     @Test
     void elMapeoArmaBienLosTresRangos() {
-        Especie ficus = adaptador.buscar("Ficus lyrata")
-                .orElseThrow(() -> new AssertionError("Ficus lyrata debería existir en la semilla"));
+        Especie potos = adaptador.buscar("potos")
+                .orElseThrow(() -> new AssertionError("potos debería existir en la semilla"));
 
-        assertThat(ficus.nombreComun()).isEqualTo("ficus lira");
-        assertThat(ficus.rango(Magnitud.TEMPERATURA).minimo()).isEqualTo(18.0);
-        assertThat(ficus.rango(Magnitud.TEMPERATURA).maximo()).isEqualTo(27.0);
-        assertThat(ficus.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(45.0);
-        assertThat(ficus.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(65.0);
-        assertThat(ficus.rango(Magnitud.LUZ).minimo()).isEqualTo(1500.0);
-        assertThat(ficus.rango(Magnitud.LUZ).maximo()).isEqualTo(3000.0);
+        assertThat(potos.nombre()).isEqualTo("potos");
+        assertThat(potos.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(40.0);
+        assertThat(potos.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(70.0);
+        assertThat(potos.rango(Magnitud.LUZ).minimo()).isEqualTo(300.0);
+        assertThat(potos.rango(Magnitud.LUZ).maximo()).isEqualTo(1200.0);
+        assertThat(potos.rango(Magnitud.TEMPERATURA).minimo()).isEqualTo(18.0);
+        assertThat(potos.rango(Magnitud.TEMPERATURA).maximo()).isEqualTo(30.0);
     }
 }

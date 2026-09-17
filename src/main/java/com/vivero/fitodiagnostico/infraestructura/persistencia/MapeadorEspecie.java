@@ -18,12 +18,9 @@ public class MapeadorEspecie {
 
     public Especie aDominio(EspecieEntity entidad) {
         Map<Magnitud, Rango> rangos = new EnumMap<>(Magnitud.class);
-        rangos.put(Magnitud.TEMPERATURA, new Rango(entidad.getTempMin(), entidad.getTempMax()));
-        rangos.put(Magnitud.HUMEDAD, new Rango(entidad.getHumMin(), entidad.getHumMax()));
+        rangos.put(Magnitud.HUMEDAD, new Rango(entidad.getHumedadMin(), entidad.getHumedadMax()));
         rangos.put(Magnitud.LUZ, new Rango(entidad.getLuzMin(), entidad.getLuzMax()));
-        return new Especie(
-                entidad.getNombreCientifico(),
-                entidad.getNombreComun(),
-                rangos);
+        rangos.put(Magnitud.TEMPERATURA, new Rango(entidad.getTempMin(), entidad.getTempMax()));
+        return new Especie(entidad.getNombre(), rangos);
     }
 }

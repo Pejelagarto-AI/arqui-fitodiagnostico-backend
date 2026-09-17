@@ -19,11 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class EvaluadorDeEstadoTest {
 
-    // Monstera deliciosa: temp 18-29 °C, humedad 55-80 % HR, luz 1000-2500 lux
-    private final Especie especie = new Especie(
-            "Monstera deliciosa", "costilla de Adán", rangosMonstera());
+    // especie de prueba: temp 18-29 °C, humedad 55-80 % HR, luz 1000-2500 lux
+    private final Especie especie = new Especie("especie-de-prueba", rangosDePrueba());
 
-    private static Map<Magnitud, Rango> rangosMonstera() {
+    private static Map<Magnitud, Rango> rangosDePrueba() {
         Map<Magnitud, Rango> rangos = new EnumMap<>(Magnitud.class);
         rangos.put(Magnitud.TEMPERATURA, new Rango(18.0, 29.0));
         rangos.put(Magnitud.HUMEDAD, new Rango(55.0, 80.0));

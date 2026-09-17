@@ -29,11 +29,11 @@ public class ServicioDiagnostico {
     }
 
     @Transactional(readOnly = true)
-    public Diagnostico diagnosticar(String nombreCientifico, Medicion medicion) {
+    public Diagnostico diagnosticar(String nombre, Medicion medicion) {
 
         Especie especie = rangosPorEspecie
-                .buscar(nombreCientifico)
-                .orElseThrow(() -> new EspecieNoEncontradaException(nombreCientifico));
+                .buscar(nombre)
+                .orElseThrow(() -> new EspecieNoEncontradaException(nombre));
 
         return evaluador.evaluar(especie, medicion);
     }

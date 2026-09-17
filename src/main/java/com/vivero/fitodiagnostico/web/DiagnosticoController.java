@@ -30,7 +30,7 @@ public class DiagnosticoController {
 
         Medicion medicion = Medicion.de(
                 new Lectura(Magnitud.TEMPERATURA, solicitud.temperaturaC()),
-                new Lectura(Magnitud.HUMEDAD, solicitud.humedadRelativa()),
+                new Lectura(Magnitud.HUMEDAD, solicitud.humedad()),
                 new Lectura(Magnitud.LUZ, solicitud.luzLux()));
 
         Diagnostico diagnostico = servicio.diagnosticar(solicitud.especie(), medicion);

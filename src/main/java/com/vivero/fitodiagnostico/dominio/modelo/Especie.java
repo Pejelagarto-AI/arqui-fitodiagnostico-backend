@@ -5,15 +5,18 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 
-/** Umbrales de tolerancia de una especie. Es el agregado que la BD alimenta. */
+/**
+ * Umbrales de tolerancia de una especie. Es el agregado que la tabla de
+ * referencia del Anexo B alimenta: un único nombre (no distingue nombre
+ * científico de nombre común) y sus rangos óptimos por magnitud.
+ */
 public record Especie(
-        String nombreCientifico,
-        String nombreComun,
+        String nombre,
         Map<Magnitud, Rango> rangos) {
 
     public Especie {
-        if (nombreCientifico == null || nombreCientifico.isBlank()) {
-            throw new IllegalArgumentException("la especie requiere nombre científico");
+        if (nombre == null || nombre.isBlank()) {
+            throw new IllegalArgumentException("la especie requiere nombre");
         }
         if (rangos == null || rangos.isEmpty()) {
             throw new IllegalArgumentException("la especie requiere al menos un rango de tolerancia");
@@ -26,7 +29,7 @@ public record Especie(
         Rango rango = rangos.get(magnitud);
         if (rango == null) {
             throw new IllegalArgumentException(
-                "la especie " + nombreCientifico + " no tiene un rango definido para " + magnitud);
+                "la especie " + nombre + " no tiene un rango definido para " + magnitud);
         }
         return rango;
     }

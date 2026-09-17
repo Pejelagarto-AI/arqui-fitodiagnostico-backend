@@ -11,7 +11,7 @@ public record SolicitudDiagnostico(
         Double temperaturaC,
 
         @NotNull @DecimalMin("0.0") @DecimalMax("100.0")
-        Double humedadRelativa,
+        Double humedad,
 
         @NotNull @Min(0) @Max(150_000)
         Integer luzLux) { }
