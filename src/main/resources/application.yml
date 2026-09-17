@@ -8,6 +8,15 @@
 # fitodiagnostico:
 #   tabla-referencia: csv
 
+# fitodiagnostico.cors.origenes: lista separada por comas de orígenes con
+# permiso de CORS sobre /api/** (RA7, web.ConfiguracionCors). Por defecto
+# http://localhost:5500,http://127.0.0.1:5500 (el front servido con
+# `python3 -m http.server 5500` en desarrollo). En otros ambientes se
+# sobreescribe con el/los orígenes reales del front.
+# fitodiagnostico:
+#   cors:
+#     origenes: http://localhost:5500,http://127.0.0.1:5500
+
 spring:
   application:
     name: fitodiagnostico
