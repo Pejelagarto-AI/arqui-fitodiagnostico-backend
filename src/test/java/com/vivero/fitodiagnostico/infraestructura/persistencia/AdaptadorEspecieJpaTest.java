@@ -41,8 +41,8 @@ class AdaptadorEspecieJpaTest {
 
     @Test
     void laBusquedaEsInsensibleAMayusculas() {
-        Optional<Especie> porMinusculas = adaptador.buscarPorNombreCientifico("monstera deliciosa");
-        Optional<Especie> porMayusculas = adaptador.buscarPorNombreCientifico("MONSTERA DELICIOSA");
+        Optional<Especie> porMinusculas = adaptador.buscar("monstera deliciosa");
+        Optional<Especie> porMayusculas = adaptador.buscar("MONSTERA DELICIOSA");
 
         assertThat(porMinusculas).isPresent();
         assertThat(porMayusculas).isPresent();
@@ -52,12 +52,12 @@ class AdaptadorEspecieJpaTest {
 
     @Test
     void unaEspecieInexistenteDevuelveOptionalVacio() {
-        assertThat(adaptador.buscarPorNombreCientifico("Especie inexistens")).isEmpty();
+        assertThat(adaptador.buscar("Especie inexistens")).isEmpty();
     }
 
     @Test
     void elMapeoArmaBienLosTresRangos() {
-        Especie ficus = adaptador.buscarPorNombreCientifico("Ficus lyrata")
+        Especie ficus = adaptador.buscar("Ficus lyrata")
                 .orElseThrow(() -> new AssertionError("Ficus lyrata debería existir en la semilla"));
 
         assertThat(ficus.nombreComun()).isEqualTo("ficus lira");

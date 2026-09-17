@@ -1,13 +1,16 @@
 package com.vivero.fitodiagnostico.infraestructura.persistencia;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
 import java.util.Optional;
 
-/** Adaptador: traduce entre el mundo JPA y el modelo de dominio. */
+/** Adaptador: traduce entre el mundo JPA y el modelo de dominio. Implementa los dos puertos. */
 @Repository
-public class AdaptadorEspecieJpa implements RepositorioEspecies {
+public class AdaptadorEspecieJpa implements RangosPorEspecie, CatalogoDeEspecies {
 
     private final EspecieJpaRepository jpa;
     private final MapeadorEspecie mapeador;
@@ -18,8 +21,15 @@ public class AdaptadorEspecieJpa implements RepositorioEspecies {
     }
 
     @Override
-    public Optional<Especie> buscarPorNombreCientifico(String nombreCientifico) {
-        return jpa.findByNombreCientificoIgnoreCase(nombreCientifico)
+    public Optional<Especie> buscar(String nombre) {
+        return jpa.findByNombreCientificoIgnoreCase(nombre)
                   .map(mapeador::aDominio);
+    }
+
+    @Override
+    public List<Especie> listar() {
+        return jpa.findAllByOrderByNombreCientificoAsc().stream()
+                  .map(mapeador::aDominio)
+                  .toList();
     }
 }
