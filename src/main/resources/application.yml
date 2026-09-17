@@ -1,3 +1,13 @@
+# fitodiagnostico.tabla-referencia: fuente de la tabla de referencia de
+# especies (RA-05). "csv" (por defecto si se omite la propiedad, vía
+# matchIfMissing) usa infraestructura.referencia.AdaptadorEspeciesCsv, que lee
+# src/main/resources/referencia/especies.csv sin tocar la base de datos. "bd"
+# activa infraestructura.persistencia.AdaptadorEspecieJpa (JPA + Flyway).
+# Tensión conocida: H2 y Flyway arrancan igual en modo csv, porque el
+# datasource y las migraciones de este perfil no dependen de esta propiedad.
+# fitodiagnostico:
+#   tabla-referencia: csv
+
 spring:
   application:
     name: fitodiagnostico
