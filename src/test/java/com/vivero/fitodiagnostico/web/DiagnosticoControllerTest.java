@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -26,14 +27,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Rebanada web (sección 11): sólo el controlador y el manejador de errores,
- * con el caso de uso simulado. Cubre validación, códigos de error y la forma
- * exacta del contrato de la sección 2.
+ * con el caso de uso simulado. Cubre la forma exacta del contrato de la
+ * sección 2 (POST) y el cuerpo de error uniforme para cada caso de la
+ * sección de errores.
  */
 @WebMvcTest(DiagnosticoController.class)
 class DiagnosticoControllerTest {
@@ -56,14 +58,13 @@ class DiagnosticoControllerTest {
     }
 
     @Test
-    void devuelve200ConLaFormaExactaDelContratoYCabeceraDeCache() throws Exception {
+    void devuelve200ConLaFormaExactaDelContrato() throws Exception {
         Especie especie = sansevieria();
+        // Todos OPTIMO: humedad 32.5 (20-45), luz 850 (200-1500), temperatura 21.0 (15-29).
         Medicion medicion = Medicion.de(
-                new Lectura(Magnitud.TEMPERATURA, 35.0),
-                new Lectura(Magnitud.HUMEDAD, 10.0),
-                new Lectura(Magnitud.LUZ, 850));
-        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA. Humedad (10 < 20)
-        // queda BAJO, luz (850) queda OPTIMO, temperatura (35 > 29) queda ALTO.
+                new Lectura(Magnitud.HUMEDAD, 32.5),
+                new Lectura(Magnitud.LUZ, 850),
+                new Lectura(Magnitud.TEMPERATURA, 21.0));
         var parametros = new ClasificadorDeParametros().clasificar(especie, medicion);
         Diagnostico diagnostico = new Diagnostico(
                 especie, medicion, EstadoGlobal.EN_RIESGO,
@@ -73,76 +74,116 @@ class DiagnosticoControllerTest {
 
         when(servicio.diagnosticar(anyString(), any(Medicion.class))).thenReturn(diagnostico);
 
-        mockMvc.perform(get(RUTA)
-                        .param("especie", "sansevieria")
-                        .param("temperaturaC", "35.0")
-                        .param("humedad", "10.0")
-                        .param("luzLux", "850"))
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"sansevieria","humedad":32.5,"luz":850,"temperatura":21.0}"""))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Cache-Control", "max-age=300, public"))
                 .andExpect(jsonPath("$.especie").value("sansevieria"))
-                .andExpect(jsonPath("$.lectura.temperaturaC").value(35.0))
-                .andExpect(jsonPath("$.lectura.humedadRelativa").value(10.0))
-                .andExpect(jsonPath("$.lectura.luzLux").value(850))
                 .andExpect(jsonPath("$.estado").value("EN_RIESGO"))
                 .andExpect(jsonPath("$.parametros.length()").value(3))
                 .andExpect(jsonPath("$.parametros[0].nombre").value("humedad"))
-                .andExpect(jsonPath("$.parametros[0].valor").value(10.0))
+                .andExpect(jsonPath("$.parametros[0].valor").value(32.5))
                 .andExpect(jsonPath("$.parametros[0].unidad").value("%"))
                 .andExpect(jsonPath("$.parametros[0].rangoOptimo[0]").value(20.0))
                 .andExpect(jsonPath("$.parametros[0].rangoOptimo[1]").value(45.0))
-                .andExpect(jsonPath("$.parametros[0].estado").value("BAJO"))
-                .andExpect(jsonPath("$.recomendaciones.length()").value(2))
-                .andExpect(jsonPath("$.recomendaciones[0]")
-                        .value("Humedad del sustrato 10 % por debajo del rango óptimo 20–45 %: regar moderadamente."))
-                .andExpect(jsonPath("$.recomendaciones[1]")
-                        .value("Temperatura 35 °C por encima del rango óptimo 15–29 °C: llevarla a un lugar más fresco y ventilado."))
-                .andExpect(jsonPath("$.evaluadoEn").value("2026-09-08T14:22:03Z"));
+                .andExpect(jsonPath("$.parametros[0].estado").value("OPTIMO"))
+                .andExpect(jsonPath("$.parametros[1].nombre").value("luz"))
+                .andExpect(jsonPath("$.parametros[1].valor").value(850.0))
+                .andExpect(jsonPath("$.parametros[1].unidad").value("lux"))
+                .andExpect(jsonPath("$.parametros[1].estado").value("OPTIMO"))
+                .andExpect(jsonPath("$.parametros[2].nombre").value("temperatura"))
+                .andExpect(jsonPath("$.parametros[2].valor").value(21.0))
+                .andExpect(jsonPath("$.parametros[2].unidad").value("°C"))
+                .andExpect(jsonPath("$.parametros[2].estado").value("OPTIMO"))
+                .andExpect(jsonPath("$.recomendaciones.length()").value(0))
+                .andExpect(jsonPath("$.lectura").doesNotExist())
+                .andExpect(jsonPath("$.evaluadoEn").doesNotExist());
     }
 
     @Test
-    void devuelve400CuandoFaltaUnParametro() throws Exception {
-        mockMvc.perform(get(RUTA)
-                        .param("especie", "sansevieria")
-                        .param("temperaturaC", "19.4")
-                        .param("humedad", "42.0"))
-                // falta luzLux
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void devuelve400CuandoUnParametroVieneFueraDeRango() throws Exception {
-        mockMvc.perform(get(RUTA)
-                        .param("especie", "sansevieria")
-                        .param("temperaturaC", "999.0") // fuera de -20.0..60.0
-                        .param("humedad", "42.0")
-                        .param("luzLux", "850"))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void devuelve404CuandoLaEspecieNoExiste() throws Exception {
+    void devuelve404ConCuerpoUniformeCuandoLaEspecieNoExiste() throws Exception {
         when(servicio.diagnosticar(anyString(), any(Medicion.class)))
-                .thenThrow(new EspecieNoEncontradaException("especie inexistens"));
+                .thenThrow(new EspecieNoEncontradaException("especie inexistente"));
 
-        mockMvc.perform(get(RUTA)
-                        .param("especie", "especie inexistens")
-                        .param("temperaturaC", "19.4")
-                        .param("humedad", "42.0")
-                        .param("luzLux", "850"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"especie inexistente","humedad":32.5,"luz":850,"temperatura":21.0}"""))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("ESPECIE_NO_SOPORTADA"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty())
+                .andExpect(jsonPath("$.detalle.especie").value("especie inexistente"));
     }
 
     @Test
-    void devuelve422CuandoLaLecturaEsFisicamenteImposible() throws Exception {
-        when(servicio.diagnosticar(anyString(), any(Medicion.class)))
-                .thenThrow(new LecturaInvalidaException("humedad relativa -5.0 % fuera del rango físico del sensor"));
+    void devuelve400ConCuerpoUniformeCuandoFaltaUnParametro() throws Exception {
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"sansevieria","luz":850,"temperatura":21.0}"""))
+                // falta humedad
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty())
+                .andExpect(jsonPath("$.detalle.campo").value("humedad"));
+    }
 
-        mockMvc.perform(get(RUTA)
-                        .param("especie", "sansevieria")
-                        .param("temperaturaC", "19.4")
-                        .param("humedad", "42.0")
-                        .param("luzLux", "850"))
-                .andExpect(status().isUnprocessableEntity());
+    @Test
+    void devuelve400CuandoLaEspecieVieneEnBlanco() throws Exception {
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"","humedad":32.5,"luz":850,"temperatura":21.0}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.detalle.campo").value("especie"));
+    }
+
+    @Test
+    void devuelve400ConDetalleDelCampoCuandoElValorNoEsNumerico() throws Exception {
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"sansevieria","humedad":"mucha","luz":850,"temperatura":21.0}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty())
+                .andExpect(jsonPath("$.detalle.campo").value("humedad"));
+    }
+
+    @Test
+    void devuelve400ConDetalleDeLaMagnitudCuandoElValorEsFisicamenteImposible() throws Exception {
+        when(servicio.diagnosticar(anyString(), any(Medicion.class)))
+                .thenThrow(new LecturaInvalidaException(Magnitud.HUMEDAD,
+                        "humedad del sustrato -5.0 % fuera del rango físico del sensor"));
+
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"especie":"sansevieria","humedad":-5.0,"luz":850,"temperatura":21.0}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty())
+                .andExpect(jsonPath("$.detalle.campo").value("humedad"));
+    }
+
+    @Test
+    void devuelve400ConDetalleVacioCuandoElCuerpoNoEsJsonValido() throws Exception {
+        mockMvc.perform(post(RUTA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("esto no es json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty())
+                .andExpect(jsonPath("$.detalle").isEmpty());
+    }
+
+    @Test
+    void devuelve405ConCuerpoUniformeParaGet() throws Exception {
+        mockMvc.perform(get(RUTA))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.error").value("METODO_NO_PERMITIDO"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty());
     }
 }

@@ -1,17 +1,24 @@
 package com.vivero.fitodiagnostico.web.dto;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
+/**
+ * Cuerpo del POST del contrato del Anexo A (sección 2). Bean Validation cubre
+ * solo ausencia/blanco; lo físicamente imposible lo valida el dominio al
+ * construir {@code Lectura} (RA6: el borde valida forma, el dominio valida
+ * negocio).
+ */
 public record SolicitudDiagnostico(
 
-        @NotBlank @Size(min = 2, max = 120)
+        @NotBlank
         String especie,
 
-        @NotNull @DecimalMin("-20.0") @DecimalMax("60.0")
-        Double temperaturaC,
-
-        @NotNull @DecimalMin("0.0") @DecimalMax("100.0")
+        @NotNull
         Double humedad,
 
-        @NotNull @Min(0) @Max(150_000)
-        Integer luzLux) { }
+        @NotNull
+        Double luz,
+
+        @NotNull
+        Double temperatura) { }

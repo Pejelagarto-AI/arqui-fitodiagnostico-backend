@@ -1,55 +1,116 @@
 package com.vivero.fitodiagnostico.web;
 
-import com.vivero.fitodiagnostico.dominio.excepcion.*;
-import org.springframework.http.*;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
+import com.vivero.fitodiagnostico.web.dto.ErrorRespuesta;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
-import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * Único punto que traduce excepciones a HTTP (RA-10). Ningún mensaje expone
- * traza, SQL ni nombre de tabla (RO-05): sólo texto de negocio o de validación.
+ * Único punto que traduce excepciones al cuerpo de error uniforme del
+ * contrato (RA6): {@code {"error", "mensaje", "detalle"}} siempre. Ningún
+ * mensaje expone traza, SQL ni nombre interno (RO-05); las excepciones no
+ * mapeadas se loguean con su stacktrace pero responden ERROR_INTERNO genérico.
  */
 @RestControllerAdvice
 public class ManejadorGlobalDeErrores {
 
+    private static final Logger log = LoggerFactory.getLogger(ManejadorGlobalDeErrores.class);
+
+    /** Orden determinista para reportar el primer campo inválido cuando hay varios (sección 2 del contrato). */
+    private static final List<String> ORDEN_CAMPOS = List.of("especie", "humedad", "luz", "temperatura");
+
     @ExceptionHandler(EspecieNoEncontradaException.class)
-    ProblemDetail especieNoEncontrada(EspecieNoEncontradaException e) {
-        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
-        p.setTitle("Especie no registrada");
-        return p;
+    ResponseEntity<ErrorRespuesta> especieNoEncontrada(EspecieNoEncontradaException e) {
+        return construir(HttpStatus.NOT_FOUND, "ESPECIE_NO_SOPORTADA", e.getMessage(),
+                Map.of("especie", e.getNombre()));
     }
 
     @ExceptionHandler(LecturaInvalidaException.class)
-    ProblemDetail lecturaInvalida(LecturaInvalidaException e) {
-        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
-        p.setTitle("Lectura ambiental inconsistente");
-        return p;
+    ResponseEntity<ErrorRespuesta> lecturaInvalida(LecturaInvalidaException e) {
+        String campo = e.getMagnitud().name().toLowerCase(Locale.ROOT);
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", e.getMessage(),
+                Map.of("campo", campo));
     }
 
+    /** Bean Validation (@NotBlank/@NotNull): campo ausente, nulo o en blanco. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    ProblemDetail solicitudInvalida(MethodArgumentNotValidException e) {
-        String detalle = e.getBindingResult().getFieldErrors().stream()
-                .map(this::describirCampo)
-                .collect(Collectors.joining("; "));
-        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
-                detalle.isBlank() ? "la solicitud no cumple las validaciones requeridas" : detalle);
-        p.setTitle("Solicitud inválida");
-        return p;
+    ResponseEntity<ErrorRespuesta> parametroAusente(MethodArgumentNotValidException e) {
+        String campo = e.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getField)
+                .min(Comparator.comparingInt(this::posicionEnOrden))
+                .orElse("desconocido");
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO",
+                "falta o es inválido el campo '" + campo + "'.", Map.of("campo", campo));
     }
 
-    @ExceptionHandler(HandlerMethodValidationException.class)
-    ProblemDetail solicitudInvalida(HandlerMethodValidationException e) {
-        ProblemDetail p = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
-                "falta un parámetro o el tipo no convierte");
-        p.setTitle("Solicitud inválida");
-        return p;
+    /**
+     * Cuerpo que no deserializa: valor no numérico en un campo (Jackson lanza
+     * {@link MismatchedInputException}, superclase de InvalidFormatException,
+     * con la ruta del campo que falló) o JSON sintácticamente inválido.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ErrorRespuesta> cuerpoIlegible(HttpMessageNotReadableException e) {
+        String campo = campoDesdeCausa(e.getCause());
+        if (campo != null) {
+            return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO",
+                    "el campo '" + campo + "' no tiene un formato válido.", Map.of("campo", campo));
+        }
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO",
+                "el cuerpo de la solicitud no es un JSON válido.", Map.of());
     }
 
-    private String describirCampo(FieldError error) {
-        return error.getField() + " " + error.getDefaultMessage();
+    @ExceptionHandler(NoHandlerFoundException.class)
+    ResponseEntity<ErrorRespuesta> rutaNoEncontrada(NoHandlerFoundException e) {
+        return construir(HttpStatus.NOT_FOUND, "RECURSO_NO_ENCONTRADO",
+                "el recurso solicitado no existe.", Map.of());
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ErrorRespuesta> metodoNoPermitido(HttpRequestMethodNotSupportedException e) {
+        return construir(HttpStatus.METHOD_NOT_ALLOWED, "METODO_NO_PERMITIDO",
+                "el método HTTP no está permitido para este recurso.", Map.of());
+    }
+
+    /** Cualquier otra excepción: 500 genérico, sin traza en el cuerpo; se loguea completa. */
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<ErrorRespuesta> errorInterno(Exception e) {
+        log.error("error inesperado atendiendo la solicitud", e);
+        return construir(HttpStatus.INTERNAL_SERVER_ERROR, "ERROR_INTERNO",
+                "Ocurrió un error inesperado.", Map.of());
+    }
+
+    private int posicionEnOrden(String campo) {
+        int posicion = ORDEN_CAMPOS.indexOf(campo);
+        return posicion < 0 ? ORDEN_CAMPOS.size() : posicion;
+    }
+
+    private String campoDesdeCausa(Throwable causa) {
+        if (causa instanceof MismatchedInputException mie && !mie.getPath().isEmpty()) {
+            JsonMappingException.Reference primero = mie.getPath().get(0);
+            return primero.getFieldName();
+        }
+        return null;
+    }
+
+    private ResponseEntity<ErrorRespuesta> construir(HttpStatus status, String codigo, String mensaje,
+                                                       Map<String, Object> detalle) {
+        return ResponseEntity.status(status).body(new ErrorRespuesta(codigo, mensaje, detalle));
     }
 }

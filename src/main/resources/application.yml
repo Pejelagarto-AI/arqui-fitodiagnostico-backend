@@ -12,6 +12,16 @@ spring:
   application:
     name: fitodiagnostico
 
+  # RA6/sección 2 del contrato: una ruta que no existe debe caer en
+  # ManejadorGlobalDeErrores como cualquier otra excepción (404
+  # RECURSO_NO_ENCONTRADO), no en el 404 sin cuerpo que produce por defecto
+  # el manejador de recursos estáticos de Spring MVC.
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+
   # Perfil por defecto: H2 en memoria. Útil para desarrollo local y pruebas
   # de arranque sin depender de un servidor externo.
   datasource:

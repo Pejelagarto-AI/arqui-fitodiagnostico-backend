@@ -9,7 +9,7 @@ public record Lectura(Magnitud magnitud, double valor) {
     public Lectura {
         Objects.requireNonNull(magnitud, "la lectura requiere una magnitud");
         if (!magnitud.rangoFisico().contiene(valor)) {
-            throw new LecturaInvalidaException(
+            throw new LecturaInvalidaException(magnitud,
                 magnitud.descripcion() + " " + valor + " " + magnitud.unidad()
                     + " fuera del rango físico del sensor");
         }

@@ -3,20 +3,19 @@ package com.vivero.fitodiagnostico.web.dto;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
-import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
-/** Forma exacta de la respuesta 200 (sección 2 del contrato). */
+/**
+ * Forma exacta de la respuesta 200 (sección 2 del contrato del Anexo A). Sin
+ * {@code lectura} ni {@code evaluadoEn}: el front solo necesita la especie,
+ * el estado agregado, los parámetros clasificados y las recomendaciones.
+ */
 public record RespuestaDiagnostico(
         String especie,
-        Lectura lectura,
         String estado,
         List<Parametro> parametros,
-        List<String> recomendaciones,
-        Instant evaluadoEn) {
-
-    public record Lectura(double temperaturaC, double humedadRelativa, int luzLux) { }
+        List<String> recomendaciones) {
 
     /** Forma del anexo A: un parámetro clasificado, con la magnitud ya traducida a texto de presentación. */
     public record Parametro(String nombre, double valor, String unidad, double[] rangoOptimo, String estado) { }
@@ -24,14 +23,9 @@ public record RespuestaDiagnostico(
     public static RespuestaDiagnostico desde(Diagnostico diagnostico) {
         return new RespuestaDiagnostico(
                 diagnostico.especie().nombre(),
-                new Lectura(
-                        diagnostico.medicion().valor(Magnitud.TEMPERATURA),
-                        diagnostico.medicion().valor(Magnitud.HUMEDAD),
-                        (int) diagnostico.medicion().valor(Magnitud.LUZ)),
                 diagnostico.estado().name(),
                 diagnostico.parametros().stream().map(RespuestaDiagnostico::parametroDesde).toList(),
-                diagnostico.recomendaciones(),
-                diagnostico.evaluadoEn());
+                diagnostico.recomendaciones());
     }
 
     private static Parametro parametroDesde(ResultadoParametro resultado) {
