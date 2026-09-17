@@ -19,4 +19,20 @@ public record ResultadoParametro(
     public boolean fueraDeRango() {
         return clasificacion != Clasificacion.OPTIMO;
     }
+
+    /**
+     * Qué tan lejos está el valor del rango óptimo, relativo al ancho de ese
+     * rango: 0 en OPTIMO; para BAJO, (mínimo − valor) / (máximo − mínimo);
+     * para ALTO, (valor − máximo) / (máximo − mínimo). Siempre ≥ 0. Es un
+     * cálculo del modelo —no de ninguna regla de agregación— porque describe
+     * este resultado, no una política de cuándo preocuparse.
+     */
+    public double desviacionRelativa() {
+        double ancho = rangoOptimo.maximo() - rangoOptimo.minimo();
+        return switch (clasificacion) {
+            case OPTIMO -> 0.0;
+            case BAJO -> (rangoOptimo.minimo() - valor) / ancho;
+            case ALTO -> (valor - rangoOptimo.maximo()) / ancho;
+        };
+    }
 }

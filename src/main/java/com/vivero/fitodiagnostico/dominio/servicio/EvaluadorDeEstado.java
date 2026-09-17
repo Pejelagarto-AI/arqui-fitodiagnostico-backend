@@ -1,35 +1,31 @@
 package com.vivero.fitodiagnostico.dominio.servicio;
 
-import com.vivero.fitodiagnostico.dominio.estado.EstadoPlanta;
-import com.vivero.fitodiagnostico.dominio.modelo.*;
+import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
+import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
+import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * Recorre las estrategias en orden de prioridad y devuelve la primera que aplique.
- * No conoce ninguna implementación concreta: recibe la lista ya ordenada.
+ * Orquesta el diagnóstico (RF2 + RF3): clasifica cada parámetro y luego
+ * agrega esas clasificaciones en un estado global. No conoce ninguna regla
+ * de agregación concreta, solo la interfaz {@link ReglaDeAgregacion}.
  */
 public final class EvaluadorDeEstado {
 
-    private final List<EstadoPlanta> estadosPorPrioridad;
     private final ClasificadorDeParametros clasificador;
+    private final ReglaDeAgregacion regla;
 
-    public EvaluadorDeEstado(List<EstadoPlanta> estadosPorPrioridad, ClasificadorDeParametros clasificador) {
-        this.estadosPorPrioridad = List.copyOf(estadosPorPrioridad);
+    public EvaluadorDeEstado(ClasificadorDeParametros clasificador, ReglaDeAgregacion regla) {
         this.clasificador = clasificador;
+        this.regla = regla;
     }
 
     public Diagnostico evaluar(Especie especie, Medicion medicion) {
-        EstadoPlanta estado = estadosPorPrioridad.stream()
-                .filter(e -> e.evaluarEstado(especie, medicion))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("cadena de estados sin terminal"));
-
-        return new Diagnostico(
-                especie, medicion,
-                estado.obtenerEstado(),
-                estado.describir(especie, medicion),
-                clasificador.clasificar(especie, medicion),
-                Instant.now());
+        List<ResultadoParametro> parametros = clasificador.clasificar(especie, medicion);
+        EstadoGlobal estado = regla.agregar(parametros);
+        return new Diagnostico(especie, medicion, estado, parametros, Instant.now());
     }
 }

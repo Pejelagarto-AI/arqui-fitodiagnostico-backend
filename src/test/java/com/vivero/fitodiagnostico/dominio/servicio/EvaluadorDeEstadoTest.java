@@ -1,9 +1,9 @@
 package com.vivero.fitodiagnostico.dominio.servicio;
 
-import com.vivero.fitodiagnostico.dominio.estado.*;
 import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
 import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
@@ -18,14 +18,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EvaluadorDeEstadoTest {
-
-    // Orden de prioridad tal como lo ensamblaría ConfiguracionDominio (sección 8).
-    private final EvaluadorDeEstado evaluador = new EvaluadorDeEstado(List.of(
-            new EstadoNecesitaAbrigo(),
-            new EstadoNecesitaAgua(),
-            new EstadoNecesitaLuz(),
-            new EstadoOptimo()),
-            new ClasificadorDeParametros());
 
     // Monstera deliciosa: temp 18-29 °C, humedad 55-80 % HR, luz 1000-2500 lux
     private final Especie especie = new Especie(
@@ -47,53 +39,77 @@ class EvaluadorDeEstadoTest {
     }
 
     @Test
-    void conLasTresLecturasDentroDeRangoDevuelveOptimo() {
-        Medicion medicion = medicion(20.0, 60.0, 1500);
-        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
-        assertThat(diagnostico.estado()).isEqualTo("OPTIMO");
+    void delegaElEstadoGlobalEnLaReglaDeAgregacionSinConocerCualEs() {
+        // Doble de ReglaDeAgregacion: pase lo que pase en la clasificación,
+        // esta regla siempre dice CRITICO. Si el evaluador devuelve CRITICO
+        // aquí, es porque delega en la regla y no decide nada por su cuenta.
+        ReglaDeAgregacion reglaFija = parametros -> EstadoGlobal.CRITICO;
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(new ClasificadorDeParametros(), reglaFija);
+
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 60.0, 1500));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.CRITICO);
     }
 
     @Test
-    void devuelveElPrimerEstadoQueAplicaCuandoSoloUnoFalla() {
-        // Solo la humedad está fuera de rango: debe ganar NECESITA_AGUA.
-        Medicion medicion = medicion(20.0, 40.0, 1500);
-        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
-        assertThat(diagnostico.estado()).isEqualTo("NECESITA_AGUA");
+    void laReglaFijaNoImpideQueLosParametrosSeClasifiquenDeVerdad() {
+        ReglaDeAgregacion reglaFija = parametros -> EstadoGlobal.SALUDABLE;
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(new ClasificadorDeParametros(), reglaFija);
+
+        // Humedad fuera de rango: la clasificación real debe reflejarlo
+        // aunque la regla (doble) ignore el detalle y siempre diga SALUDABLE.
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 40.0, 1500));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(diagnostico.parametros()).extracting(ResultadoParametro::clasificacion)
+                .containsExactly(Clasificacion.OPTIMO, Clasificacion.BAJO, Clasificacion.OPTIMO);
     }
 
     @Test
-    void laTemperaturaFueraDeRangoTienePrioridadSobreLaHumedadYLaLuz() {
-        // Las tres variables están fuera de rango a la vez: debe ganar la de
-        // mayor prioridad en la lista, NECESITA_ABRIGO, no las otras dos.
-        Medicion medicion = medicion(5.0, 20.0, 200);
-        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
-        assertThat(diagnostico.estado()).isEqualTo("NECESITA_ABRIGO");
+    void conLaReglaRealYLasTresLecturasDentroDeRangoDevuelveSaludable() {
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(),
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 60.0, 1500));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
     }
 
     @Test
-    void laHumedadTienePrioridadSobreLaLuzCuandoAmbasFallan() {
-        // Temperatura ok, humedad y luz fuera de rango: debe ganar NECESITA_AGUA
-        // sobre NECESITA_LUZ porque así está ordenada la lista.
-        Medicion medicion = medicion(20.0, 40.0, 200);
-        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
-        assertThat(diagnostico.estado()).isEqualTo("NECESITA_AGUA");
+    void conLaReglaRealYUnaDesviacionSevereDevuelveCritico() {
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(),
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+
+        // humedad 42 -> desviación 0.52 sobre el ejemplo de referencia.
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 42.0, 1500));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.CRITICO);
     }
 
     @Test
     void elDiagnosticoConservaLaEspecieYLaMedicionRecibidas() {
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(),
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+
         Medicion medicion = medicion(20.0, 60.0, 1500);
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
+
         assertThat(diagnostico.especie()).isEqualTo(especie);
         assertThat(diagnostico.medicion()).isEqualTo(medicion);
-        assertThat(diagnostico.detalle()).isNotBlank();
         assertThat(diagnostico.evaluadoEn()).isNotNull();
     }
 
     @Test
     void elDiagnosticoTraeLosParametrosClasificados() {
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(),
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+
         // Solo la humedad está fuera de rango (BAJO); temperatura y luz OPTIMO.
-        Medicion medicion = medicion(20.0, 40.0, 1500);
-        Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 40.0, 1500));
 
         assertThat(diagnostico.parametros()).extracting(ResultadoParametro::magnitud)
                 .containsExactly(Magnitud.TEMPERATURA, Magnitud.HUMEDAD, Magnitud.LUZ);
@@ -102,12 +118,12 @@ class EvaluadorDeEstadoTest {
     }
 
     @Test
-    void siNingunEstadoAplicaLanzaIllegalStateException() {
-        // Sin un estado terminal en la lista, la cadena debe fallar explícitamente.
-        EvaluadorDeEstado evaluadorSinTerminal =
-                new EvaluadorDeEstado(List.of(new EstadoNecesitaAgua()), new ClasificadorDeParametros());
-        Medicion medicion = medicion(20.0, 60.0, 1500);
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                () -> evaluadorSinTerminal.evaluar(especie, medicion));
+    void listaVaciaDeParametrosPropagaLaExcepcionDeLaReglaReal() {
+        // clasificar() nunca produce lista vacía con una Medicion válida (que
+        // exige al menos una lectura), pero el contrato de la regla real ante
+        // lista vacía se prueba directamente en ReglaPorDesviacionTest.
+        ReglaDeAgregacion regla = new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> regla.agregar(List.of()));
     }
 }

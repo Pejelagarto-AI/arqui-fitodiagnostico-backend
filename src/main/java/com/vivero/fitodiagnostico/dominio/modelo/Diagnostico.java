@@ -6,8 +6,7 @@ import java.util.List;
 public record Diagnostico(
         Especie especie,
         Medicion medicion,
-        String estado,
-        String detalle,
+        EstadoGlobal estado,
         List<ResultadoParametro> parametros,
         Instant evaluadoEn) {
 

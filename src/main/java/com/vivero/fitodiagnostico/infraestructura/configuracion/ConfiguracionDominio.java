@@ -1,15 +1,16 @@
 package com.vivero.fitodiagnostico.infraestructura.configuracion;
 
-import com.vivero.fitodiagnostico.dominio.estado.*;
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeAgregacion;
+import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import java.util.List;
 
 /**
  * El dominio no se anota con @Component: es la infraestructura la que decide
- * cómo se ensambla. El ORDEN de esta lista ES la política de prioridad.
+ * cómo se ensambla. El umbral de la regla de agregación queda visible aquí,
+ * en un único lugar.
  */
 @Configuration
 public class ConfiguracionDominio {
@@ -20,12 +21,13 @@ public class ConfiguracionDominio {
     }
 
     @Bean
-    EvaluadorDeEstado evaluadorDeEstado(ClasificadorDeParametros clasificadorDeParametros) {
-        return new EvaluadorDeEstado(List.of(
-                new EstadoNecesitaAbrigo(),
-                new EstadoNecesitaAgua(),
-                new EstadoNecesitaLuz(),
-                new EstadoOptimo()),
-                clasificadorDeParametros);
+    ReglaDeAgregacion reglaDeAgregacion() {
+        return new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO);
+    }
+
+    @Bean
+    EvaluadorDeEstado evaluadorDeEstado(ClasificadorDeParametros clasificadorDeParametros,
+                                         ReglaDeAgregacion reglaDeAgregacion) {
+        return new EvaluadorDeEstado(clasificadorDeParametros, reglaDeAgregacion);
     }
 }

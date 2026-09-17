@@ -5,6 +5,7 @@ import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
 import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
@@ -60,8 +61,7 @@ class DiagnosticoControllerTest {
                 new Lectura(Magnitud.HUMEDAD, 42.0),
                 new Lectura(Magnitud.LUZ, 850));
         Diagnostico diagnostico = new Diagnostico(
-                especie, medicion, "NECESITA_AGUA",
-                "humedad relativa 42.0 % por debajo del mínimo 55.0 %",
+                especie, medicion, EstadoGlobal.EN_RIESGO,
                 new ClasificadorDeParametros().clasificar(especie, medicion),
                 Instant.parse("2026-09-08T14:22:03Z"));
 
@@ -79,8 +79,7 @@ class DiagnosticoControllerTest {
                 .andExpect(jsonPath("$.lectura.temperaturaC").value(19.4))
                 .andExpect(jsonPath("$.lectura.humedadRelativa").value(42.0))
                 .andExpect(jsonPath("$.lectura.luzLux").value(850))
-                .andExpect(jsonPath("$.estado").value("NECESITA_AGUA"))
-                .andExpect(jsonPath("$.detalle").value("humedad relativa 42.0 % por debajo del mínimo 55.0 %"))
+                .andExpect(jsonPath("$.estado").value("EN_RIESGO"))
                 .andExpect(jsonPath("$.parametros.length()").value(3))
                 .andExpect(jsonPath("$.parametros[1].nombre").value("humedad"))
                 .andExpect(jsonPath("$.parametros[1].valor").value(42.0))
