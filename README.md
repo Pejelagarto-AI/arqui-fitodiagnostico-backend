@@ -1,102 +1,131 @@
 # Fitodiagnóstico API
 
-API REST que recibe **una especie vegetal y tres lecturas ambientales** (temperatura, humedad relativa e iluminancia), consulta los umbrales de esa especie en base de datos y devuelve el estado en que se encuentra la planta.
-
-Java 21 · Spring Boot 3.3.13 · H2 en memoria · Flyway · JPA
+API REST que recibe una especie vegetal y tres lecturas ambientales (humedad del sustrato, luz y temperatura), las clasifica contra el rango óptimo de esa especie y devuelve el estado de la planta con recomendaciones.
 
 **Front web:** https://github.com/Pejelagarto-AI/arqui-fitodiagnostico-frontend — cliente independiente, servido desde otro origen.
 
----
+## Requisitos y ejecución
 
-## Correrlo
-
-```bash
-./mvnw spring-boot:run     # http://localhost:8080
-./mvnw test                # 65 pruebas
-```
-
-No hace falta instalar base de datos: H2 arranca en memoria y Flyway carga el esquema y 4 especies. Consola de la BD en `/h2-console` (JDBC `jdbc:h2:mem:fitodiagnostico`, usuario `SA`, sin clave).
-
-## El endpoint
-
-```
-GET /api/v1/diagnosticos?especie=&temperaturaC=&humedadRelativa=&luzLux=
-```
+Solo Java 21. El wrapper trae Maven, no hace falta instalarlo.
 
 ```bash
-curl "http://localhost:8080/api/v1/diagnosticos?especie=Monstera%20deliciosa&temperaturaC=22&humedadRelativa=42&luzLux=1500"
+./mvnw spring-boot:run     # http://localhost:8080, modo csv por defecto
+```
+
+**`fitodiagnostico.tabla-referencia`** decide la fuente de la tabla de referencia: `csv` (por defecto, lee `src/main/resources/referencia/especies.csv`) o `bd` (JPA + Flyway sobre H2 en memoria). Para arrancar en modo bd:
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--fitodiagnostico.tabla-referencia=bd
+```
+
+Tensión conocida: en modo csv, H2 y Flyway igual arrancan, porque el datasource y las migraciones de este perfil no dependen de esta propiedad.
+
+**`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**`. Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
+
+## Endpoints
+
+Salidas reales, capturadas con la app corriendo.
+
+### `GET /api/v1/especies`
+
+```bash
+curl http://localhost:8080/api/v1/especies
+```
+
+```json
+[
+  {
+    "nombre": "sansevieria",
+    "rangos": {
+      "humedad": { "min": 20.0, "max": 45.0, "unidad": "%" },
+      "luz": { "min": 200.0, "max": 1500.0, "unidad": "lux" },
+      "temperatura": { "min": 15.0, "max": 29.0, "unidad": "°C" }
+    }
+  }
+]
+```
+
+(devuelve las 5 especies del Anexo B, ordenadas por nombre; se recorta a una para el ejemplo)
+
+### `POST /api/v1/diagnosticos`
+
+```bash
+curl -X POST http://localhost:8080/api/v1/diagnosticos \
+  -H "Content-Type: application/json" \
+  -d '{"especie":"sansevieria","humedad":15,"luz":800,"temperatura":22}'
 ```
 
 ```json
 {
-  "especie": { "nombreCientifico": "Monstera deliciosa", "nombreComun": "costilla de Adán" },
-  "lectura": { "temperaturaC": 22.0, "humedadRelativa": 42.0, "luzLux": 1500 },
-  "estado": "NECESITA_AGUA",
-  "detalle": "humedad relativa 42.0 % por debajo del mínimo 55.0 %",
-  "evaluadoEn": "2026-09-08T22:03:10Z"
+  "especie": "sansevieria",
+  "estado": "EN_RIESGO",
+  "parametros": [
+    { "nombre": "humedad", "valor": 15.0, "unidad": "%", "rangoOptimo": [20.0, 45.0], "estado": "BAJO" },
+    { "nombre": "luz", "valor": 800.0, "unidad": "lux", "rangoOptimo": [200.0, 1500.0], "estado": "OPTIMO" },
+    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [15.0, 29.0], "estado": "OPTIMO" }
+  ],
+  "recomendaciones": [
+    "Humedad del sustrato 15 % por debajo del rango óptimo 20–45 %: regar moderadamente."
+  ]
 }
 ```
 
-Estados posibles: `NECESITA_ABRIGO`, `NECESITA_AGUA`, `NECESITA_LUZ`, `OPTIMO`. Devuelve **uno solo**, el de mayor prioridad. Errores: `400` validación, `404` especie desconocida, `422` lectura físicamente imposible — todos en `application/problem+json`.
+Estados posibles: `SALUDABLE`, `EN_RIESGO`, `CRITICO` (regla por desviación, umbral 25 % del ancho del rango). Un parámetro dentro de rango es `OPTIMO`; fuera, `BAJO` o `ALTO`.
 
-## Arquitectura
+### Errores
 
+Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
+
+| HTTP | `error` | Cuándo |
+|---|---|---|
+| 400 | `PARAMETRO_INVALIDO` | campo ausente/en blanco, valor no numérico, JSON malformado, o lectura físicamente imposible (p. ej. humedad negativa) |
+| 404 | `ESPECIE_NO_SOPORTADA` | la especie no existe en la tabla de referencia |
+| 404 | `RECURSO_NO_ENCONTRADO` | ruta inexistente |
+| 405 | `METODO_NO_PERMITIDO` | método HTTP no soportado por el recurso |
+| 500 | `ERROR_INTERNO` | cualquier otra excepción; nunca expone traza ni SQL |
+
+Ejemplo real, especie inexistente:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: application/json" \
+  -d '{"especie":"cactus","humedad":30,"luz":800,"temperatura":22}'
+# HTTP 404
+{"error":"ESPECIE_NO_SOPORTADA","mensaje":"no existe una especie registrada con nombre 'cactus'","detalle":{"especie":"cactus"}}
 ```
-Web  →  Aplicación  →  Dominio  ←  Infraestructura
+
+## Pruebas
+
+```bash
+./mvnw test     # 106 pruebas
 ```
 
-Las dependencias apuntan siempre hacia adentro. El dominio no importa Spring ni JPA: es Java puro, y por eso sus 47 pruebas corren sin levantar contexto.
+| Grupo | Pruebas | Qué cubre |
+|---|---|---|
+| Dominio | 69 | JUnit puro, sin Spring: modelo (`Especie`, `Rango`, `Lectura`, `Medicion`, `ResultadoParametro`) y servicios (`ClasificadorDeParametros`, `EvaluadorDeEstado`, `RedactorDeRecomendaciones`, `ReglaPorDesviacion`) |
+| Aplicación | 7 | `ServicioDiagnostico` y `ServicioCatalogo` con dobles en memoria del puerto (sin Mockito) |
+| Contrato de adaptadores | 9 | `ContratoFuenteDeEspeciesTest` corrido contra CSV (JUnit puro) y contra JPA (`@DataJpaTest` con Flyway real) — misma prueba, dos implementaciones (LSP) |
+| Web | 12 | `@WebMvcTest` del controlador de diagnósticos, del de especies y del preflight CORS |
+| ArchUnit | 8 | reglas estructurales de `ArquitecturaTest` (ver `docs/ARQUITECTURA.md`) |
+| Contexto | 1 | `FitodiagnosticoApplicationTests`, carga del `ApplicationContext` |
 
-| Capa | Qué tiene |
-|---|---|
-| `web` | controlador, DTO, validación, `@RestControllerAdvice` |
-| `aplicacion` | `ServicioDiagnostico` — el único caso de uso |
-| `dominio` | `Especie`, `Ambiente`, `Rango`, `EstadoPlanta` + 4 estados, `EvaluadorDeEstado`, el puerto `RepositorioEspecies` |
-| `infraestructura` | entidad JPA, Spring Data, mapeador, adaptador del puerto, configuración de beans |
+`scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo el paquete `infraestructura` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita infraestructura para compilar ni para pasar sus pruebas.
 
-**El estado no se decide con un `switch`.** Cada estado es una clase que implementa `EstadoPlanta` y sabe reconocerse a sí misma. `EvaluadorDeEstado` recorre la lista y devuelve el primero que aplique. Agregar un estado nuevo es escribir una clase y sumarla a la lista de `ConfiguracionDominio` — ninguna clase existente se toca (OCP).
+## Tabla de referencia
 
-**El orden de prioridad vive en la configuración, no en el dominio:** abrigo → agua → luz → óptimo. El estrés térmico mata en horas, la sed en días, la falta de luz en semanas. Cambiar la política es reordenar cuatro líneas.
+Fuente: Anexo B del enunciado del proyecto de corte.
 
-## Las restricciones se verifican solas
+| Especie | Humedad (%) | Luz (lux) | Temperatura (°C) |
+|---|---|---|---|
+| sansevieria | 20–45 | 200–1500 | 15–29 |
+| potos | 40–70 | 300–1200 | 18–30 |
+| suculenta | 10–30 | 800–2500 | 15–32 |
+| helecho | 60–85 | 150–800 | 16–26 |
+| lavanda | 25–50 | 1000–3000 | 15–30 |
 
-`ArquitecturaTest` traduce las reglas estructurales a pruebas ArchUnit que corren en cada build:
+## Documentación
 
-- el dominio no depende de Spring, JPA ni de ninguna otra capa
-- Spring Data sólo se nombra en `infraestructura`
-- la aplicación no depende de `infraestructura`
-- las entidades `@Entity` no salen de `infraestructura.persistencia`
-- el controlador no toca persistencia
-- inyección por constructor: ningún campo con `@Autowired`
-
-Si alguien rompe una, el build falla y señala archivo y línea. Una restricción que sólo vive en un documento no es una restricción.
-
-| Pruebas | |
-|---|---|
-| 47 | dominio, JUnit puro, sin Spring |
-| 5 | `@WebMvcTest` del controlador |
-| 4 | `@DataJpaTest` sobre H2 + Flyway |
-| 8 | reglas ArchUnit |
-| 1 | carga de contexto |
-
-## Especificación completa
-
-La spec de arquitectura —contrato, vista de capas, las 27 restricciones numeradas y las decisiones con su costo— está publicada aparte:
-
-**https://claude.ai/code/artifact/f4c27da1-fd3a-4453-9e95-381eec39f222**
-
-> Ese documento contiene **una violación de arquitectura deliberada**, plantada como ejercicio de lectura: una de sus piezas de código contradice de frente una de las restricciones que el mismo documento declara. El código de este repositorio está limpio y pasa las 8 reglas ArchUnit.
-
----
-
-## Cómo se construyó
-
-El proyecto se escribió con Claude Code en una sola sesión, con este reparto:
-
-1. **Primero la especificación, después el código.** Las capas, los puertos y las 27 restricciones se definieron antes de la primera línea de Java.
-2. **Cinco agentes en paralelo**, con alcances de archivos disjuntos: andamiaje Maven; capa de dominio; infraestructura + aplicación + web; pruebas y build verde; la variante con el error. Tres capas se escribieron sin verse entre sí — sólo contra los contratos ya definidos.
-3. **Lo que falló al integrar fue justo lo que la spec no había fijado:** Hibernate mapea `double` a `float(53)` y la migración declaraba `NUMERIC(4,1)`; con `ddl-auto: validate` la app no arrancaba. Se corrigió la entidad, no el esquema.
-4. **Una regla ArchUnit pasó en verde sobre código que sí violaba la arquitectura.** Prohibía depender de `org.springframework.data..`, y el código violador no nombra ese paquete: nombra el repositorio concreto, que vive en `infraestructura`. Se agregó `la_aplicacion_no_depende_de_infraestructura`, que prohíbe el paquete completo. Una prueba de arquitectura vale por lo que comprueba, no por lo que su nombre promete.
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
+- [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---
 
