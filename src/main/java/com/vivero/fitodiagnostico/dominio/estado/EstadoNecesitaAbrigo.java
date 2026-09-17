@@ -1,13 +1,15 @@
 package com.vivero.fitodiagnostico.dominio.estado;
 
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
+import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 
 public final class EstadoNecesitaAbrigo implements EstadoPlanta {
 
     @Override
-    public boolean evaluarEstado(Especie especie, Ambiente ambiente) {
-        return !especie.temperatura().contiene(ambiente.temperaturaC());
+    public boolean evaluarEstado(Especie especie, Medicion medicion) {
+        return !especie.rango(Magnitud.TEMPERATURA).contiene(medicion.valor(Magnitud.TEMPERATURA));
     }
 
     @Override
@@ -16,13 +18,14 @@ public final class EstadoNecesitaAbrigo implements EstadoPlanta {
     }
 
     @Override
-    public String describir(Especie especie, Ambiente ambiente) {
-        double temperaturaC = ambiente.temperaturaC();
-        if (especie.temperatura().porDebajo(temperaturaC)) {
+    public String describir(Especie especie, Medicion medicion) {
+        double temperaturaC = medicion.valor(Magnitud.TEMPERATURA);
+        Rango rango = especie.rango(Magnitud.TEMPERATURA);
+        if (rango.porDebajo(temperaturaC)) {
             return "temperatura " + temperaturaC
-                 + " °C por debajo del mínimo " + especie.temperatura().minimo() + " °C";
+                 + " °C por debajo del mínimo " + rango.minimo() + " °C";
         }
         return "temperatura " + temperaturaC
-             + " °C por encima del máximo " + especie.temperatura().maximo() + " °C";
+             + " °C por encima del máximo " + rango.maximo() + " °C";
     }
 }

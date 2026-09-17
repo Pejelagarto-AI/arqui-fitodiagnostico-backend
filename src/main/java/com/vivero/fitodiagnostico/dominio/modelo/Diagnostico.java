@@ -4,7 +4,7 @@ import java.time.Instant;
 
 public record Diagnostico(
         Especie especie,
-        Ambiente ambiente,
+        Medicion medicion,
         String estado,
         String detalle,
         Instant evaluadoEn) { }

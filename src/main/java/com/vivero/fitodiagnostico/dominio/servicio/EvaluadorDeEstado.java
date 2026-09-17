@@ -17,16 +17,16 @@ public final class EvaluadorDeEstado {
         this.estadosPorPrioridad = List.copyOf(estadosPorPrioridad);
     }
 
-    public Diagnostico evaluar(Especie especie, Ambiente ambiente) {
+    public Diagnostico evaluar(Especie especie, Medicion medicion) {
         EstadoPlanta estado = estadosPorPrioridad.stream()
-                .filter(e -> e.evaluarEstado(especie, ambiente))
+                .filter(e -> e.evaluarEstado(especie, medicion))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("cadena de estados sin terminal"));
 
         return new Diagnostico(
-                especie, ambiente,
+                especie, medicion,
                 estado.obtenerEstado(),
-                estado.describir(especie, ambiente),
+                estado.describir(especie, medicion),
                 Instant.now());
     }
 }

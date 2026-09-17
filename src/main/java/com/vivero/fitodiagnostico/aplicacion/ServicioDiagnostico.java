@@ -1,9 +1,9 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.puerto.RepositorioEspecies;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import org.springframework.stereotype.Service;
@@ -28,12 +28,12 @@ public class ServicioDiagnostico {
     }
 
     @Transactional(readOnly = true)
-    public Diagnostico diagnosticar(String nombreCientifico, Ambiente ambiente) {
+    public Diagnostico diagnosticar(String nombreCientifico, Medicion medicion) {
 
         Especie especie = repositorioEspecies
                 .buscarPorNombreCientifico(nombreCientifico)
                 .orElseThrow(() -> new EspecieNoEncontradaException(nombreCientifico));
 
-        return evaluador.evaluar(especie, ambiente);
+        return evaluador.evaluar(especie, medicion);
     }
 }

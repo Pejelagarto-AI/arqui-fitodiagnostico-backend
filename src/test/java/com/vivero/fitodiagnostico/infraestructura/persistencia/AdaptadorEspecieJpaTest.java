@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.infraestructura.persistencia;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -60,11 +61,11 @@ class AdaptadorEspecieJpaTest {
                 .orElseThrow(() -> new AssertionError("Ficus lyrata debería existir en la semilla"));
 
         assertThat(ficus.nombreComun()).isEqualTo("ficus lira");
-        assertThat(ficus.temperatura().minimo()).isEqualTo(18.0);
-        assertThat(ficus.temperatura().maximo()).isEqualTo(27.0);
-        assertThat(ficus.humedad().minimo()).isEqualTo(45.0);
-        assertThat(ficus.humedad().maximo()).isEqualTo(65.0);
-        assertThat(ficus.luz().minimo()).isEqualTo(1500.0);
-        assertThat(ficus.luz().maximo()).isEqualTo(3000.0);
+        assertThat(ficus.rango(Magnitud.TEMPERATURA).minimo()).isEqualTo(18.0);
+        assertThat(ficus.rango(Magnitud.TEMPERATURA).maximo()).isEqualTo(27.0);
+        assertThat(ficus.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(45.0);
+        assertThat(ficus.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(65.0);
+        assertThat(ficus.rango(Magnitud.LUZ).minimo()).isEqualTo(1500.0);
+        assertThat(ficus.rango(Magnitud.LUZ).maximo()).isEqualTo(3000.0);
     }
 }

@@ -1,8 +1,10 @@
 package com.vivero.fitodiagnostico.web;
 
 import com.vivero.fitodiagnostico.aplicacion.ServicioDiagnostico;
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
+import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.web.dto.RespuestaDiagnostico;
 import com.vivero.fitodiagnostico.web.dto.SolicitudDiagnostico;
 import jakarta.validation.Valid;
@@ -26,12 +28,12 @@ public class DiagnosticoController {
     public ResponseEntity<RespuestaDiagnostico> diagnosticar(
             @Valid @ModelAttribute SolicitudDiagnostico solicitud) {
 
-        Ambiente ambiente = new Ambiente(
-                solicitud.temperaturaC(),
-                solicitud.humedadRelativa(),
-                solicitud.luzLux());
+        Medicion medicion = Medicion.de(
+                new Lectura(Magnitud.TEMPERATURA, solicitud.temperaturaC()),
+                new Lectura(Magnitud.HUMEDAD, solicitud.humedadRelativa()),
+                new Lectura(Magnitud.LUZ, solicitud.luzLux()));
 
-        Diagnostico diagnostico = servicio.diagnosticar(solicitud.especie(), ambiente);
+        Diagnostico diagnostico = servicio.diagnosticar(solicitud.especie(), medicion);
 
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(300, TimeUnit.SECONDS).cachePublic())

@@ -3,9 +3,11 @@ package com.vivero.fitodiagnostico.web;
 import com.vivero.fitodiagnostico.aplicacion.ServicioDiagnostico;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,8 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.EnumMap;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,21 +44,26 @@ class DiagnosticoControllerTest {
     private ServicioDiagnostico servicio;
 
     private static Especie monstera() {
-        return new Especie(
-                "Monstera deliciosa", "costilla de Adán",
-                new Rango(18.0, 29.0), new Rango(55.0, 80.0), new Rango(1000, 2500));
+        Map<Magnitud, Rango> rangos = new EnumMap<>(Magnitud.class);
+        rangos.put(Magnitud.TEMPERATURA, new Rango(18.0, 29.0));
+        rangos.put(Magnitud.HUMEDAD, new Rango(55.0, 80.0));
+        rangos.put(Magnitud.LUZ, new Rango(1000, 2500));
+        return new Especie("Monstera deliciosa", "costilla de Adán", rangos);
     }
 
     @Test
     void devuelve200ConLaFormaExactaDelContratoYCabeceraDeCache() throws Exception {
         Especie especie = monstera();
-        Ambiente ambiente = new Ambiente(19.4, 42.0, 850);
+        Medicion medicion = Medicion.de(
+                new Lectura(Magnitud.TEMPERATURA, 19.4),
+                new Lectura(Magnitud.HUMEDAD, 42.0),
+                new Lectura(Magnitud.LUZ, 850));
         Diagnostico diagnostico = new Diagnostico(
-                especie, ambiente, "NECESITA_AGUA",
+                especie, medicion, "NECESITA_AGUA",
                 "humedad relativa 42.0 % por debajo del mínimo 55.0 %",
                 Instant.parse("2026-09-08T14:22:03Z"));
 
-        when(servicio.diagnosticar(anyString(), any(Ambiente.class))).thenReturn(diagnostico);
+        when(servicio.diagnosticar(anyString(), any(Medicion.class))).thenReturn(diagnostico);
 
         mockMvc.perform(get(RUTA)
                         .param("especie", "Monstera deliciosa")
@@ -95,7 +104,7 @@ class DiagnosticoControllerTest {
 
     @Test
     void devuelve404CuandoLaEspecieNoExiste() throws Exception {
-        when(servicio.diagnosticar(anyString(), any(Ambiente.class)))
+        when(servicio.diagnosticar(anyString(), any(Medicion.class)))
                 .thenThrow(new EspecieNoEncontradaException("Especie inexistens"));
 
         mockMvc.perform(get(RUTA)
@@ -108,7 +117,7 @@ class DiagnosticoControllerTest {
 
     @Test
     void devuelve422CuandoLaLecturaEsFisicamenteImposible() throws Exception {
-        when(servicio.diagnosticar(anyString(), any(Ambiente.class)))
+        when(servicio.diagnosticar(anyString(), any(Medicion.class)))
                 .thenThrow(new LecturaInvalidaException("humedad relativa -5.0 % fuera del rango físico del sensor"));
 
         mockMvc.perform(get(RUTA)

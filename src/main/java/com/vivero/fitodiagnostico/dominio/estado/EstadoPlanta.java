@@ -1,7 +1,7 @@
 package com.vivero.fitodiagnostico.dominio.estado;
 
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 
 /**
  * Estrategia de reconocimiento de estado. Implementaciones sin estado propio:
@@ -10,11 +10,11 @@ import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 public interface EstadoPlanta {
 
     /** true si estas condiciones corresponden a este estado. */
-    boolean evaluarEstado(Especie especie, Ambiente ambiente);
+    boolean evaluarEstado(Especie especie, Medicion medicion);
 
     /** Nombre del estado, tal como viaja en la respuesta. */
     String obtenerEstado();
 
     /** Explicación numérica de por qué aplica. */
-    String describir(Especie especie, Ambiente ambiente);
+    String describir(Especie especie, Medicion medicion);
 }

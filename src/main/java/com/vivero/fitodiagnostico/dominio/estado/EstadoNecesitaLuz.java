@@ -1,13 +1,14 @@
 package com.vivero.fitodiagnostico.dominio.estado;
 
-import com.vivero.fitodiagnostico.dominio.modelo.Ambiente;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 
 public final class EstadoNecesitaLuz implements EstadoPlanta {
 
     @Override
-    public boolean evaluarEstado(Especie especie, Ambiente ambiente) {
-        return especie.luz().porDebajo(ambiente.luzLux());
+    public boolean evaluarEstado(Especie especie, Medicion medicion) {
+        return especie.rango(Magnitud.LUZ).porDebajo(medicion.valor(Magnitud.LUZ));
     }
 
     @Override
@@ -16,8 +17,11 @@ public final class EstadoNecesitaLuz implements EstadoPlanta {
     }
 
     @Override
-    public String describir(Especie especie, Ambiente ambiente) {
-        return "iluminancia " + ambiente.luzLux()
-             + " lux por debajo del mínimo " + especie.luz().minimo() + " lux";
+    public String describir(Especie especie, Medicion medicion) {
+        // La lectura de luz viaja por el sistema como entero (RF-08 / contrato HTTP);
+        // se trunca aquí solo para el texto, igual que antes del refactor.
+        int luzLux = (int) medicion.valor(Magnitud.LUZ);
+        return "iluminancia " + luzLux
+             + " lux por debajo del mínimo " + especie.rango(Magnitud.LUZ).minimo() + " lux";
     }
 }

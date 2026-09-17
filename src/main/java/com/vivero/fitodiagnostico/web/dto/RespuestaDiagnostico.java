@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.web.dto;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import java.time.Instant;
 
 /** Forma exacta de la respuesta 200 (sección 2 del contrato). */
@@ -21,9 +22,9 @@ public record RespuestaDiagnostico(
                         diagnostico.especie().nombreCientifico(),
                         diagnostico.especie().nombreComun()),
                 new Lectura(
-                        diagnostico.ambiente().temperaturaC(),
-                        diagnostico.ambiente().humedadRelativa(),
-                        diagnostico.ambiente().luzLux()),
+                        diagnostico.medicion().valor(Magnitud.TEMPERATURA),
+                        diagnostico.medicion().valor(Magnitud.HUMEDAD),
+                        (int) diagnostico.medicion().valor(Magnitud.LUZ)),
                 diagnostico.estado(),
                 diagnostico.detalle(),
                 diagnostico.evaluadoEn());
