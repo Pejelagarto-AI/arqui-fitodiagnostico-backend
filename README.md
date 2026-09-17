@@ -4,6 +4,8 @@ API REST que recibe **una especie vegetal y tres lecturas ambientales** (tempera
 
 Java 21 · Spring Boot 3.3.13 · H2 en memoria · Flyway · JPA
 
+**Front web:** https://github.com/Pejelagarto-AI/arqui-fitodiagnostico-frontend — cliente independiente, servido desde otro origen.
+
 ---
 
 ## Correrlo
