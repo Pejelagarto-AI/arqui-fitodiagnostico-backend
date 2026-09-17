@@ -11,6 +11,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
+import com.vivero.fitodiagnostico.dominio.servicio.RedactorDeRecomendaciones;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -60,9 +61,13 @@ class DiagnosticoControllerTest {
                 new Lectura(Magnitud.TEMPERATURA, 19.4),
                 new Lectura(Magnitud.HUMEDAD, 42.0),
                 new Lectura(Magnitud.LUZ, 850));
+        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA. Humedad (42 < 55) y
+        // luz (850 < 1000) quedan BAJO; temperatura (19.4) queda OPTIMO.
+        var parametros = new ClasificadorDeParametros().clasificar(especie, medicion);
         Diagnostico diagnostico = new Diagnostico(
                 especie, medicion, EstadoGlobal.EN_RIESGO,
-                new ClasificadorDeParametros().clasificar(especie, medicion),
+                parametros,
+                new RedactorDeRecomendaciones().redactar(parametros),
                 Instant.parse("2026-09-08T14:22:03Z"));
 
         when(servicio.diagnosticar(anyString(), any(Medicion.class))).thenReturn(diagnostico);
@@ -81,12 +86,17 @@ class DiagnosticoControllerTest {
                 .andExpect(jsonPath("$.lectura.luzLux").value(850))
                 .andExpect(jsonPath("$.estado").value("EN_RIESGO"))
                 .andExpect(jsonPath("$.parametros.length()").value(3))
-                .andExpect(jsonPath("$.parametros[1].nombre").value("humedad"))
-                .andExpect(jsonPath("$.parametros[1].valor").value(42.0))
-                .andExpect(jsonPath("$.parametros[1].unidad").value("%"))
-                .andExpect(jsonPath("$.parametros[1].rangoOptimo[0]").value(55.0))
-                .andExpect(jsonPath("$.parametros[1].rangoOptimo[1]").value(80.0))
-                .andExpect(jsonPath("$.parametros[1].estado").value("BAJO"))
+                .andExpect(jsonPath("$.parametros[0].nombre").value("humedad"))
+                .andExpect(jsonPath("$.parametros[0].valor").value(42.0))
+                .andExpect(jsonPath("$.parametros[0].unidad").value("%"))
+                .andExpect(jsonPath("$.parametros[0].rangoOptimo[0]").value(55.0))
+                .andExpect(jsonPath("$.parametros[0].rangoOptimo[1]").value(80.0))
+                .andExpect(jsonPath("$.parametros[0].estado").value("BAJO"))
+                .andExpect(jsonPath("$.recomendaciones.length()").value(2))
+                .andExpect(jsonPath("$.recomendaciones[0]")
+                        .value("Humedad del sustrato 42 % por debajo del rango óptimo 55–80 %: regar moderadamente."))
+                .andExpect(jsonPath("$.recomendaciones[1]")
+                        .value("Luz 850 lux por debajo del rango óptimo 1000–2500 lux: acercarla a una fuente de luz indirecta."))
                 .andExpect(jsonPath("$.evaluadoEn").value("2026-09-08T14:22:03Z"));
     }
 

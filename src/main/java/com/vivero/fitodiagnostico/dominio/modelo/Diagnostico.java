@@ -8,9 +8,11 @@ public record Diagnostico(
         Medicion medicion,
         EstadoGlobal estado,
         List<ResultadoParametro> parametros,
+        List<String> recomendaciones,
         Instant evaluadoEn) {
 
     public Diagnostico {
         parametros = parametros == null ? List.of() : List.copyOf(parametros);
+        recomendaciones = recomendaciones == null ? List.of() : List.copyOf(recomendaciones);
     }
 }

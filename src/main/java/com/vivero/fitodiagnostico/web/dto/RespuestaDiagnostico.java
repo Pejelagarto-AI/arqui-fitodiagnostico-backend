@@ -13,6 +13,7 @@ public record RespuestaDiagnostico(
         Lectura lectura,
         String estado,
         List<Parametro> parametros,
+        List<String> recomendaciones,
         Instant evaluadoEn) {
 
     public record Especie(String nombreCientifico, String nombreComun) { }
@@ -33,6 +34,7 @@ public record RespuestaDiagnostico(
                         (int) diagnostico.medicion().valor(Magnitud.LUZ)),
                 diagnostico.estado().name(),
                 diagnostico.parametros().stream().map(RespuestaDiagnostico::parametroDesde).toList(),
+                diagnostico.recomendaciones(),
                 diagnostico.evaluadoEn());
     }
 

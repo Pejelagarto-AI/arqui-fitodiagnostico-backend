@@ -44,7 +44,8 @@ class EvaluadorDeEstadoTest {
         // esta regla siempre dice CRITICO. Si el evaluador devuelve CRITICO
         // aquí, es porque delega en la regla y no decide nada por su cuenta.
         ReglaDeAgregacion reglaFija = parametros -> EstadoGlobal.CRITICO;
-        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(new ClasificadorDeParametros(), reglaFija);
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(), reglaFija, new RedactorDeRecomendaciones());
 
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 60.0, 1500));
 
@@ -54,33 +55,38 @@ class EvaluadorDeEstadoTest {
     @Test
     void laReglaFijaNoImpideQueLosParametrosSeClasifiquenDeVerdad() {
         ReglaDeAgregacion reglaFija = parametros -> EstadoGlobal.SALUDABLE;
-        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(new ClasificadorDeParametros(), reglaFija);
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(), reglaFija, new RedactorDeRecomendaciones());
 
         // Humedad fuera de rango: la clasificación real debe reflejarlo
         // aunque la regla (doble) ignore el detalle y siempre diga SALUDABLE.
+        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA.
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 40.0, 1500));
 
         assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
         assertThat(diagnostico.parametros()).extracting(ResultadoParametro::clasificacion)
-                .containsExactly(Clasificacion.OPTIMO, Clasificacion.BAJO, Clasificacion.OPTIMO);
+                .containsExactly(Clasificacion.BAJO, Clasificacion.OPTIMO, Clasificacion.OPTIMO);
     }
 
     @Test
     void conLaReglaRealYLasTresLecturasDentroDeRangoDevuelveSaludable() {
         EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
                 new ClasificadorDeParametros(),
-                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO),
+                new RedactorDeRecomendaciones());
 
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 60.0, 1500));
 
         assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(diagnostico.recomendaciones()).isEmpty();
     }
 
     @Test
     void conLaReglaRealYUnaDesviacionSevereDevuelveCritico() {
         EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
                 new ClasificadorDeParametros(),
-                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO),
+                new RedactorDeRecomendaciones());
 
         // humedad 42 -> desviación 0.52 sobre el ejemplo de referencia.
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 42.0, 1500));
@@ -92,7 +98,8 @@ class EvaluadorDeEstadoTest {
     void elDiagnosticoConservaLaEspecieYLaMedicionRecibidas() {
         EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
                 new ClasificadorDeParametros(),
-                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO),
+                new RedactorDeRecomendaciones());
 
         Medicion medicion = medicion(20.0, 60.0, 1500);
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion);
@@ -106,15 +113,31 @@ class EvaluadorDeEstadoTest {
     void elDiagnosticoTraeLosParametrosClasificados() {
         EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
                 new ClasificadorDeParametros(),
-                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO));
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO),
+                new RedactorDeRecomendaciones());
 
-        // Solo la humedad está fuera de rango (BAJO); temperatura y luz OPTIMO.
+        // Solo la humedad está fuera de rango (BAJO); luz y temperatura OPTIMO.
+        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA.
         Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 40.0, 1500));
 
         assertThat(diagnostico.parametros()).extracting(ResultadoParametro::magnitud)
-                .containsExactly(Magnitud.TEMPERATURA, Magnitud.HUMEDAD, Magnitud.LUZ);
+                .containsExactly(Magnitud.HUMEDAD, Magnitud.LUZ, Magnitud.TEMPERATURA);
         assertThat(diagnostico.parametros()).extracting(ResultadoParametro::clasificacion)
-                .containsExactly(Clasificacion.OPTIMO, Clasificacion.BAJO, Clasificacion.OPTIMO);
+                .containsExactly(Clasificacion.BAJO, Clasificacion.OPTIMO, Clasificacion.OPTIMO);
+    }
+
+    @Test
+    void elDiagnosticoTraeUnaRecomendacionPorCadaParametroFueraDeRango() {
+        EvaluadorDeEstado evaluador = new EvaluadorDeEstado(
+                new ClasificadorDeParametros(),
+                new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO),
+                new RedactorDeRecomendaciones());
+
+        // Solo la humedad está fuera de rango (BAJO, 40 < 55).
+        Diagnostico diagnostico = evaluador.evaluar(especie, medicion(20.0, 40.0, 1500));
+
+        assertThat(diagnostico.recomendaciones()).containsExactly(
+                "Humedad del sustrato 40 % por debajo del rango óptimo 55–80 %: regar moderadamente.");
     }
 
     @Test

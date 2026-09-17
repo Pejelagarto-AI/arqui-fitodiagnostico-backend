@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.infraestructura.configuracion;
 
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.RedactorDeRecomendaciones;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeAgregacion;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
 import org.springframework.context.annotation.Bean;
@@ -26,8 +27,14 @@ public class ConfiguracionDominio {
     }
 
     @Bean
+    RedactorDeRecomendaciones redactorDeRecomendaciones() {
+        return new RedactorDeRecomendaciones();
+    }
+
+    @Bean
     EvaluadorDeEstado evaluadorDeEstado(ClasificadorDeParametros clasificadorDeParametros,
-                                         ReglaDeAgregacion reglaDeAgregacion) {
-        return new EvaluadorDeEstado(clasificadorDeParametros, reglaDeAgregacion);
+                                         ReglaDeAgregacion reglaDeAgregacion,
+                                         RedactorDeRecomendaciones redactorDeRecomendaciones) {
+        return new EvaluadorDeEstado(clasificadorDeParametros, reglaDeAgregacion, redactorDeRecomendaciones);
     }
 }

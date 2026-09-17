@@ -58,8 +58,9 @@ class MedicionTest {
                 new Lectura(Magnitud.TEMPERATURA, 20.0),
                 new Lectura(Magnitud.HUMEDAD, 60.0));
 
+        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA.
         assertThat(medicion.lecturas())
                 .extracting(Lectura::magnitud)
-                .containsExactly(Magnitud.TEMPERATURA, Magnitud.HUMEDAD, Magnitud.LUZ);
+                .containsExactly(Magnitud.HUMEDAD, Magnitud.LUZ, Magnitud.TEMPERATURA);
     }
 }

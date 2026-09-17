@@ -41,11 +41,12 @@ class ClasificadorDeParametrosTest {
         List<ResultadoParametro> resultados = clasificador.clasificar(especie, medicion);
 
         assertThat(resultados).hasSize(3);
+        // Orden del enum Magnitud: HUMEDAD, LUZ, TEMPERATURA.
         assertThat(resultados).extracting(ResultadoParametro::magnitud)
-                .containsExactly(Magnitud.TEMPERATURA, Magnitud.HUMEDAD, Magnitud.LUZ);
-        assertThat(resultados.get(0).clasificacion()).isEqualTo(Clasificacion.OPTIMO);
-        assertThat(resultados.get(1).clasificacion()).isEqualTo(Clasificacion.BAJO);
-        assertThat(resultados.get(2).clasificacion()).isEqualTo(Clasificacion.ALTO);
+                .containsExactly(Magnitud.HUMEDAD, Magnitud.LUZ, Magnitud.TEMPERATURA);
+        assertThat(resultados.get(0).clasificacion()).isEqualTo(Clasificacion.BAJO);
+        assertThat(resultados.get(1).clasificacion()).isEqualTo(Clasificacion.ALTO);
+        assertThat(resultados.get(2).clasificacion()).isEqualTo(Clasificacion.OPTIMO);
     }
 
     @Test

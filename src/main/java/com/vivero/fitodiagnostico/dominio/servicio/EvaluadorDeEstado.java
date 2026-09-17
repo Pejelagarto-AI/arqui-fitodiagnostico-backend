@@ -17,15 +17,19 @@ public final class EvaluadorDeEstado {
 
     private final ClasificadorDeParametros clasificador;
     private final ReglaDeAgregacion regla;
+    private final RedactorDeRecomendaciones redactor;
 
-    public EvaluadorDeEstado(ClasificadorDeParametros clasificador, ReglaDeAgregacion regla) {
+    public EvaluadorDeEstado(ClasificadorDeParametros clasificador, ReglaDeAgregacion regla,
+                              RedactorDeRecomendaciones redactor) {
         this.clasificador = clasificador;
         this.regla = regla;
+        this.redactor = redactor;
     }
 
     public Diagnostico evaluar(Especie especie, Medicion medicion) {
         List<ResultadoParametro> parametros = clasificador.clasificar(especie, medicion);
         EstadoGlobal estado = regla.agregar(parametros);
-        return new Diagnostico(especie, medicion, estado, parametros, Instant.now());
+        List<String> recomendaciones = redactor.redactar(parametros);
+        return new Diagnostico(especie, medicion, estado, parametros, recomendaciones, Instant.now());
     }
 }
