@@ -8,6 +8,7 @@ import com.vivero.fitodiagnostico.web.dto.ErrorRespuesta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -109,8 +110,19 @@ public class ManejadorGlobalDeErrores {
         return null;
     }
 
+    /**
+     * {@code Content-Type} explícito (RA1): si se deja que la negociación de
+     * contenido decida, una solicitud con {@code Accept: text/html} no
+     * encuentra un conversor compatible con este cuerpo JSON, lanza
+     * {@link org.springframework.web.HttpMediaTypeNotAcceptableException} y
+     * termina en la página de error por defecto de Spring Boot (HTML). Fijar
+     * el tipo aquí hace que el conversor de Jackson se use sin negociar,
+     * pase lo que pida el cliente.
+     */
     private ResponseEntity<ErrorRespuesta> construir(HttpStatus status, String codigo, String mensaje,
                                                        Map<String, Object> detalle) {
-        return ResponseEntity.status(status).body(new ErrorRespuesta(codigo, mensaje, detalle));
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(new ErrorRespuesta(codigo, mensaje, detalle));
     }
 }
