@@ -10,12 +10,14 @@ Trabajamos con Claude Code (Anthropic) como asistente durante todo el proyecto: 
 
 **4. La regla de agregación la decidimos nosotros.** La IA propuso tres reglas: por conteo, por desviación y "la temperatura manda". **Elegimos desviación** (CRITICO si un parámetro se sale más del 25 % del ancho de su rango), porque mide qué tan lejos está cada parámetro. Descartamos "la temperatura manda" porque nombra una magnitud concreta y un parámetro nuevo obligaría a abrir la regla.
 
-**5. Lo que corregimos de la IA.**
+**5. La IA nos entregó una app que violaba RA1, y no lo vio.** Auditando las restricciones antes de cerrar, encontramos que el backend sí devolvía HTML: la consola de H2 respondía una página entera, y cualquier ruta inexistente devolvía la página blanca de error de Spring cuando el navegador pedía `text/html`. RA1 es descalificación parcial. **Escribimos primero la prueba, no el arreglo:** `SinHtmlTest`, siete casos, que confirmamos fallando 7/7 antes de tocar una línea. Después apagamos la consola de H2, fijamos `application/json` explícito en los controladores y reemplazamos la página de error por un `ErrorController` propio que responde el mismo cuerpo de error del resto de la API. El criterio que nos quedó: una restricción sin prueba no está cumplida, está afirmada.
+
+**6. Lo que corregimos de la IA.**
 - Un agente afirmó que agregar pH tocaría 2 archivos. Al revisar vimos que el DTO y el controlador todavía nombran las tres magnitudes: la cuenta real es mayor. El dominio no se toca; el borde web sí. Quedó documentado como tensión.
 - Nos recomendó un solo repositorio con dos carpetas. **Decidimos dos repositorios**, front y back, por el criterio del curso y para que la frontera del cliente independiente sea visible.
 - Su primera versión exponía el diagnóstico por `GET` con parámetros en la URL. **Pasamos a `POST` con cuerpo JSON** para seguir el contrato sugerido.
 - Al probar el front contra un servidor simulado aparecieron dos bugs en código generado: los mensajes de error salían vacíos, y un `display: flex` dejaba visibles los banners de error aunque estuvieran ocultos. Se corrigieron antes del commit.
 
-**6. Sobre el historial.** El prototipo del punto 1 quedó al principio en un único commit. Lo partimos en las etapas reales en que se construyó (andamiaje, dominio, pruebas, infraestructura, web, corrección de columnas, regla ArchUnit), con su fecha real (8-sep). No inventamos fechas. Todo el trabajo desde el enunciado se commiteó a medida que se hizo.
+**7. Sobre el historial.** El prototipo del punto 1 quedó al principio en un único commit. Lo partimos en las etapas reales en que se construyó (andamiaje, dominio, pruebas, infraestructura, web, corrección de columnas, regla ArchUnit), con su fecha real (8-sep). No inventamos fechas. Todo el trabajo desde el enunciado se commiteó a medida que se hizo.
 
 **Criterio que usamos para aceptar o cambiar:** si una propuesta obligaba a que el dominio supiera de HTTP, del CSV o de la base de datos, o a modificar una clase existente para agregar un parámetro o una regla, la cambiamos.
