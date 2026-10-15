@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.infraestructura.persistencia;
 
 import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.CatalogoEditable;
 import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
 import com.vivero.fitodiagnostico.infraestructura.ContratoFuenteDeEspeciesTest;
 import org.junit.jupiter.api.Test;
@@ -8,7 +9,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,19 +16,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Prueba de integración (sección 11) e implementación JPA del contrato de
  * {@link ContratoFuenteDeEspeciesTest}, contra H2 (perfil por defecto de
  * application.yml, sin Testcontainers). Confirma, además de los casos
- * comunes, que Flyway corrió las migraciones y sembró las cinco especies
- * del Anexo B.
+ * comunes, que Flyway corrió las migraciones (incluida V4, que agrega
+ * {@code activa} y deja la tabla vacía para que el CSV la siembre, D14).
  *
  * <p>Se usa {@code Replace.NONE} para que el test corra contra el datasource
  * H2 ya declarado en application.yml (con {@code spring.flyway.enabled=true}
  * y {@code locations=classpath:db/migration/{vendor}}), en vez de un
  * embebido anónimo que {@code @DataJpaTest} sustituiría por defecto.
- * {@code fitodiagnostico.tabla-referencia=bd} activa el adaptador JPA, que
- * por defecto está apagado (RA-05: la fuente por defecto es el CSV).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@TestPropertySource(properties = "fitodiagnostico.tabla-referencia=bd")
 @Import({AdaptadorEspecieJpa.class, MapeadorEspecie.class})
 class AdaptadorEspecieJpaTest extends ContratoFuenteDeEspeciesTest {
 
@@ -48,8 +45,20 @@ class AdaptadorEspecieJpaTest extends ContratoFuenteDeEspeciesTest {
         return adaptador;
     }
 
+    @Override
+    protected CatalogoEditable catalogoEditable() {
+        return adaptador;
+    }
+
     @Test
-    void flywaySembroLasCincoEspeciesDelAnexoB() {
+    void despuesDeLasMigracionesLaTablaSoloTieneLasCincoEspeciesDelCsvSemilla() {
+        // V2/V3 sembraron desde SQL y V4 vació la tabla; el @BeforeEach del contrato
+        // la llenó otra vez desde el CSV: cinco filas, no diez.
         assertThat(jpaRepository.count()).isEqualTo(5);
+    }
+
+    @Test
+    void laMigracionV4DeclaraActivasLasEspeciesSembradas() {
+        assertThat(jpaRepository.findAll()).allMatch(EspecieEntity::isActiva);
     }
 }

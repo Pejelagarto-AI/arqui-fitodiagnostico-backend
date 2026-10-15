@@ -2,8 +2,11 @@ package com.vivero.fitodiagnostico.web;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -21,18 +24,36 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code webEnvironment = RANDOM_PORT} porque {@code /error} sólo lo dispara
  * el contenedor servlet real cuando la excepción escapa del dispatcher de
  * Spring MVC — MockMvc no lo reproduce.
+ *
+ * <p>Corte 2: con Spring Security delante, los 401 y 403 los escribe un filtro
+ * antes de llegar a Spring MVC, así que ningún manejador de errores del
+ * controlador los cubre; las pruebas de abajo confirman que también salen como
+ * JSON con {@code Accept: text/html}, sin sesión, con una sesión de cliente en
+ * una ruta de administrador y con un token inválido.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 class SinHtmlTest {
 
     @LocalServerPort
     private int puerto;
 
-    private final TestRestTemplate restTemplate = new TestRestTemplate();
+    // El cliente por defecto (HttpURLConnection) lanza una excepción al recibir un 401 en un POST con
+    // cuerpo ("cannot retry due to server authentication"), un artefacto del cliente y no de la API.
+    // El cliente HTTP del JDK devuelve el 401 como cualquier otra respuesta.
+    private final TestRestTemplate restTemplate =
+            new TestRestTemplate(new RestTemplateBuilder().requestFactory(() -> new JdkClientHttpRequestFactory()));
 
     private ResponseEntity<String> pedir(HttpMethod metodo, String ruta, String cuerpo) {
+        return pedirConToken(metodo, ruta, cuerpo, null);
+    }
+
+    private ResponseEntity<String> pedirConToken(HttpMethod metodo, String ruta, String cuerpo, String token) {
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(java.util.List.of(MediaType.TEXT_HTML));
+        if (token != null) {
+            headers.setBearerAuth(token);
+        }
         if (cuerpo != null) {
             headers.setContentType(MediaType.APPLICATION_JSON);
         }
@@ -41,7 +62,10 @@ class SinHtmlTest {
     }
 
     private void verificarNuncaHtml(HttpMethod metodo, String ruta, String cuerpo) {
-        ResponseEntity<String> respuesta = pedir(metodo, ruta, cuerpo);
+        verificarNuncaHtml(pedir(metodo, ruta, cuerpo), metodo, ruta);
+    }
+
+    private void verificarNuncaHtml(ResponseEntity<String> respuesta, HttpMethod metodo, String ruta) {
 
         MediaType tipo = respuesta.getHeaders().getContentType();
         assertThat(tipo)
@@ -93,5 +117,76 @@ class SinHtmlTest {
         MediaType tipo = respuesta.getHeaders().getContentType();
         assertThat(tipo).isNotNull();
         assertThat(tipo.isCompatibleWith(MediaType.TEXT_HTML)).isFalse();
+    }
+
+    // ---- corte 2: seguridad ----
+
+    /** Registra un cliente nuevo por la API real y devuelve su token. */
+    private String tokenDeUnClienteNuevo() {
+        String correo = "sinhtml-" + java.util.UUID.randomUUID().toString().substring(0, 8) + "@vivero.co";
+        HttpHeaders json = new HttpHeaders();
+        json.setContentType(MediaType.APPLICATION_JSON);
+        restTemplate.postForEntity("http://localhost:" + puerto + "/api/v1/auth/registro", new HttpEntity<>(
+                "{\"nombre\":\"Sin Html\",\"correo\":\"" + correo + "\",\"contrasena\":\"clave-larga-1\"}", json),
+                String.class);
+        ResponseEntity<String> sesion = restTemplate.postForEntity("http://localhost:" + puerto + "/api/v1/auth/sesion",
+                new HttpEntity<>("{\"correo\":\"" + correo + "\",\"contrasena\":\"clave-larga-1\"}", json),
+                String.class);
+        return com.jayway.jsonpath.JsonPath.read(sesion.getBody(), "$.token");
+    }
+
+    @Test
+    void sinTokenUnaRutaProtegidaDa401EnJsonAunqueSePidaHtml() {
+        ResponseEntity<String> respuesta = pedir(HttpMethod.GET, "/api/v1/cuenta", null);
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        verificarNuncaHtml(respuesta, HttpMethod.GET, "/api/v1/cuenta");
+        assertThat(respuesta.getBody()).contains("\"error\":\"NO_AUTENTICADO\"");
+    }
+
+    @Test
+    void conUnTokenInvalidoDa401EnJson() {
+        ResponseEntity<String> respuesta = pedirConToken(HttpMethod.GET, "/api/v1/cuenta", null, "esto.no.es.un.jwt");
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        verificarNuncaHtml(respuesta, HttpMethod.GET, "/api/v1/cuenta");
+    }
+
+    @Test
+    void unClienteEnUnaRutaDeAdministracionDa403EnJson() {
+        String token = tokenDeUnClienteNuevo();
+
+        for (String ruta : new String[] {"/api/v1/admin/usuarios", "/api/v1/admin/especies"}) {
+            ResponseEntity<String> respuesta = pedirConToken(HttpMethod.GET, ruta, null, token);
+
+            assertThat(respuesta.getStatusCode()).as(ruta).isEqualTo(HttpStatus.FORBIDDEN);
+            verificarNuncaHtml(respuesta, HttpMethod.GET, ruta);
+            assertThat(respuesta.getBody()).contains("\"error\":\"ACCESO_DENEGADO\"");
+        }
+    }
+
+    @Test
+    void lasRutasAutenticadasConSesionValidaTambienRespondenJsonConAcceptHtml() {
+        String token = tokenDeUnClienteNuevo();
+
+        ResponseEntity<String> respuesta = pedirConToken(HttpMethod.GET, "/api/v1/cuenta", null, token);
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verificarNuncaHtml(respuesta, HttpMethod.GET, "/api/v1/cuenta");
+    }
+
+    @Test
+    void elRegistroConCuerpoInvalidoYElLoginFallidoNuncaDevuelvenHtml() {
+        verificarNuncaHtml(HttpMethod.POST, "/api/v1/auth/registro", "{\"nombre\": 1}");
+        verificarNuncaHtml(HttpMethod.POST, "/api/v1/auth/sesion",
+                "{\"correo\":\"nadie@vivero.co\",\"contrasena\":\"incorrecta-1\"}");
+    }
+
+    @Test
+    void unaRutaInexistenteConSesionNuncaDevuelveHtml() {
+        ResponseEntity<String> respuesta = pedirConToken(HttpMethod.GET, "/api/v1/no-existe", null, tokenDeUnClienteNuevo());
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        verificarNuncaHtml(respuesta, HttpMethod.GET, "/api/v1/no-existe");
     }
 }

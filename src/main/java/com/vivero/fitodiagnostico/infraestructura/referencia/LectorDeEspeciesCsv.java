@@ -3,10 +3,6 @@ package com.vivero.fitodiagnostico.infraestructura.referencia;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,33 +10,25 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
- * Adaptador de {@link RangosPorEspecie} y {@link CatalogoDeEspecies} que lee
- * la tabla de referencia de un CSV en el classpath en vez de una base de
- * datos (RA-05): cambiar la fuente de la tabla de referencia es esta clase,
- * no un cambio en el dominio ni en {@code ServicioDiagnostico}.
+ * Lee la tabla de referencia del Anexo B desde un CSV del classpath y la
+ * entrega como objetos de dominio. Ya NO es un adaptador de los puertos de
+ * lectura (D14): el CSV son datos semilla que {@link SembradorDeEspecies}
+ * copia a la base al arrancar, y la base es la única fuente en ejecución.
+ * Por eso esta clase no implementa {@code RangosPorEspecie} ni
+ * {@code CatalogoDeEspecies} y no tiene condición de activación.
  *
- * <p>Activo por defecto ({@code fitodiagnostico.tabla-referencia=csv} o
- * ausente); se desactiva con {@code fitodiagnostico.tabla-referencia=bd}.
- *
- * <p>El CSV se lee una sola vez, en el constructor. El mapeo de columna por
- * magnitud vive en un único lugar ({@link #PREFIJO_COLUMNA}) y la lectura
- * recorre {@link Magnitud#values()}, así que agregar una magnitud nueva no
- * obliga a tocar la lógica de parseo, solo ese mapa y el CSV.
+ * <p>El mapeo de columna por magnitud vive en un único lugar
+ * ({@link #PREFIJO_COLUMNA}) y la lectura recorre {@link Magnitud#values()},
+ * así que agregar una magnitud nueva no obliga a tocar la lógica de parseo,
+ * solo ese mapa y el CSV.
  */
-@Component
-@ConditionalOnProperty(prefix = "fitodiagnostico", name = "tabla-referencia",
-        havingValue = "csv", matchIfMissing = true)
-public class AdaptadorEspeciesCsv implements RangosPorEspecie, CatalogoDeEspecies {
+public class LectorDeEspeciesCsv {
 
     private static final String RUTA_CSV = "referencia/especies.csv";
     private static final String COLUMNA_NOMBRE = "especie";
@@ -50,33 +38,9 @@ public class AdaptadorEspeciesCsv implements RangosPorEspecie, CatalogoDeEspecie
             Magnitud.LUZ, "luz",
             Magnitud.TEMPERATURA, "temp");
 
-    private final List<Especie> especiesOrdenadas;
-    private final Map<String, Especie> porNombreNormalizado;
-
-    public AdaptadorEspeciesCsv() {
-        List<Especie> cargadas = cargarDesdeClasspath();
-        this.especiesOrdenadas = cargadas.stream()
-                .sorted(Comparator.comparing(Especie::nombre, String.CASE_INSENSITIVE_ORDER))
-                .toList();
-        this.porNombreNormalizado = especiesOrdenadas.stream()
-                .collect(Collectors.toMap(e -> normalizar(e.nombre()), e -> e));
-    }
-
-    @Override
-    public Optional<Especie> buscar(String nombre) {
-        if (nombre == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(porNombreNormalizado.get(normalizar(nombre)));
-    }
-
-    @Override
-    public List<Especie> listar() {
-        return especiesOrdenadas;
-    }
-
-    private static String normalizar(String nombre) {
-        return nombre.toLowerCase(Locale.ROOT);
+    /** Lee el CSV del classpath cada vez que se invoca; falla con un mensaje claro si está mal formado. */
+    public List<Especie> leer() {
+        return cargarDesdeClasspath();
     }
 
     private List<Especie> cargarDesdeClasspath() {

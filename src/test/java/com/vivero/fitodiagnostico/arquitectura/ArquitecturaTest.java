@@ -78,4 +78,23 @@ class ArquitecturaTest {
         noClasses().that().resideInAPackage("..dominio..")
             .should().dependOnClassesThat()
             .resideInAnyPackage("..aplicacion..", "..web..", "..infraestructura..");
+
+    // Corte 2 (RA4): el dominio no conoce la seguridad ni el cifrado. El hash de
+    // contraseñas es un puerto (CifradorDeContrasena); BCrypt vive en infraestructura.
+    // "..crypto.." cubre org.springframework.security.crypto.. y javax.crypto..
+    @ArchTest
+    static final ArchRule el_dominio_no_conoce_seguridad_ni_cifrado =
+        noClasses().that().resideInAPackage("..dominio..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.security..", "..crypto..",
+                    "org.bouncycastle..", "com.nimbusds..");
+
+    // Corte 2 (RA4): el dominio no conoce el transporte WebSocket. Pedirle una lectura
+    // a una maceta será un puerto de salida; que detrás haya un socket es detalle.
+    @ArchTest
+    static final ArchRule el_dominio_no_conoce_websocket =
+        noClasses().that().resideInAPackage("..dominio..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.web.socket..", "jakarta.websocket..",
+                    "javax.websocket..");
 }

@@ -11,6 +11,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Los orígenes permitidos son configurables vía
  * {@code fitodiagnostico.cors.origenes} para no cablear el puerto de
  * desarrollo del front en otros ambientes.
+ *
+ * <p>Con Spring Security delante, el preflight lo atiende el filtro CORS de
+ * seguridad (antes de la autenticación), que reutiliza esta misma
+ * configuración: {@link ConfiguracionSeguridad} activa {@code cors()} sin
+ * definir otra fuente, así que hay una sola lista de orígenes y métodos.
  */
 @Configuration
 public class ConfiguracionCors implements WebMvcConfigurer {
@@ -27,7 +32,9 @@ public class ConfiguracionCors implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(origenes)
-                .allowedMethods("GET", "POST", "OPTIONS")
-                .allowedHeaders("Content-Type");
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                // Authorization: el JWT viaja en esa cabecera; sin permitirla, el navegador
+                // bloquea el preflight de toda petición autenticada del front.
+                .allowedHeaders("Content-Type", "Authorization");
     }
 }

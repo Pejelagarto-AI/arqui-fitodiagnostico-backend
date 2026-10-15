@@ -2,8 +2,14 @@ package com.vivero.fitodiagnostico.web;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
+import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
+import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
 import com.vivero.fitodiagnostico.web.dto.ErrorRespuesta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +22,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.Comparator;
@@ -35,7 +42,8 @@ public class ManejadorGlobalDeErrores {
     private static final Logger log = LoggerFactory.getLogger(ManejadorGlobalDeErrores.class);
 
     /** Orden determinista para reportar el primer campo inválido cuando hay varios (sección 2 del contrato). */
-    private static final List<String> ORDEN_CAMPOS = List.of("especie", "humedad", "luz", "temperatura");
+    private static final List<String> ORDEN_CAMPOS = List.of("especie", "humedad", "luz", "temperatura",
+            "nombre", "correo", "contrasena", "contrasenaActual", "contrasenaNueva", "rangos");
 
     @ExceptionHandler(EspecieNoEncontradaException.class)
     ResponseEntity<ErrorRespuesta> especieNoEncontrada(EspecieNoEncontradaException e) {
@@ -48,6 +56,69 @@ public class ManejadorGlobalDeErrores {
         String campo = e.getMagnitud().name().toLowerCase(Locale.ROOT);
         return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", e.getMessage(),
                 Map.of("campo", campo));
+    }
+
+    // ---- corte 2: cuentas, administración y catálogo editable ----
+
+    /** RN1 (409): conflicto con el estado actual, no un dato mal formado. */
+    @ExceptionHandler(CorreoYaRegistradoException.class)
+    ResponseEntity<ErrorRespuesta> correoDuplicado(CorreoYaRegistradoException e) {
+        return construir(HttpStatus.CONFLICT, "CORREO_YA_REGISTRADO", e.getMessage(),
+                Map.of("campo", "correo"));
+    }
+
+    /** RN4 (409). */
+    @ExceptionHandler(UltimoAdministradorException.class)
+    ResponseEntity<ErrorRespuesta> ultimoAdministrador(UltimoAdministradorException e) {
+        return construir(HttpStatus.CONFLICT, "ULTIMO_ADMINISTRADOR", e.getMessage(), Map.of());
+    }
+
+    /** RF-C3 (409). */
+    @ExceptionHandler(EspecieYaExisteException.class)
+    ResponseEntity<ErrorRespuesta> especieDuplicada(EspecieYaExisteException e) {
+        return construir(HttpStatus.CONFLICT, "ESPECIE_YA_EXISTE", e.getMessage(),
+                Map.of("especie", e.getNombre()));
+    }
+
+    @ExceptionHandler(UsuarioNoEncontradoException.class)
+    ResponseEntity<ErrorRespuesta> usuarioNoEncontrado(UsuarioNoEncontradoException e) {
+        return construir(HttpStatus.NOT_FOUND, "USUARIO_NO_ENCONTRADO", e.getMessage(),
+                Map.of("id", e.getId().toString()));
+    }
+
+    /** Login fallido (401). Mismo código y mensaje para correo inexistente y contraseña errónea. */
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    ResponseEntity<ErrorRespuesta> credencialesInvalidas(CredencialesInvalidasException e) {
+        return construir(HttpStatus.UNAUTHORIZED, "CREDENCIALES_INVALIDAS", e.getMessage(), Map.of());
+    }
+
+    /**
+     * RF-A5. 400 y no 401: el usuario SÍ está autenticado (tiene token válido);
+     * un 401 haría que el front lo tomara por sesión caducada y lo mandara a
+     * iniciar sesión de nuevo.
+     */
+    @ExceptionHandler(ContrasenaActualIncorrectaException.class)
+    ResponseEntity<ErrorRespuesta> contrasenaActualIncorrecta(ContrasenaActualIncorrectaException e) {
+        return construir(HttpStatus.BAD_REQUEST, "CONTRASENA_ACTUAL_INCORRECTA", e.getMessage(),
+                Map.of("campo", "contrasenaActual"));
+    }
+
+    /**
+     * Invariante de dominio violada por datos de entrada (rango invertido, correo sin forma
+     * de dirección, magnitud desconocida): el borde las deja pasar porque solo valida forma
+     * (RA6) y el dominio las rechaza con IllegalArgumentException. Los mensajes son propios
+     * y en español, no de una librería.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<ErrorRespuesta> datoInvalido(IllegalArgumentException e) {
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", e.getMessage(), Map.of());
+    }
+
+    /** Un id de la ruta que no es un UUID. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ErrorRespuesta> parametroDeRutaInvalido(MethodArgumentTypeMismatchException e) {
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO",
+                "el parámetro '" + e.getName() + "' no tiene un formato válido.", Map.of("campo", e.getName()));
     }
 
     /** Bean Validation (@NotBlank/@NotNull): campo ausente, nulo o en blanco. */

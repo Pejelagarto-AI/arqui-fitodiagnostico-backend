@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -26,6 +27,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * sección de errores.
  */
 @WebMvcTest(DiagnosticoController.class)
+@Import(SeguridadDePruebas.class)
 class DiagnosticoControllerTest {
 
     private static final String RUTA = "/api/v1/diagnosticos";
@@ -181,7 +184,9 @@ class DiagnosticoControllerTest {
 
     @Test
     void devuelve405ConCuerpoUniformeParaGet() throws Exception {
-        mockMvc.perform(get(RUTA))
+        // Solo el POST es público (RF-F6). Un GET anónimo recibe 401 antes de llegar al
+        // enrutador (ver SeguridadWebTest); con sesión sí llega y es un 405 de verdad.
+        mockMvc.perform(get(RUTA).with(jwt()))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.error").value("METODO_NO_PERMITIDO"))
                 .andExpect(jsonPath("$.mensaje").isNotEmpty());

@@ -1,12 +1,9 @@
-# fitodiagnostico.tabla-referencia: fuente de la tabla de referencia de
-# especies (RA-05). "csv" (por defecto si se omite la propiedad, vía
-# matchIfMissing) usa infraestructura.referencia.AdaptadorEspeciesCsv, que lee
-# src/main/resources/referencia/especies.csv sin tocar la base de datos. "bd"
-# activa infraestructura.persistencia.AdaptadorEspecieJpa (JPA + Flyway).
-# Tensión conocida: H2 y Flyway arrancan igual en modo csv, porque el
-# datasource y las migraciones de este perfil no dependen de esta propiedad.
-# fitodiagnostico:
-#   tabla-referencia: csv
+# Catálogo de especies (D14): la base de datos es la única fuente en ejecución.
+# El CSV src/main/resources/referencia/especies.csv son datos semilla: la
+# clase infraestructura.referencia.SembradorDeEspecies lo carga a la base al
+# arrancar, solo si la tabla `especie` está vacía. Desde ahí el administrador
+# edita, desactiva y reactiva especies con la API; el CSV no vuelve a leerse.
+# (Ya no existe la propiedad fitodiagnostico.tabla-referencia ni el modo csv.)
 
 # fitodiagnostico.cors.origenes: lista separada por comas de orígenes con
 # permiso de CORS sobre /api/** (RA7, web.ConfiguracionCors). Por defecto
@@ -16,6 +13,26 @@
 # fitodiagnostico:
 #   cors:
 #     origenes: http://localhost:5500,http://127.0.0.1:5500
+
+# Seguridad (corte 2). SIN valores por defecto a propósito: ninguna credencial ni
+# secreto vive en el repositorio fuera del perfil `test` (src/test/resources).
+#   FITO_JWT_SECRETO        obligatoria. Firma de los JWT (HS256), mínimo 32 bytes.
+#                           Si falta, la aplicación no arranca.
+#                           Ej.: export FITO_JWT_SECRETO="$(openssl rand -base64 48)"
+#   FITO_ADMIN_CORREO       correo y contraseña del primer administrador, usados al
+#   FITO_ADMIN_CONTRASENA   arrancar SOLO si todavía no existe ningún administrador.
+#                           Contraseña de al menos 8 caracteres.
+#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token (por defecto PT2H).
+#   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
+fitodiagnostico:
+  seguridad:
+    jwt:
+      secreto: ${FITO_JWT_SECRETO}
+      expiracion: ${FITO_JWT_EXPIRACION:PT2H}
+    bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
+  admin:
+    correo: ${FITO_ADMIN_CORREO:}
+    contrasena: ${FITO_ADMIN_CONTRASENA:}
 
 # RA1: sin esto, un error que por algún motivo no pase por
 # ManejadorGlobalDeErrores ni por web.ControladorDeErrores podría caer en la
@@ -42,7 +59,9 @@ spring:
       add-mappings: false
 
   # Perfil por defecto: H2 en memoria. Útil para desarrollo local y pruebas
-  # de arranque sin depender de un servidor externo.
+  # de arranque sin depender de un servidor externo. Con el modo csv eliminado
+  # (D14) la base siempre es la fuente, así que Flyway y el datasource ya no
+  # son una tensión: se usan en cualquier configuración.
   datasource:
     url: jdbc:h2:mem:fitodiagnostico;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver

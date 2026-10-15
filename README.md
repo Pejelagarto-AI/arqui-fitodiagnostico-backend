@@ -8,23 +8,32 @@ API REST que recibe una especie vegetal y tres lecturas ambientales (humedad del
 
 Solo Java 21. El wrapper trae Maven, no hace falta instalarlo.
 
-```bash
-./mvnw spring-boot:run     # http://localhost:8080, modo csv por defecto
-```
-
-**`fitodiagnostico.tabla-referencia`** decide la fuente de la tabla de referencia: `csv` (por defecto, lee `src/main/resources/referencia/especies.csv`) o `bd` (JPA + Flyway sobre H2 en memoria). Para arrancar en modo bd:
+Desde el corte 2 la aplicación **no arranca sin `FITO_JWT_SECRETO`** (ningún secreto vive en el repositorio fuera del perfil de pruebas):
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.arguments=--fitodiagnostico.tabla-referencia=bd
+export FITO_JWT_SECRETO="$(openssl rand -base64 48)"   # firma de los JWT, mínimo 32 bytes
+export FITO_ADMIN_CORREO="admin@tu-dominio.co"          # primer administrador: solo se usa
+export FITO_ADMIN_CONTRASENA="una-contrasena-larga"     # si todavía no existe ninguno
+./mvnw spring-boot:run     # http://localhost:8080
 ```
 
-Tensión conocida: en modo csv, H2 y Flyway igual arrancan, porque el datasource y las migraciones de este perfil no dependen de esta propiedad.
+La base de datos es la única fuente de las especies en ejecución. `src/main/resources/referencia/especies.csv` son datos semilla: se cargan a la base al arrancar solo si la tabla `especie` está vacía (el modo `tabla-referencia=csv` ya no existe). Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md).
 
 **`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**`. Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
 
 ## Endpoints
 
-Salidas reales, capturadas con la app corriendo.
+Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`. El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
+
+| Módulo | Rutas (corte 2, bloque 1) |
+|---|---|
+| Cuentas | `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `GET/PUT/DELETE /api/v1/cuenta`, `PUT /api/v1/cuenta/contrasena` |
+| Administración de usuarios | `GET /api/v1/admin/usuarios?q=`, `GET/PUT/DELETE /api/v1/admin/usuarios/{id}`, `PUT/DELETE /api/v1/admin/usuarios/{id}/rol-administrador` |
+| Catálogo de especies | `GET/POST /api/v1/admin/especies`, `PUT /api/v1/admin/especies/{nombre}`, `POST /api/v1/admin/especies/{nombre}/desactivar`, `POST .../reactivar` |
+
+`GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
+
+Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
 ### `GET /api/v1/especies`
 
@@ -80,6 +89,10 @@ Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
 |---|---|---|
 | 400 | `PARAMETRO_INVALIDO` | campo ausente/en blanco, valor no numérico, JSON malformado, o lectura físicamente imposible (p. ej. humedad negativa) |
 | 404 | `ESPECIE_NO_SOPORTADA` | la especie no existe en la tabla de referencia |
+| 401 | `NO_AUTENTICADO` / `CREDENCIALES_INVALIDAS` | sin token o token inválido / correo o contraseña incorrectos |
+| 403 | `ACCESO_DENEGADO` | autenticado pero sin el rol que exige la ruta |
+| 404 | `USUARIO_NO_ENCONTRADO` | no existe ese usuario |
+| 409 | `CORREO_YA_REGISTRADO` / `ULTIMO_ADMINISTRADOR` / `ESPECIE_YA_EXISTE` | conflicto con el estado actual |
 | 404 | `RECURSO_NO_ENCONTRADO` | ruta inexistente |
 | 405 | `METODO_NO_PERMITIDO` | método HTTP no soportado por el recurso |
 | 500 | `ERROR_INTERNO` | cualquier otra excepción; nunca expone traza ni SQL |
@@ -96,17 +109,17 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 ## Pruebas
 
 ```bash
-./mvnw test     # 106 pruebas
+./mvnw verify     # 294 pruebas (113 antes del corte 2)
 ```
 
-| Grupo | Pruebas | Qué cubre |
-|---|---|---|
-| Dominio | 69 | JUnit puro, sin Spring: modelo (`Especie`, `Rango`, `Lectura`, `Medicion`, `ResultadoParametro`) y servicios (`ClasificadorDeParametros`, `EvaluadorDeEstado`, `RedactorDeRecomendaciones`, `ReglaPorDesviacion`) |
-| Aplicación | 7 | `ServicioDiagnostico` y `ServicioCatalogo` con dobles en memoria del puerto (sin Mockito) |
-| Contrato de adaptadores | 9 | `ContratoFuenteDeEspeciesTest` corrido contra CSV (JUnit puro) y contra JPA (`@DataJpaTest` con Flyway real) — misma prueba, dos implementaciones (LSP) |
-| Web | 12 | `@WebMvcTest` del controlador de diagnósticos, del de especies y del preflight CORS |
-| ArchUnit | 8 | reglas estructurales de `ArquitecturaTest` (ver `docs/ARQUITECTURA.md`) |
-| Contexto | 1 | `FitodiagnosticoApplicationTests`, carga del `ApplicationContext` |
+| Grupo | Qué cubre |
+|---|---|
+| Dominio (JUnit puro) | modelo (`Especie`, `Usuario`, `Credencial`, `Rango`, ...) y servicios (`PoliticaDeAdministradores`, clasificador, evaluador, ...) |
+| Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion` con dobles en memoria de los puertos (sin Spring ni base) |
+| Contrato de puertos | `ContratoFuenteDeEspeciesTest` (lectura y escritura) contra el adaptador JPA y un doble en memoria: el puerto es sustituible (LSP) |
+| Infraestructura | adaptadores JPA de especies y usuarios con Flyway real, BCrypt, JWT, sembradores |
+| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest` de punta a punta |
+| ArchUnit | 10 reglas de `ArquitecturaTest`: las 8 del corte 1 y 2 nuevas (el dominio no conoce seguridad/cifrado ni WebSocket) |
 
 `scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo el paquete `infraestructura` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita infraestructura para compilar ni para pasar sus pruebas.
 
@@ -125,6 +138,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 ## Documentación
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
+- [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloque 1: mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

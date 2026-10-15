@@ -2,6 +2,8 @@
 
 Arquitectura de Software · U. Sergio Arboleda · 2026-2 · Santiago Ortegón, Santiago Castellanos
 
+> **Estado: corte 1.** El corte 2 cambió partes de este documento; lo vigente está en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Lo que ya no es cierto aquí: (1) ya no hay dos adaptadores de especies seleccionables por propiedad: `AdaptadorEspecieJpa` es el único y el CSV es un dato semilla cargado por `SembradorDeEspecies` (D14); (2) hay seguridad JWT y nuevas rutas protegidas; (3) las reglas ArchUnit son 10, no 8. Las secciones 4 (LSP, DIP) y 5 (i, ii) describen el diseño de dos adaptadores y quedan como registro histórico.
+
 ## 1. Diagrama de paquetes / componentes
 
 ```mermaid

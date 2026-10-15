@@ -1,0 +1,12 @@
+# Perfil `test`: ÚNICO lugar del repositorio con credenciales, y son de
+# desarrollo (no protegen nada). En cualquier otro ambiente salen de variables
+# de entorno (ver application.yml). Las pruebas que levantan el contexto
+# completo activan este perfil con @ActiveProfiles("test").
+fitodiagnostico:
+  seguridad:
+    jwt:
+      secreto: secreto-solo-para-pruebas-no-usar-en-produccion-0123456789
+    bcrypt-coste: 4
+  admin:
+    correo: admin@pruebas.fitodiagnostico.local
+    contrasena: contrasena-de-pruebas-1
