@@ -24,6 +24,16 @@
 #                           Contraseña de al menos 8 caracteres.
 #   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token (por defecto PT2H).
 #   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
+
+# Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
+# de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
+# bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
+#   FITO_SMTP_HOST / FITO_SMTP_PUERTO   servidor SMTP (por defecto localhost:1025, Mailpit).
+#   FITO_SMTP_USUARIO / FITO_SMTP_CONTRASENA   credenciales SMTP; vacías = sin autenticación.
+#   FITO_SMTP_AUTH / FITO_SMTP_STARTTLS   "true" cuando el servidor lo exige (SMTP real).
+#   FITO_CORREO_REMITENTE   dirección "De:" de los correos.
+#   FITO_CORREO_ASINCRONO   "false" para enviar en el mismo hilo (por defecto true).
+#   FITO_FRONT_URL          base de los enlaces de los correos (invitación y restablecimiento).
 fitodiagnostico:
   seguridad:
     jwt:
@@ -33,6 +43,12 @@ fitodiagnostico:
   admin:
     correo: ${FITO_ADMIN_CORREO:}
     contrasena: ${FITO_ADMIN_CONTRASENA:}
+  front:
+    url: ${FITO_FRONT_URL:http://localhost:5500}
+  correo:
+    remitente: ${FITO_CORREO_REMITENTE:no-responder@fitodiagnostico.local}
+    asincrono: ${FITO_CORREO_ASINCRONO:true}
+
 
 # RA1: sin esto, un error que por algún motivo no pase por
 # ManejadorGlobalDeErrores ni por web.ControladorDeErrores podría caer en la
@@ -67,6 +83,22 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+
+  # Correo saliente (D13, D54). Spring Boot crea el JavaMailSender con esto.
+  mail:
+    host: ${FITO_SMTP_HOST:localhost}
+    port: ${FITO_SMTP_PUERTO:1025}
+    username: ${FITO_SMTP_USUARIO:}
+    password: ${FITO_SMTP_CONTRASENA:}
+    properties:
+      mail:
+        smtp:
+          auth: ${FITO_SMTP_AUTH:false}
+          starttls:
+            enable: ${FITO_SMTP_STARTTLS:false}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
   # RA1: la consola web de H2 sirve HTML y no tiene lugar en un backend que
   # solo responde JSON; deshabilitada en todos los perfiles.
