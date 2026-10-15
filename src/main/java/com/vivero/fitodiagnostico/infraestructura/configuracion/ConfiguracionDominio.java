@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.infraestructura.configuracion;
 
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
 import com.vivero.fitodiagnostico.dominio.servicio.RedactorDeRecomendaciones;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeAgregacion;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
@@ -36,5 +37,10 @@ public class ConfiguracionDominio {
                                          ReglaDeAgregacion reglaDeAgregacion,
                                          RedactorDeRecomendaciones redactorDeRecomendaciones) {
         return new EvaluadorDeEstado(clasificadorDeParametros, reglaDeAgregacion, redactorDeRecomendaciones);
+    }
+
+    @Bean
+    PoliticaDeAdministradores politicaDeAdministradores() {
+        return new PoliticaDeAdministradores();
     }
 }
