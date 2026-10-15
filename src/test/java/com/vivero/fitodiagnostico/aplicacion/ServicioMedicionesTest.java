@@ -105,7 +105,7 @@ class ServicioMedicionesTest {
     void elPrimerDiagnosticoNoAvisaNadaAunqueNazcaCritico() {
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionCritica());
 
-        assertThat(mundo.notificador.avisos()).isEmpty();
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).isEmpty();
     }
 
     @Test
@@ -114,7 +114,7 @@ class ServicioMedicionesTest {
 
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionCritica());
 
-        assertThat(mundo.notificador.avisos()).singleElement().satisfies((Aviso aviso) -> {
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).singleElement().satisfies((Aviso aviso) -> {
             assertThat(aviso.tipo()).isEqualTo(TipoDeAviso.CAMBIO_DE_ESTADO);
             assertThat(aviso.destinatarios()).containsExactlyInAnyOrder(dueno, invitado);
             assertThat(aviso.mensaje()).contains("Pepa").contains("SALUDABLE").contains("CRITICO");
@@ -128,7 +128,8 @@ class ServicioMedicionesTest {
 
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionEnRiesgo());
 
-        assertThat(mundo.notificador.avisos().get(0).destinatarios()).isEqualTo(Set.of(dueno));
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO).get(0).destinatarios())
+                .isEqualTo(Set.of(dueno));
     }
 
     @Test
@@ -138,7 +139,7 @@ class ServicioMedicionesTest {
         servicio.registrarManual(dueno, planta.id(), Muestras.medicion(25, 700, 22));   // otro valor, mismo estado
 
         assertThat(mundo.diagnosticos.cuantos()).isEqualTo(3);
-        assertThat(mundo.notificador.avisos()).isEmpty();
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).isEmpty();
     }
 
     @Test
@@ -150,11 +151,46 @@ class ServicioMedicionesTest {
 
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionSaludable());   // primera de ESTA planta
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionSaludable());
-        assertThat(mundo.notificador.avisos()).isEmpty();
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).isEmpty();
 
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionCritica());     // SALUDABLE -> CRITICO
         servicio.registrarManual(dueno, planta.id(), Muestras.medicionSaludable());   // CRITICO -> SALUDABLE
-        assertThat(mundo.notificador.avisos()).hasSize(2);
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).hasSize(2);
+    }
+
+    // ---- RF-G2: DIAGNOSTICO_NUEVO en cada medición ----
+
+    @Test
+    void cadaMedicionEmiteUnDiagnosticoNuevoAlDuenoYALosInvitadosAunqueElEstadoNoCambie() {
+        servicio.registrarManual(dueno, planta.id(), Muestras.medicionEnRiesgo());   // primera: sin cambio de estado
+        servicio.registrarManual(dueno, planta.id(), Muestras.medicionEnRiesgo());   // mismo estado
+
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.DIAGNOSTICO_NUEVO)).hasSize(2)
+                .allSatisfy(aviso -> {
+                    assertThat(aviso.destinatarios()).containsExactlyInAnyOrder(dueno, invitado);
+                    assertThat(aviso.datos()).containsEntry(Aviso.PLANTA_ID, planta.id().toString())
+                            .containsEntry(Aviso.ESTADO, "EN_RIESGO")
+                            .containsEntry(Aviso.ORIGEN, "MANUAL").containsKey(Aviso.REGISTRADO_EN);
+                });
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).isEmpty();
+    }
+
+    @Test
+    void unCambioDeEstadoEmiteLosDosAvisosYAmbosLlevanLaPlanta() {
+        servicio.registrarManual(dueno, planta.id(), Muestras.medicionSaludable());
+        servicio.registrarManual(dueno, planta.id(), Muestras.medicionCritica());
+
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.DIAGNOSTICO_NUEVO)).hasSize(2);
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO)).singleElement()
+                .satisfies(aviso -> assertThat(aviso.datos()).containsEntry(Aviso.PLANTA_ID, planta.id().toString()));
+    }
+
+    @Test
+    void unaMedicionRechazadaNoEmiteNingunAviso() {
+        assertThatThrownBy(() -> servicio.registrarManual(invitado, planta.id(), Muestras.medicionSaludable()))
+                .isInstanceOf(OperacionNoPermitidaException.class);
+
+        assertThat(mundo.notificador.avisos()).isEmpty();
     }
 
     @Test

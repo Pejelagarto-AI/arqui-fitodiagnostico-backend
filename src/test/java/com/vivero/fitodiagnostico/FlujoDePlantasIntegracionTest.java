@@ -147,10 +147,15 @@ class FlujoDePlantasIntegracionTest {
         return jdbc.queryForObject("select count(*) from " + tabla, Integer.class);
     }
 
+    /**
+     * Los avisos "de negocio" que salieron: todos menos DIAGNOSTICO_NUEVO. Desde el bloque 4 cada
+     * medición emite además un DIAGNOSTICO_NUEVO (RF-G2, vista en vivo); lo que estas pruebas
+     * cuentan son los cambios de estado y las pérdidas de acceso.
+     */
     private List<Aviso> avisos() {
         ArgumentCaptor<Aviso> captor = ArgumentCaptor.forClass(Aviso.class);
         verify(notificador, org.mockito.Mockito.atLeast(0)).avisar(captor.capture());
-        return captor.getAllValues();
+        return captor.getAllValues().stream().filter(a -> a.tipo() != TipoDeAviso.DIAGNOSTICO_NUEVO).toList();
     }
 
     // ---- el recorrido pedido: registrarse, crear, medir dos veces cambiando de estado, ver historial, un aviso ----
@@ -173,7 +178,7 @@ class FlujoDePlantasIntegracionTest {
                 .andExpect(jsonPath("$.origen").value("MANUAL"))
                 .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))
                 .andExpect(jsonPath("$.diagnostico.especie").value("potos"));
-        verify(notificador, never()).avisar(org.mockito.ArgumentMatchers.any());
+        assertThat(avisos()).isEmpty();
 
         // Segunda medición: CRITICO. Ahora sí hay un cambio.
         medir(dueno, planta, CRITICA)
@@ -210,7 +215,7 @@ class FlujoDePlantasIntegracionTest {
 
         // Consultar no escribió: seguimos con dos filas y un solo aviso.
         assertThat(contar("diagnostico_planta")).isEqualTo(2);
-        verify(notificador, times(1)).avisar(org.mockito.ArgumentMatchers.any());
+        assertThat(avisos()).hasSize(1);
     }
 
     @Test
@@ -219,7 +224,7 @@ class FlujoDePlantasIntegracionTest {
         medir(dueno, planta, EN_RIESGO).andExpect(status().isCreated());
         medir(dueno, planta, EN_RIESGO).andExpect(status().isCreated());
 
-        verify(notificador, never()).avisar(org.mockito.ArgumentMatchers.any());
+        assertThat(avisos()).isEmpty();
     }
 
     @Test
@@ -487,6 +492,6 @@ class FlujoDePlantasIntegracionTest {
 
         mockMvc.perform(con(delete("/api/v1/plantas/" + planta), dueno)).andExpect(status().isNoContent());
 
-        verify(notificador, never()).avisar(org.mockito.ArgumentMatchers.any());
+        assertThat(avisos()).isEmpty();
     }
 }

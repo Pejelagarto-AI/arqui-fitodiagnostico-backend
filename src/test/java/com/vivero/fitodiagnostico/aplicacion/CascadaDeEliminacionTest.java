@@ -5,11 +5,15 @@ import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
+import com.vivero.fitodiagnostico.dominio.modelo.Invitacion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.SolicitudEspecie;
+import com.vivero.fitodiagnostico.dominio.modelo.SolicitudRestablecimiento;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,5 +77,35 @@ class CascadaDeEliminacionTest {
         mundo.cascada.eliminarLoDe(UUID.randomUUID());
 
         assertThat(mundo.notificador.avisos()).isEmpty();
+    }
+
+    @Test
+    void eliminarUnaPlantaBorraSusInvitacionesPendientesPeroNoLasDeOtraPlanta() {
+        Planta planta = plantaConHistorial("Pepa", dueno);
+        Planta otra = plantaConHistorial("Otra", dueno);
+        mundo.invitaciones.guardar(Invitacion.nueva(planta.id(), "h1", Instant.now(), null));
+        mundo.invitaciones.guardar(Invitacion.nueva(planta.id(), "h2", Instant.now(), null));
+        mundo.invitaciones.guardar(Invitacion.nueva(otra.id(), "h3", Instant.now(), null));
+
+        mundo.cascada.eliminarPlanta(planta);
+
+        assertThat(mundo.invitaciones.todas()).singleElement().satisfies(i -> assertThat(i.plantaId()).isEqualTo(otra.id()));
+    }
+
+    @Test
+    void eliminarLoDeUnUsuarioBorraSusSolicitudesDeEspecieYDeRestablecimientoPeroNoLasAjenas() {
+        Instant ahora = Instant.now();
+        mundo.solicitudes.guardar(SolicitudEspecie.nueva(dueno, "Monstera", null, ahora));
+        mundo.solicitudes.guardar(SolicitudEspecie.nueva(dueno, "Ficus", null, ahora).aprobada("ok", ahora));
+        mundo.solicitudes.guardar(SolicitudEspecie.nueva(invitadoA, "Calathea", null, ahora));
+        mundo.restablecimientos.guardar(SolicitudRestablecimiento.nueva(dueno, "t1", "c1", ahora));
+        mundo.restablecimientos.guardar(SolicitudRestablecimiento.nueva(invitadoA, "t2", "c2", ahora));
+
+        mundo.cascada.eliminarLoDe(dueno);
+
+        assertThat(mundo.solicitudes.deSolicitante(dueno)).isEmpty();
+        assertThat(mundo.solicitudes.deSolicitante(invitadoA)).hasSize(1);
+        assertThat(mundo.restablecimientos.cuantas()).isEqualTo(1);
+        assertThat(mundo.restablecimientos.todas().get(0).usuarioId()).isEqualTo(invitadoA);
     }
 }
