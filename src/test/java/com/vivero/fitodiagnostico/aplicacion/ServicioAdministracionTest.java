@@ -2,13 +2,18 @@ package com.vivero.fitodiagnostico.aplicacion;
 
 import com.vivero.fitodiagnostico.dobles.CifradorFalso;
 import com.vivero.fitodiagnostico.dobles.EspeciesEnMemoria;
+import com.vivero.fitodiagnostico.dobles.Muestras;
+import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
 import com.vivero.fitodiagnostico.dobles.UsuariosEnMemoria;
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
+import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
@@ -28,6 +33,7 @@ class ServicioAdministracionTest {
 
     private UsuariosEnMemoria usuarios;
     private EspeciesEnMemoria especies;
+    private MundoEnMemoria mundo;
     private ServicioAdministracion servicio;
     private Usuario admin;
     private Usuario ana;
@@ -44,7 +50,9 @@ class ServicioAdministracionTest {
     void preparar() {
         usuarios = new UsuariosEnMemoria();
         especies = new EspeciesEnMemoria(new Especie("helecho", rangosValidos()));
-        servicio = new ServicioAdministracion(usuarios, new PoliticaDeAdministradores(), especies, especies);
+        mundo = new MundoEnMemoria();
+        servicio = new ServicioAdministracion(usuarios, new PoliticaDeAdministradores(), especies, especies,
+                mundo.plantas, mundo.cascada);
         CifradorFalso cifrador = new CifradorFalso();
         admin = Usuario.nuevo("Admin", "admin@vivero.co", cifrador.cifrar("x")).conRolAdministrador();
         ana = Usuario.nuevo("Ana", "ana@vivero.co", cifrador.cifrar("x"));
@@ -67,6 +75,37 @@ class ServicioAdministracionTest {
     void detalleDeUnUsuarioInexistenteLanza() {
         assertThatThrownBy(() -> servicio.detalleDeUsuario(UUID.randomUUID()))
                 .isInstanceOf(UsuarioNoEncontradoException.class);
+    }
+
+    @Test
+    void elDetalleIncluyeLasPlantasDelUsuarioYSoloLasSuyas() {
+        // RF-B2.
+        Planta deAna = Planta.nueva(ana.id(), "Pepa", Muestras.especie("helecho"));
+        Planta deAdmin = Planta.nueva(admin.id(), "Otra", Muestras.especie("helecho"));
+        mundo.plantas.guardar(deAna);
+        mundo.plantas.guardar(deAdmin);
+
+        ServicioAdministracion.DetalleDeUsuario detalle = servicio.detalleDeUsuario(ana.id());
+
+        assertThat(detalle.usuario()).isEqualTo(ana);
+        assertThat(detalle.plantas()).containsExactly(deAna);
+        assertThat(servicio.detalleDeUsuario(admin.id()).plantas())
+                .containsExactly(deAdmin);
+    }
+
+    @Test
+    void eliminarUnUsuarioEliminaSusPlantasYAvisaALosInvitados() {
+        // RN12 por la vía del administrador (RF-B4): misma cascada que la baja propia.
+        Planta deAna = Planta.nueva(ana.id(), "Pepa", Muestras.especie("helecho"));
+        mundo.plantas.guardar(deAna);
+        mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(deAna.id(), admin.id()));
+
+        servicio.eliminarUsuario(ana.id());
+
+        assertThat(mundo.plantas.buscar(deAna.id())).isEmpty();
+        assertThat(mundo.accesos.invitadosDe(deAna.id())).isEmpty();
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.ACCESO_PERDIDO)).singleElement()
+                .satisfies(aviso -> assertThat(aviso.destinatarios()).containsExactly(admin.id()));
     }
 
     @Test
