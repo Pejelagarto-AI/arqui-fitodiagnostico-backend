@@ -1,12 +1,9 @@
-# fitodiagnostico.tabla-referencia: fuente de la tabla de referencia de
-# especies (RA-05). "csv" (por defecto si se omite la propiedad, vía
-# matchIfMissing) usa infraestructura.referencia.AdaptadorEspeciesCsv, que lee
-# src/main/resources/referencia/especies.csv sin tocar la base de datos. "bd"
-# activa infraestructura.persistencia.AdaptadorEspecieJpa (JPA + Flyway).
-# Tensión conocida: H2 y Flyway arrancan igual en modo csv, porque el
-# datasource y las migraciones de este perfil no dependen de esta propiedad.
-# fitodiagnostico:
-#   tabla-referencia: csv
+# Catálogo de especies (D14): la base de datos es la única fuente en ejecución.
+# El CSV src/main/resources/referencia/especies.csv son datos semilla: la
+# clase infraestructura.referencia.SembradorDeEspecies lo carga a la base al
+# arrancar, solo si la tabla `especie` está vacía. Desde ahí el administrador
+# edita, desactiva y reactiva especies con la API; el CSV no vuelve a leerse.
+# (Ya no existe la propiedad fitodiagnostico.tabla-referencia ni el modo csv.)
 
 # fitodiagnostico.cors.origenes: lista separada por comas de orígenes con
 # permiso de CORS sobre /api/** (RA7, web.ConfiguracionCors). Por defecto
@@ -42,7 +39,9 @@ spring:
       add-mappings: false
 
   # Perfil por defecto: H2 en memoria. Útil para desarrollo local y pruebas
-  # de arranque sin depender de un servidor externo.
+  # de arranque sin depender de un servidor externo. Con el modo csv eliminado
+  # (D14) la base siempre es la fuente, así que Flyway y el datasource ya no
+  # son una tensión: se usan en cualquier configuración.
   datasource:
     url: jdbc:h2:mem:fitodiagnostico;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver

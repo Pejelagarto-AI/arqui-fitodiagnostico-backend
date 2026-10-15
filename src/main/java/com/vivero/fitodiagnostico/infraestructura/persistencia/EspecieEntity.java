@@ -23,7 +23,10 @@ public class EspecieEntity {
     @Column(name = "temp_min",    columnDefinition = "NUMERIC(6,1)") private double tempMin;
     @Column(name = "temp_max",    columnDefinition = "NUMERIC(6,1)") private double tempMax;
 
-    protected EspecieEntity() { }   // requerido por JPA
+    // D10: el estado de activación vive en la fila; la migración V4 lo declara NOT NULL DEFAULT TRUE.
+    @Column(name = "activa", nullable = false) private boolean activa = true;
+
+    protected EspecieEntity() { }   // requerido por JPA; el mapeador (mismo paquete) también lo usa
 
     public Long getId() {
         return id;
@@ -55,5 +58,32 @@ public class EspecieEntity {
 
     public double getTempMax() {
         return tempMax;
+    }
+
+    public boolean isActiva() {
+        return activa;
+    }
+
+    public void setNombre(String nombre) {
+        this.nombre = nombre;
+    }
+
+    public void setActiva(boolean activa) {
+        this.activa = activa;
+    }
+
+    public void setHumedad(double minimo, double maximo) {
+        this.humedadMin = minimo;
+        this.humedadMax = maximo;
+    }
+
+    public void setLuz(double minimo, double maximo) {
+        this.luzMin = minimo;
+        this.luzMax = maximo;
+    }
+
+    public void setTemperatura(double minimo, double maximo) {
+        this.tempMin = minimo;
+        this.tempMax = maximo;
     }
 }
