@@ -220,4 +220,63 @@ class SinHtmlTest {
                 "{\"especie\":\"potos\",\"humedad\":50,\"luz\":700,\"temperatura\":22}").getStatusCode())
                 .isEqualTo(HttpStatus.OK);
     }
+
+    // ---- corte 2, bloque 4: 415, compartir, recuperación, solicitudes y el endpoint del WebSocket ----
+
+    private ResponseEntity<String> pedirConTipo(HttpMethod metodo, String ruta, String cuerpo, MediaType tipo, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(java.util.List.of(MediaType.TEXT_HTML));
+        headers.setContentType(tipo);
+        if (token != null) {
+            headers.setBearerAuth(token);
+        }
+        return restTemplate.exchange("http://localhost:" + puerto + ruta, metodo, new HttpEntity<>(cuerpo, headers), String.class);
+    }
+
+    @Test
+    void unTipoDeContenidoNoSoportadoDa415EnJsonYNoUn500() {
+        // Ruta pública y ruta autenticada; antes del bloque 4 las dos respondían 500.
+        ResponseEntity<String> publica = pedirConTipo(HttpMethod.POST, "/api/v1/diagnosticos", "hola", MediaType.TEXT_PLAIN, null);
+        ResponseEntity<String> autenticada = pedirConTipo(HttpMethod.POST, "/api/v1/plantas", "<planta/>",
+                MediaType.APPLICATION_XML, tokenDeUnClienteNuevo());
+
+        for (ResponseEntity<String> respuesta : java.util.List.of(publica, autenticada)) {
+            assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+            assertThat(respuesta.getHeaders().getContentType().isCompatibleWith(MediaType.APPLICATION_JSON)).isTrue();
+            assertThat(respuesta.getBody()).contains("\"error\":\"TIPO_DE_CONTENIDO_NO_SOPORTADO\"");
+        }
+    }
+
+    @Test
+    void lasRutasNuevasNuncaDevuelvenHtml() {
+        String planta = "/api/v1/plantas/" + java.util.UUID.randomUUID();
+        verificarNuncaHtml(HttpMethod.POST, "/api/v1/auth/recuperacion", "{\"correo\":\"nadie@vivero.co\"}");
+        verificarNuncaHtml(HttpMethod.POST, "/api/v1/auth/restablecimiento", "{\"token\":\"x\",\"contrasenaNueva\":\"clave-larga-1\"}");
+        verificarNuncaHtml(HttpMethod.POST, "/api/v1/invitaciones/aceptar-con-registro",
+                "{\"token\":\"x\",\"nombre\":\"N\",\"correo\":\"n@vivero.co\",\"contrasena\":\"clave-larga-1\"}");
+        verificarNuncaHtml(HttpMethod.GET, "/api/v1/solicitudes-especie", null);   // 401 sin sesión
+        verificarNuncaHtml(HttpMethod.GET, "/api/v1/admin/solicitudes-especie", null);
+
+        String token = tokenDeUnClienteNuevo();
+        for (String[] caso : new String[][] {
+                {"POST", planta + "/invitaciones"}, {"GET", planta + "/invitaciones"}, {"GET", planta + "/invitados"},
+                {"DELETE", planta + "/invitados/" + java.util.UUID.randomUUID()},
+                {"DELETE", planta + "/invitaciones/" + java.util.UUID.randomUUID()},
+                {"GET", "/api/v1/plantas/compartidas"}, {"DELETE", planta.replace("/plantas/", "/plantas/compartidas/")},
+                {"POST", "/api/v1/invitaciones/aceptar"}, {"POST", "/api/v1/solicitudes-especie"},
+                {"GET", "/api/v1/admin/solicitudes-especie"}}) {
+            ResponseEntity<String> respuesta = pedirConToken(HttpMethod.valueOf(caso[0]), caso[1],
+                    caso[0].equals("POST") ? "{\"token\":\"inexistente\"}" : null, token);
+            verificarNuncaHtml(respuesta, HttpMethod.valueOf(caso[0]), caso[1]);
+        }
+    }
+
+    @Test
+    void elEndpointDelWebSocketConUnGetNormalResponde400EnJsonNoEnTextoPlano() {
+        ResponseEntity<String> respuesta = pedir(HttpMethod.GET, "/ws", null);
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verificarNuncaHtml(respuesta, HttpMethod.GET, "/ws");
+        assertThat(respuesta.getBody()).contains("\"error\"");
+    }
 }

@@ -8,9 +8,15 @@ import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasExcepti
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.InvitacionNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.InvitacionNoVigenteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.InvitadoNoEncontradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.RestablecimientoNoVigenteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.SolicitudNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.SolicitudYaResueltaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
 import com.vivero.fitodiagnostico.web.dto.ErrorRespuesta;
@@ -21,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -46,7 +53,8 @@ public class ManejadorGlobalDeErrores {
 
     /** Orden determinista para reportar el primer campo inválido cuando hay varios (sección 2 del contrato). */
     private static final List<String> ORDEN_CAMPOS = List.of("apodo", "especie", "humedad", "luz", "temperatura",
-            "nombre", "correo", "contrasena", "contrasenaActual", "contrasenaNueva", "rangos");
+            "nombre", "correo", "contrasena", "contrasenaActual", "contrasenaNueva", "rangos",
+            "token", "justificacion", "respuesta");
 
     @ExceptionHandler(EspecieNoEncontradaException.class)
     ResponseEntity<ErrorRespuesta> especieNoEncontrada(EspecieNoEncontradaException e) {
@@ -129,6 +137,65 @@ public class ManejadorGlobalDeErrores {
     ResponseEntity<ErrorRespuesta> especieDescontinuada(EspecieInactivaException e) {
         return construir(HttpStatus.CONFLICT, "ESPECIE_DESCONTINUADA", e.getMessage(),
                 Map.of("especie", e.getNombre()));
+    }
+
+    // ---- corte 2, bloque 4: compartir, recuperación y solicitudes de especie ----
+
+    /** El token no corresponde a ninguna invitación, o la invitación no es de esa planta. */
+    @ExceptionHandler(InvitacionNoEncontradaException.class)
+    ResponseEntity<ErrorRespuesta> invitacionNoEncontrada(InvitacionNoEncontradaException e) {
+        return construir(HttpStatus.NOT_FOUND, "INVITACION_NO_ENCONTRADA", e.getMessage(), Map.of());
+    }
+
+    /**
+     * RN13 (410 Gone): el enlace existió pero ya no sirve. El código dice cuál de los
+     * tres casos fue (ya aceptada, caducada, revocada) para que el front muestre el mensaje correcto.
+     */
+    @ExceptionHandler(InvitacionNoVigenteException.class)
+    ResponseEntity<ErrorRespuesta> invitacionNoVigente(InvitacionNoVigenteException e) {
+        String codigo = switch (e.getEstado()) {
+            case ACEPTADA -> "INVITACION_YA_ACEPTADA";
+            case CADUCADA -> "INVITACION_CADUCADA";
+            case REVOCADA -> "INVITACION_REVOCADA";
+            case PENDIENTE -> "INVITACION_NO_VIGENTE";
+        };
+        return construir(HttpStatus.GONE, codigo, e.getMessage(), Map.of("estado", e.getEstado().name()));
+    }
+
+    /** RF-E4: ese usuario no es invitado de la planta. */
+    @ExceptionHandler(InvitadoNoEncontradoException.class)
+    ResponseEntity<ErrorRespuesta> invitadoNoEncontrado(InvitadoNoEncontradoException e) {
+        return construir(HttpStatus.NOT_FOUND, "INVITADO_NO_ENCONTRADO", e.getMessage(),
+                Map.of("id", e.getId().toString()));
+    }
+
+    /** RN14 (410): un solo código para enlace inexistente, usado, caducado o invalidado. */
+    @ExceptionHandler(RestablecimientoNoVigenteException.class)
+    ResponseEntity<ErrorRespuesta> restablecimientoNoVigente(RestablecimientoNoVigenteException e) {
+        return construir(HttpStatus.GONE, "RESTABLECIMIENTO_NO_VIGENTE", e.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(SolicitudNoEncontradaException.class)
+    ResponseEntity<ErrorRespuesta> solicitudNoEncontrada(SolicitudNoEncontradaException e) {
+        return construir(HttpStatus.NOT_FOUND, "SOLICITUD_NO_ENCONTRADA", e.getMessage(),
+                Map.of("id", e.getId().toString()));
+    }
+
+    /** RF-H4 (409): una resolución no se cambia. */
+    @ExceptionHandler(SolicitudYaResueltaException.class)
+    ResponseEntity<ErrorRespuesta> solicitudYaResuelta(SolicitudYaResueltaException e) {
+        return construir(HttpStatus.CONFLICT, "SOLICITUD_YA_RESUELTA", e.getMessage(),
+                Map.of("estado", e.getEstado().name()));
+    }
+
+    /**
+     * 415: el cuerpo no llegó como JSON (RA1: la API solo habla JSON). Sin este manejador
+     * caía en el genérico y respondía 500 por algo que es culpa del cliente (D60).
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ErrorRespuesta> tipoDeContenidoNoSoportado(HttpMediaTypeNotSupportedException e) {
+        return construir(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "TIPO_DE_CONTENIDO_NO_SOPORTADO",
+                "el cuerpo debe enviarse como application/json.", Map.of());
     }
 
     /**

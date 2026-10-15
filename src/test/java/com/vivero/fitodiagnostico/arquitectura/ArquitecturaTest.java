@@ -119,4 +119,39 @@ class ArquitecturaTest {
             .or().haveSimpleName("DetectorDeCambioDeEstado")
             .or().haveSimpleName("PoliticaDeAdministradores")
             .should().dependOnClassesThat().resideInAPackage("..dominio.puerto..");
+
+    // Corte 2, bloque 4 (RA4, RA5): el dominio no conoce el correo. Avisar es el puerto Notificador;
+    // que detrás haya SMTP, y con qué librería, es un adaptador de infraestructura.
+    @ArchTest
+    static final ArchRule el_dominio_no_conoce_el_correo =
+        noClasses().that().resideInAPackage("..dominio..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.mail..", "jakarta.mail..", "javax.mail..");
+
+    // Corte 2, bloque 4 (RA5): correo, WebSocket y mensajería STOMP solo se nombran en infraestructura.
+    // Es lo que hace cierta la pregunta de mutación "si el WebSocket pasa a Server-Sent Events, ¿qué cambia?":
+    // ni la aplicación ni la web conocen el transporte de la vista en vivo ni el del correo.
+    @ArchTest
+    static final ArchRule correo_y_websocket_solo_en_infraestructura =
+        noClasses().that().resideOutsideOfPackage("..infraestructura..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.mail..", "jakarta.mail..", "javax.mail..",
+                    "org.springframework.web.socket..", "org.springframework.messaging..",
+                    "jakarta.websocket..", "javax.websocket..");
+
+    // Corte 2, bloque 4 (D57): la aplicación avisa por el puerto y nada más. Que los avisos esperen al
+    // commit es un decorador de infraestructura; si un servicio nombrara el decorador o los eventos
+    // transaccionales de Spring, el "después del commit" dejaría de ser invisible para la aplicación.
+    @ArchTest
+    static final ArchRule la_aplicacion_no_conoce_la_sincronizacion_de_transacciones =
+        noClasses().that().resideInAPackage("..aplicacion..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.transaction.support..", "org.springframework.context.event..")
+            .orShould().dependOnClassesThat().haveSimpleName("ApplicationEventPublisher");
+
+    // Corte 2, bloque 4 (D51): el token de un enlace nunca es un campo de una entidad JPA: solo existe su huella.
+    @ArchTest
+    static final ArchRule las_entidades_no_guardan_tokens_en_claro =
+        noFields().that().areDeclaredInClassesThat().areAnnotatedWith(Entity.class)
+            .should().haveNameMatching("(?i)token|tokenEnClaro|contrasena");
 }

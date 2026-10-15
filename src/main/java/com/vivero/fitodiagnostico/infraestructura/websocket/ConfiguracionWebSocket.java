@@ -42,7 +42,9 @@ public class ConfiguracionWebSocket implements WebSocketMessageBrokerConfigurer 
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registro) {
-        registro.addEndpoint("/ws").setAllowedOrigins(origenes);
+        registro.addEndpoint("/ws")
+                .setHandshakeHandler(new HandshakeConErroresJson())
+                .setAllowedOrigins(origenes);
     }
 
     @Override
