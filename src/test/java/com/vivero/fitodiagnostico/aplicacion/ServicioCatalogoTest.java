@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Prueba unitaria (sección 11): con un doble de {@link CatalogoDeEspecies}
- * (funcional, sin Mockito) para confirmar que {@link ServicioCatalogo} solo
- * delega, sin tocar Spring Data ni la entidad JPA (RA-02, RA-04).
+ * (funcional, sin Mockito) para confirmar que {@link ServicioCatalogo} delega
+ * y filtra las inactivas solo en el listado público (D8), sin tocar Spring Data ni la entidad JPA (RA-02, RA-04).
  */
 class ServicioCatalogoTest {
 
@@ -34,6 +34,25 @@ class ServicioCatalogoTest {
         ServicioCatalogo servicio = new ServicioCatalogo(catalogoDoble);
 
         assertThat(servicio.listar()).isEqualTo(especies);
+        assertThat(servicio.listarTodas()).isEqualTo(especies);
+    }
+
+    @Test
+    void elListadoPublicoFiltraLasEspeciesInactivas() {
+        Especie activa = especie("helecho");
+        Especie descontinuada = especie("lavanda").desactivada();
+        ServicioCatalogo servicio = new ServicioCatalogo(() -> List.of(activa, descontinuada));
+
+        assertThat(servicio.listar()).containsExactly(activa);
+    }
+
+    @Test
+    void elListadoDeAdministracionIncluyeLasInactivas() {
+        Especie activa = especie("helecho");
+        Especie descontinuada = especie("lavanda").desactivada();
+        ServicioCatalogo servicio = new ServicioCatalogo(() -> List.of(activa, descontinuada));
+
+        assertThat(servicio.listarTodas()).containsExactly(activa, descontinuada);
     }
 
     @Test

@@ -119,4 +119,19 @@ class ServicioDiagnosticoTest {
 
         assertThat(llamadas.get()).isEqualTo(1);
     }
+
+    @Test
+    void unaEspecieDescontinuadaSigueSiendoDiagnosticable() {
+        // RN11 / D10: desactivar una especie solo la saca del listado público.
+        // Las plantas que ya la usan se siguen diagnosticando con normalidad.
+        ServicioDiagnostico servicio = servicioCon(nombre -> Optional.of(sansevieria().desactivada()));
+
+        var diagnostico = servicio.diagnosticar("sansevieria", Medicion.de(
+                new Lectura(Magnitud.HUMEDAD, 32.5),
+                new Lectura(Magnitud.LUZ, 850),
+                new Lectura(Magnitud.TEMPERATURA, 21.0)));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(diagnostico.especie().activa()).isFalse();
+    }
 }
