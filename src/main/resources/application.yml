@@ -14,6 +14,26 @@
 #   cors:
 #     origenes: http://localhost:5500,http://127.0.0.1:5500
 
+# Seguridad (corte 2). SIN valores por defecto a propósito: ninguna credencial ni
+# secreto vive en el repositorio fuera del perfil `test` (src/test/resources).
+#   FITO_JWT_SECRETO        obligatoria. Firma de los JWT (HS256), mínimo 32 bytes.
+#                           Si falta, la aplicación no arranca.
+#                           Ej.: export FITO_JWT_SECRETO="$(openssl rand -base64 48)"
+#   FITO_ADMIN_CORREO       correo y contraseña del primer administrador, usados al
+#   FITO_ADMIN_CONTRASENA   arrancar SOLO si todavía no existe ningún administrador.
+#                           Contraseña de al menos 8 caracteres.
+#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token (por defecto PT2H).
+#   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
+fitodiagnostico:
+  seguridad:
+    jwt:
+      secreto: ${FITO_JWT_SECRETO}
+      expiracion: ${FITO_JWT_EXPIRACION:PT2H}
+    bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
+  admin:
+    correo: ${FITO_ADMIN_CORREO:}
+    contrasena: ${FITO_ADMIN_CONTRASENA:}
+
 # RA1: sin esto, un error que por algún motivo no pase por
 # ManejadorGlobalDeErrores ni por web.ControladorDeErrores podría caer en la
 # página blanca (whitelabel) de Spring Boot, que es HTML. Con

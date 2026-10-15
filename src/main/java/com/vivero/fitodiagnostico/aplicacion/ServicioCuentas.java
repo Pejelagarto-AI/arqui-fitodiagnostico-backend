@@ -108,11 +108,17 @@ public class ServicioCuentas {
      * confianza, y la alternativa sería dejar el sistema sin administrador.
      *
      * @return {@code true} si creó o ascendió a alguien
+     * @throws IllegalStateException si no hay administrador y faltan correo o contraseña: el
+     *         sistema arrancaría sin nadie que pueda administrarlo, así que se prefiere no arrancar
      */
     @Transactional
     public boolean asegurarAdministradorInicial(String correo, String contrasena) {
         if (usuarios.contarAdministradores() > 0) {
             return false;
+        }
+        if (correo == null || correo.isBlank() || contrasena == null || contrasena.isBlank()) {
+            throw new IllegalStateException("no hay ningún administrador: define FITO_ADMIN_CORREO "
+                    + "y FITO_ADMIN_CONTRASENA para crear el primero");
         }
         String correoNormalizado = Usuario.normalizarCorreo(correo);
         Usuario administrador = usuarios.buscarPorCorreo(correoNormalizado)

@@ -189,4 +189,20 @@ class ServicioCuentasTest {
         assertThat(ascendida.esAdministrador()).isTrue();
         assertThat(ascendida.credencial().hash()).isEqualTo("hash:clave-larga-1");
     }
+
+    @Test
+    void sinAdministradorNiCredencialesDeArranqueSePrefiereNoArrancar() {
+        assertThatThrownBy(() -> servicio.asegurarAdministradorInicial("", ""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("FITO_ADMIN_CORREO");
+        assertThatThrownBy(() -> servicio.asegurarAdministradorInicial(null, null))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void conUnAdministradorExistenteLasCredencialesDeArranqueNoHacenFalta() {
+        servicio.asegurarAdministradorInicial("admin@vivero.co", "clave-admin-1");
+
+        assertThat(servicio.asegurarAdministradorInicial("", "")).isFalse();
+    }
 }
