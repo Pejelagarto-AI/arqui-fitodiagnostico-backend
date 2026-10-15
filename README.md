@@ -25,13 +25,17 @@ La base de datos es la única fuente de las especies en ejecución. `src/main/re
 
 Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`. El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
 
-| Módulo | Rutas (corte 2, bloque 1) |
+| Módulo | Rutas (corte 2, bloques 1 y 3) |
 |---|---|
 | Cuentas | `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `GET/PUT/DELETE /api/v1/cuenta`, `PUT /api/v1/cuenta/contrasena` |
 | Administración de usuarios | `GET /api/v1/admin/usuarios?q=`, `GET/PUT/DELETE /api/v1/admin/usuarios/{id}`, `PUT/DELETE /api/v1/admin/usuarios/{id}/rol-administrador` |
 | Catálogo de especies | `GET/POST /api/v1/admin/especies`, `PUT /api/v1/admin/especies/{nombre}`, `POST /api/v1/admin/especies/{nombre}/desactivar`, `POST .../reactivar` |
+| Plantas | `POST/GET /api/v1/plantas`, `GET/PUT/DELETE /api/v1/plantas/{id}` |
+| Mediciones y diagnóstico de una planta | `POST /api/v1/plantas/{id}/mediciones` (solo el dueño, origen `MANUAL`), `GET /api/v1/plantas/{id}/diagnostico` (el vigente; sin diagnósticos responde 200 con `hayDiagnostico: false`), `GET /api/v1/plantas/{id}/diagnosticos?pagina=0&tamano=20` (historial paginado, el más reciente primero; `tamano` de 1 a 100) |
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
+
+Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura, que llega con el bloque de invitaciones) puede consultar pero no editar, eliminar ni medir (403). Registrar una medición guarda el diagnóstico en el historial y, si el estado global cambió respecto del anterior, avisa al dueño y a los invitados (por ahora, una línea en el registro de la aplicación). Eliminar una planta, o una cuenta, elimina sus plantas, su historial y sus accesos. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
 
 Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
@@ -92,7 +96,9 @@ Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
 | 401 | `NO_AUTENTICADO` / `CREDENCIALES_INVALIDAS` | sin token o token inválido / correo o contraseña incorrectos |
 | 403 | `ACCESO_DENEGADO` | autenticado pero sin el rol que exige la ruta |
 | 404 | `USUARIO_NO_ENCONTRADO` | no existe ese usuario |
-| 409 | `CORREO_YA_REGISTRADO` / `ULTIMO_ADMINISTRADOR` / `ESPECIE_YA_EXISTE` | conflicto con el estado actual |
+| 404 | `PLANTA_NO_ENCONTRADA` | la planta no existe **o** no es tuya ni compartida contigo (mismo cuerpo en ambos casos) |
+| 403 | `OPERACION_NO_PERMITIDA` | un invitado intenta editar, eliminar o medir una planta ajena que sí puede ver |
+| 409 | `CORREO_YA_REGISTRADO` / `ULTIMO_ADMINISTRADOR` / `ESPECIE_YA_EXISTE` / `ESPECIE_DESCONTINUADA` | conflicto con el estado actual (`ESPECIE_DESCONTINUADA`: registrar una planta, o cambiarla, a una especie ya desactivada) |
 | 404 | `RECURSO_NO_ENCONTRADO` | ruta inexistente |
 | 405 | `METODO_NO_PERMITIDO` | método HTTP no soportado por el recurso |
 | 500 | `ERROR_INTERNO` | cualquier otra excepción; nunca expone traza ni SQL |
@@ -109,17 +115,17 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 ## Pruebas
 
 ```bash
-./mvnw verify     # 294 pruebas (113 antes del corte 2)
+./mvnw verify     # 441 pruebas (113 antes del corte 2, 294 antes del bloque de plantas)
 ```
 
 | Grupo | Qué cubre |
 |---|---|
 | Dominio (JUnit puro) | modelo (`Especie`, `Usuario`, `Credencial`, `Rango`, ...) y servicios (`PoliticaDeAdministradores`, clasificador, evaluador, ...) |
-| Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion` con dobles en memoria de los puertos (sin Spring ni base) |
+| Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion`, `ServicioPlantas`, `ServicioMediciones`, `ServicioConsultaDeDiagnosticos` y la cascada de eliminación con dobles en memoria de los puertos (sin Spring ni base) |
 | Contrato de puertos | `ContratoFuenteDeEspeciesTest` (lectura y escritura) contra el adaptador JPA y un doble en memoria: el puerto es sustituible (LSP) |
-| Infraestructura | adaptadores JPA de especies y usuarios con Flyway real, BCrypt, JWT, sembradores |
-| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest` de punta a punta |
-| ArchUnit | 10 reglas de `ArquitecturaTest`: las 8 del corte 1 y 2 nuevas (el dominio no conoce seguridad/cifrado ni WebSocket) |
+| Infraestructura | adaptadores JPA de especies, usuarios, plantas, accesos e historial con Flyway real (V1 a V7), BCrypt, JWT, sembradores, notificador por registro |
+| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest` y `FlujoDePlantasIntegracionTest` de punta a punta |
+| ArchUnit | 12 reglas de `ArquitecturaTest`: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket) y 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) |
 
 `scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo el paquete `infraestructura` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita infraestructura para compilar ni para pasar sus pruebas.
 
@@ -138,7 +144,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 ## Documentación
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
-- [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloque 1: mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
+- [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo) y 3 (plantas, mediciones, cambio de estado, cascadas): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

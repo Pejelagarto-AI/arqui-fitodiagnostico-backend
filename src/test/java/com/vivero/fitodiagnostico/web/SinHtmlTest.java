@@ -189,4 +189,35 @@ class SinHtmlTest {
         assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         verificarNuncaHtml(respuesta, HttpMethod.GET, "/api/v1/no-existe");
     }
+
+    // ---- corte 2, bloque 3: plantas ----
+
+    @Test
+    void lasRutasDePlantasNuncaDevuelvenHtmlConSesionNiSinElla() {
+        String ruta = "/api/v1/plantas/" + java.util.UUID.randomUUID();
+        verificarNuncaHtml(HttpMethod.GET, "/api/v1/plantas", null);   // 401 sin sesión
+
+        String token = tokenDeUnClienteNuevo();
+        for (String[] caso : new String[][] {
+                {"GET", ruta}, {"GET", ruta + "/diagnostico"}, {"GET", ruta + "/diagnosticos"},
+                {"GET", ruta + "/diagnosticos?pagina=-1"}, {"GET", "/api/v1/plantas/no-es-uuid"},
+                {"DELETE", ruta}, {"POST", ruta + "/mediciones"}, {"POST", "/api/v1/plantas"}}) {
+            ResponseEntity<String> respuesta = pedirConToken(HttpMethod.valueOf(caso[0]), caso[1],
+                    caso[0].equals("POST") ? "{\"humedad\": \"x\"}" : null, token);
+            verificarNuncaHtml(respuesta, HttpMethod.valueOf(caso[0]), caso[1]);
+        }
+    }
+
+    @Test
+    void unaPlantaInexistenteDa404EnJsonYElDiagnosticoSueltoSigueSiendoPublico() {
+        ResponseEntity<String> respuesta = pedirConToken(HttpMethod.GET,
+                "/api/v1/plantas/" + java.util.UUID.randomUUID(), null, tokenDeUnClienteNuevo());
+
+        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(respuesta.getBody()).contains("\"error\":\"PLANTA_NO_ENCONTRADA\"");
+        // D6: sin token, el endpoint suelto sigue respondiendo.
+        assertThat(pedir(HttpMethod.POST, "/api/v1/diagnosticos",
+                "{\"especie\":\"potos\",\"humedad\":50,\"luz\":700,\"temperatura\":22}").getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
 }

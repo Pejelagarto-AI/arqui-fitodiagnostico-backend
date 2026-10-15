@@ -118,6 +118,19 @@ class SeguridadWebTest {
     }
 
     @Test
+    void todasLasRutasDePlantasDan401SinToken() throws Exception {
+        for (MockHttpServletRequestBuilder peticion : List.of(
+                post("/api/v1/plantas"), get("/api/v1/plantas"), get("/api/v1/plantas/" + UN_ID),
+                put("/api/v1/plantas/" + UN_ID), delete("/api/v1/plantas/" + UN_ID),
+                post("/api/v1/plantas/" + UN_ID + "/mediciones"),
+                get("/api/v1/plantas/" + UN_ID + "/diagnostico"),
+                get("/api/v1/plantas/" + UN_ID + "/diagnosticos"))) {
+            mockMvc.perform(peticion.contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
     void unaRutaQueNoExisteSinTokenDa401NoUn404() throws Exception {
         // anyRequest().authenticated(): por defecto todo está cerrado, también lo que aún no existe.
         mockMvc.perform(get("/api/v1/plantas"))

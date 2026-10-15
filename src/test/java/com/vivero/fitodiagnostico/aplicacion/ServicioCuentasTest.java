@@ -1,12 +1,17 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
 import com.vivero.fitodiagnostico.dobles.CifradorFalso;
+import com.vivero.fitodiagnostico.dobles.Muestras;
+import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
 import com.vivero.fitodiagnostico.dobles.UsuariosEnMemoria;
 import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
+import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
+import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeSesion;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
@@ -27,13 +32,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ServicioCuentasTest {
 
     private UsuariosEnMemoria usuarios;
+    private MundoEnMemoria mundo;
     private ServicioCuentas servicio;
 
     @BeforeEach
     void preparar() {
         usuarios = new UsuariosEnMemoria();
+        mundo = new MundoEnMemoria();
         servicio = new ServicioCuentas(usuarios, new CifradorFalso(), new PoliticaDeAdministradores(),
-                usuario -> new TokenDeSesion("token-de-" + usuario.correo(), Instant.parse("2030-01-01T00:00:00Z")));
+                usuario -> new TokenDeSesion("token-de-" + usuario.correo(), Instant.parse("2030-01-01T00:00:00Z")),
+                mundo.cascada);
     }
 
     @Test
@@ -204,5 +212,41 @@ class ServicioCuentasTest {
         servicio.asegurarAdministradorInicial("admin@vivero.co", "clave-admin-1");
 
         assertThat(servicio.asegurarAdministradorInicial("", "")).isFalse();
+    }
+
+    // ---- cascada de plantas (RN12, D11) ----
+
+    @Test
+    void eliminarLaCuentaEliminaSusPlantasConHistorialYAccesosYAvisaALosInvitados() {
+        Usuario ana = servicio.registrar("Ana", "ana@vivero.co", "clave-larga-1");
+        Usuario beto = servicio.registrar("Beto", "beto@vivero.co", "clave-larga-1");
+        Planta propia = Planta.nueva(ana.id(), "Pepa", Muestras.especie("helecho"));
+        Planta ajena = Planta.nueva(beto.id(), "Tuya", Muestras.especie("helecho"));
+        mundo.plantas.guardar(propia);
+        mundo.plantas.guardar(ajena);
+        mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(propia.id(), beto.id()));   // Beto es invitado de Ana
+        mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(ajena.id(), ana.id()));     // Ana es invitada de Beto
+
+        servicio.eliminar(ana.id());
+
+        assertThat(mundo.plantas.buscar(propia.id())).isEmpty();
+        assertThat(mundo.plantas.buscar(ajena.id())).isPresent();   // la planta de Beto sigue
+        assertThat(mundo.accesos.invitadosDe(propia.id())).isEmpty();
+        assertThat(mundo.accesos.invitadosDe(ajena.id())).isEmpty();   // Ana ya no es invitada en ninguna parte
+        assertThat(mundo.notificador.avisosDeTipo(TipoDeAviso.ACCESO_PERDIDO)).singleElement()
+                .satisfies(aviso -> assertThat(aviso.destinatarios()).containsExactly(beto.id()));
+        assertThat(usuarios.buscarPorId(ana.id())).isEmpty();
+    }
+
+    @Test
+    void siLaRN4ImpideEliminarNoSeToqueNiUnaPlanta() {
+        servicio.asegurarAdministradorInicial("admin@vivero.co", "clave-larga-1");
+        Usuario admin = usuarios.buscarPorCorreo("admin@vivero.co").orElseThrow();
+        Planta planta = Planta.nueva(admin.id(), "Pepa", Muestras.especie("helecho"));
+        mundo.plantas.guardar(planta);
+
+        assertThatThrownBy(() -> servicio.eliminar(admin.id())).isInstanceOf(UltimoAdministradorException.class);
+
+        assertThat(mundo.plantas.buscar(planta.id())).isPresent();
     }
 }

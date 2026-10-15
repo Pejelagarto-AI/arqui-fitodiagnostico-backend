@@ -97,4 +97,26 @@ class ArquitecturaTest {
             .should().dependOnClassesThat()
             .resideInAnyPackage("org.springframework.web.socket..", "jakarta.websocket..",
                     "javax.websocket..");
+
+    // Corte 2, bloque 3 (D3, RA4): "consultar nunca escribe" hecho estructura. La consulta del
+    // diagnóstico de una planta no puede depender de lo que produce un diagnóstico (evaluador),
+    // lo avisa (detector, notificador) ni del servicio que registra mediciones. Si mañana alguien
+    // quiere "recalcular al consultar", esta regla obliga a decidirlo a la vista.
+    @ArchTest
+    static final ArchRule consultar_diagnosticos_no_puede_producir_ni_avisar =
+        noClasses().that().haveSimpleName("ServicioConsultaDeDiagnosticos")
+            .should().dependOnClassesThat().belongToAnyOf(
+                    com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado.class,
+                    com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado.class,
+                    com.vivero.fitodiagnostico.dominio.puerto.Notificador.class,
+                    com.vivero.fitodiagnostico.aplicacion.ServicioMediciones.class);
+
+    // Corte 2, bloque 3 (D19): las políticas de dominio son funciones puras. Reciben sus datos ya
+    // cargados; si una empezara a llamar a un puerto, dejaría de probarse con dos objetos en memoria.
+    @ArchTest
+    static final ArchRule las_politicas_de_dominio_no_llaman_puertos =
+        noClasses().that().haveSimpleName("PoliticaDeAcceso")
+            .or().haveSimpleName("DetectorDeCambioDeEstado")
+            .or().haveSimpleName("PoliticaDeAdministradores")
+            .should().dependOnClassesThat().resideInAPackage("..dominio.puerto..");
 }

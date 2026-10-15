@@ -1,7 +1,9 @@
 package com.vivero.fitodiagnostico.infraestructura.configuracion;
 
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
+import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
 import com.vivero.fitodiagnostico.dominio.servicio.RedactorDeRecomendaciones;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeAgregacion;
@@ -42,5 +44,15 @@ public class ConfiguracionDominio {
     @Bean
     PoliticaDeAdministradores politicaDeAdministradores() {
         return new PoliticaDeAdministradores();
+    }
+
+    @Bean
+    PoliticaDeAcceso politicaDeAcceso() {
+        return new PoliticaDeAcceso();
+    }
+
+    @Bean
+    DetectorDeCambioDeEstado detectorDeCambioDeEstado() {
+        return new DetectorDeCambioDeEstado();
     }
 }

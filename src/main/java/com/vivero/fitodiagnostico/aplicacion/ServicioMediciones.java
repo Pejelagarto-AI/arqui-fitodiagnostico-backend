@@ -1,0 +1,108 @@
+package com.vivero.fitodiagnostico.aplicacion;
+
+import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
+import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
+import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
+import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
+import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
+import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
+import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.RepositorioDiagnosticos;
+import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
+import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * El caso de uso de registrar una medición sobre una planta (RF-F1) con sus
+ * dos efectos: diagnosticar y guardar en el historial (RF-F3), y avisar si el
+ * estado cambió (RF-G1). Es el ÚNICO camino que escribe en el historial (D3).
+ *
+ * <p>Un caso de uso, dos adaptadores de entrada (D17): hoy entra por
+ * {@link #registrarManual} desde HTTP; el módulo de macetas entrará por
+ * {@link #registrar(UUID, Medicion, OrigenDeMedicion)} desde su canal, sin
+ * tocar el dominio ni este servicio. La comprobación de quién puede medir es
+ * parte del adaptador de entrada humano y no del caso de uso: una maceta no es
+ * un usuario, se autentica con su credencial (RN19).
+ */
+@Service
+public class ServicioMediciones {
+
+    private final RepositorioPlantas plantas;
+    private final RepositorioAccesos accesos;
+    private final RepositorioDiagnosticos diagnosticos;
+    private final EvaluadorDeEstado evaluador;
+    private final DetectorDeCambioDeEstado detector;
+    private final Notificador notificador;
+    private final AutorizadorDePlantas autorizador;
+
+    public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
+                              RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
+                              DetectorDeCambioDeEstado detector, Notificador notificador,
+                              PoliticaDeAcceso politica) {
+        this.plantas = plantas;
+        this.accesos = accesos;
+        this.diagnosticos = diagnosticos;
+        this.evaluador = evaluador;
+        this.detector = detector;
+        this.notificador = notificador;
+        this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
+    }
+
+    /**
+     * RF-F1, origen MANUAL: solo el dueño mide (RN5). Un invitado recibe
+     * {@code OperacionNoPermitidaException} y un ajeno, la misma
+     * {@code PlantaNoEncontradaException} que si la planta no existiera.
+     */
+    @Transactional
+    public DiagnosticoDePlanta registrarManual(UUID solicitante, UUID plantaId, Medicion medicion) {
+        Planta planta = autorizador.paraModificar(solicitante, plantaId);
+        return registrar(planta, medicion, OrigenDeMedicion.MANUAL);
+    }
+
+    /**
+     * El caso de uso, sin comprobar permisos: quien lo llame responde de haber
+     * autenticado el origen (dueño por sesión, o maceta vinculada por credencial).
+     *
+     * @throws PlantaNoEncontradaException si la planta no existe
+     */
+    @Transactional
+    public DiagnosticoDePlanta registrar(UUID plantaId, Medicion medicion, OrigenDeMedicion origen) {
+        Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new PlantaNoEncontradaException(plantaId));
+        return registrar(planta, medicion, origen);
+    }
+
+    private DiagnosticoDePlanta registrar(Planta planta, Medicion medicion, OrigenDeMedicion origen) {
+        // RN8: se compara contra el inmediatamente anterior de ESTA planta, leído antes de guardar el nuevo.
+        Optional<DiagnosticoDePlanta> anterior = diagnosticos.ultimoDe(planta.id());
+
+        // RN11: se evalúa con la especie de la planta aunque ya esté descontinuada.
+        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion);
+        DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, evaluado);
+        diagnosticos.guardar(registro);
+
+        if (detector.huboCambio(anterior.map(DiagnosticoDePlanta::diagnostico).orElse(null), evaluado)) {
+            notificador.avisar(new Aviso(destinatariosDe(planta), TipoDeAviso.CAMBIO_DE_ESTADO,
+                    "La planta «" + planta.apodo() + "» pasó de " + anterior.orElseThrow().estado()
+                            + " a " + registro.estado() + "."));
+        }
+        return registro;
+    }
+
+    /** RF-G1: el dueño y los invitados. */
+    private Set<UUID> destinatariosDe(Planta planta) {
+        Set<UUID> destinatarios = new HashSet<>(accesos.invitadosDe(planta.id()));
+        destinatarios.add(planta.duenoId());
+        return destinatarios;
+    }
+}

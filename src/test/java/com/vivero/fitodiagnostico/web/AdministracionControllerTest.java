@@ -9,6 +9,7 @@ import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException
 import com.vivero.fitodiagnostico.dominio.modelo.Credencial;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import org.junit.jupiter.api.Test;
@@ -95,6 +96,37 @@ class AdministracionControllerTest {
                 .andExpect(jsonPath("$[0].correo").value("ana@vivero.co"))
                 .andExpect(jsonPath("$[0].credencial").doesNotExist());
         verify(administracion).listarUsuarios("ana");
+    }
+
+    @Test
+    void elDetalleDeUsuarioIncluyeUnResumenDeSusPlantasSinCredencial() throws Exception {
+        // RF-B2.
+        Planta pepa = new Planta(UUID.fromString("11111111-2222-3333-4444-555555555555"), ID, "Pepa",
+                new Especie("helecho", rangos()), java.time.Instant.parse("2026-10-01T12:00:00Z"));
+        when(administracion.detalleDeUsuario(ID))
+                .thenReturn(new ServicioAdministracion.DetalleDeUsuario(ana(), List.of(pepa)));
+
+        mockMvc.perform(get("/api/v1/admin/usuarios/{id}", ID).with(comoAdministrador()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.correo").value("ana@vivero.co"))
+                .andExpect(jsonPath("$.roles[0]").value("CLIENTE"))
+                .andExpect(jsonPath("$.plantas.length()").value(1))
+                .andExpect(jsonPath("$.plantas[0].apodo").value("Pepa"))
+                .andExpect(jsonPath("$.plantas[0].especie").value("helecho"))
+                // El administrador ve QUÉ plantas tiene, no sus diagnósticos ni sus invitados (RN3).
+                .andExpect(jsonPath("$.plantas[0].diagnostico").doesNotExist())
+                .andExpect(jsonPath("$.plantas[0].invitados").doesNotExist())
+                .andExpect(jsonPath("$.credencial").doesNotExist());
+    }
+
+    @Test
+    void elDetalleDeUsuarioSinPlantasTraeUnaListaVacia() throws Exception {
+        when(administracion.detalleDeUsuario(ID))
+                .thenReturn(new ServicioAdministracion.DetalleDeUsuario(ana(), List.of()));
+
+        mockMvc.perform(get("/api/v1/admin/usuarios/{id}", ID).with(comoAdministrador()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plantas.length()").value(0));
     }
 
     @Test

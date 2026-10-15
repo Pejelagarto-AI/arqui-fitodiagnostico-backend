@@ -33,14 +33,16 @@ public class ServicioCuentas {
     private final CifradorDeContrasena cifrador;
     private final PoliticaDeAdministradores politicaDeAdministradores;
     private final EmisorDeTokens emisorDeTokens;
+    private final CascadaDeEliminacion cascada;
 
     public ServicioCuentas(RepositorioUsuarios usuarios, CifradorDeContrasena cifrador,
                            PoliticaDeAdministradores politicaDeAdministradores,
-                           EmisorDeTokens emisorDeTokens) {
+                           EmisorDeTokens emisorDeTokens, CascadaDeEliminacion cascada) {
         this.usuarios = usuarios;
         this.cifrador = cifrador;
         this.politicaDeAdministradores = politicaDeAdministradores;
         this.emisorDeTokens = emisorDeTokens;
+        this.cascada = cascada;
     }
 
     /** RF-A1. @throws com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException RN1 */
@@ -90,13 +92,18 @@ public class ServicioCuentas {
         usuarios.guardar(usuario.conCredencial(cifrador.cifrar(contrasenaNueva)));
     }
 
-    /** RF-A6. @throws UltimoAdministradorException RN4, si es el único administrador */
+    /**
+     * RF-A6. Se lleva consigo sus plantas con la cascada de la RN12.
+     *
+     * @throws UltimoAdministradorException RN4, si es el único administrador
+     */
     @Transactional
     public void eliminar(UUID id) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         if (!politicaDeAdministradores.puedeDejarDeSerAdministrador(usuario, usuarios.contarAdministradores())) {
             throw new UltimoAdministradorException();
         }
+        cascada.eliminarLoDe(id);
         usuarios.eliminar(id);
     }
 

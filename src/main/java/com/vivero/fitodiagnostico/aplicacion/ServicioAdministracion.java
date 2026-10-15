@@ -5,10 +5,12 @@ import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import com.vivero.fitodiagnostico.dominio.puerto.CatalogoEditable;
 import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
 import org.springframework.stereotype.Service;
@@ -36,15 +38,24 @@ public class ServicioAdministracion {
     private final PoliticaDeAdministradores politicaDeAdministradores;
     private final CatalogoEditable catalogoEditable;
     private final RangosPorEspecie rangosPorEspecie;
+    private final RepositorioPlantas plantas;
+    private final CascadaDeEliminacion cascada;
+
+    /** RF-B2: el usuario y las plantas de las que es dueño. */
+    public record DetalleDeUsuario(Usuario usuario, List<Planta> plantas) { }
 
     public ServicioAdministracion(RepositorioUsuarios usuarios,
                                   PoliticaDeAdministradores politicaDeAdministradores,
                                   CatalogoEditable catalogoEditable,
-                                  RangosPorEspecie rangosPorEspecie) {
+                                  RangosPorEspecie rangosPorEspecie,
+                                  RepositorioPlantas plantas,
+                                  CascadaDeEliminacion cascada) {
         this.usuarios = usuarios;
         this.politicaDeAdministradores = politicaDeAdministradores;
         this.catalogoEditable = catalogoEditable;
         this.rangosPorEspecie = rangosPorEspecie;
+        this.plantas = plantas;
+        this.cascada = cascada;
     }
 
     // ---- usuarios (módulo B) ----
@@ -56,13 +67,14 @@ public class ServicioAdministracion {
     }
 
     /**
-     * RF-B2 (parte de usuario). Las plantas de las que es dueño se agregan
-     * cuando exista el módulo de plantas; este método no cambia de firma por eso,
-     * se le sumará una consulta al repositorio de plantas.
+     * RF-B2: el usuario y sus plantas. El administrador ve QUÉ plantas tiene
+     * (apodo, especie), no las lee: no le da acceso a sus diagnósticos ni a
+     * sus invitados, que siguen siendo del dueño (RN3).
      */
     @Transactional(readOnly = true)
-    public Usuario detalleDeUsuario(UUID id) {
-        return OperacionesDeUsuario.cargar(usuarios, id);
+    public DetalleDeUsuario detalleDeUsuario(UUID id) {
+        Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
+        return new DetalleDeUsuario(usuario, plantas.deDueno(id));
     }
 
     /** RF-B3. */
@@ -71,11 +83,12 @@ public class ServicioAdministracion {
         return OperacionesDeUsuario.editarDatos(usuarios, id, nombre, correo);
     }
 
-    /** RF-B4. @throws UltimoAdministradorException RN4 */
+    /** RF-B4. Con la misma cascada de plantas que RF-A6 (RN12). @throws UltimoAdministradorException RN4 */
     @Transactional
     public void eliminarUsuario(UUID id) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         exigirQuePuedaDejarDeSerAdministrador(usuario);
+        cascada.eliminarLoDe(id);
         usuarios.eliminar(id);
     }
 
