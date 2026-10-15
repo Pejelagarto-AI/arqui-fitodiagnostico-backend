@@ -5,6 +5,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -25,6 +26,14 @@ public class AdaptadorAccesoJpa implements RepositorioAccesos {
         return jpa.findByIdPlantaId(plantaId).stream()
                 .map(acceso -> acceso.getId().invitadoId())
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AccesoCompartido> accesosDe(UUID plantaId) {
+        return jpa.findByIdPlantaIdOrderByOtorgadoEnAscIdInvitadoIdAsc(plantaId).stream()
+                .map(a -> new AccesoCompartido(a.getId().plantaId(), a.getId().invitadoId(), a.getOtorgadoEn()))
+                .toList();
     }
 
     @Override

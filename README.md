@@ -19,13 +19,33 @@ export FITO_ADMIN_CONTRASENA="una-contrasena-larga"     # si todavía no existe 
 
 La base de datos es la única fuente de las especies en ejecución. `src/main/resources/referencia/especies.csv` son datos semilla: se cargan a la base al arrancar solo si la tabla `especie` está vacía (el modo `tabla-referencia=csv` ya no existe). Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md).
 
-**`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**`. Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
+**`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**` y de los que se acepta el handshake del WebSocket (`/ws`). Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
+
+### Correo y enlaces (corte 2, bloque 4)
+
+Las invitaciones y la recuperación de contraseña mandan correos, y los avisos de cambio de estado también. Todo es opcional y por variable de entorno; los valores por defecto apuntan a [Mailpit](https://github.com/axllent/mailpit), un servidor SMTP de desarrollo que muestra los correos en una bandeja web:
+
+```bash
+docker run -d --rm --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit   # bandeja: http://localhost:8025
+./mvnw spring-boot:run                                                          # ya envía a localhost:1025
+```
+
+| Variable | Para qué | Por defecto |
+|---|---|---|
+| `FITO_SMTP_HOST`, `FITO_SMTP_PUERTO` | servidor SMTP | `localhost`, `1025` |
+| `FITO_SMTP_USUARIO`, `FITO_SMTP_CONTRASENA` | credenciales SMTP (vacías = sin autenticación) | vacías |
+| `FITO_SMTP_AUTH`, `FITO_SMTP_STARTTLS` | `true` si el servidor lo exige | `false` |
+| `FITO_CORREO_REMITENTE` | dirección "De:" | `no-responder@fitodiagnostico.local` |
+| `FITO_CORREO_ASINCRONO` | enviar en otro hilo | `true` |
+| `FITO_FRONT_URL` | base de los enlaces de los correos (`/invitacion?token=...`, `/restablecer?token=...`) | `http://localhost:5500` |
+
+Sin servidor SMTP la aplicación arranca y funciona; cada correo falla con un `WARN` y nada más. Las pruebas no envían nada: el perfil `test` reemplaza el servidor por un doble que captura los mensajes.
 
 ## Endpoints
 
-Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`. El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
+Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
 
-| Módulo | Rutas (corte 2, bloques 1 y 3) |
+| Módulo | Rutas (corte 2, bloques 1, 3 y 4) |
 |---|---|
 | Cuentas | `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `GET/PUT/DELETE /api/v1/cuenta`, `PUT /api/v1/cuenta/contrasena` |
 | Administración de usuarios | `GET /api/v1/admin/usuarios?q=`, `GET/PUT/DELETE /api/v1/admin/usuarios/{id}`, `PUT/DELETE /api/v1/admin/usuarios/{id}/rol-administrador` |
@@ -33,9 +53,15 @@ Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POS
 | Plantas | `POST/GET /api/v1/plantas`, `GET/PUT/DELETE /api/v1/plantas/{id}` |
 | Mediciones y diagnóstico de una planta | `POST /api/v1/plantas/{id}/mediciones` (solo el dueño, origen `MANUAL`), `GET /api/v1/plantas/{id}/diagnostico` (el vigente; sin diagnósticos responde 200 con `hayDiagnostico: false`), `GET /api/v1/plantas/{id}/diagnosticos?pagina=0&tamano=20` (historial paginado, el más reciente primero; `tamano` de 1 a 100) |
 
+| Recuperación de contraseña | `POST /api/v1/auth/recuperacion {correo}` (202, el mismo cuerpo exista o no el correo), `POST /api/v1/auth/restablecimiento {token, contrasenaNueva}` (204; 410 si el enlace ya se usó, caducó o la contraseña cambió) |
+| Compartir plantas (dueño) | `POST/GET /api/v1/plantas/{id}/invitaciones` (genera un enlace de un solo uso con caducidad de 7 días; el token se entrega solo en esta respuesta; `{"correo"}` opcional lo envía por correo), `DELETE .../invitaciones/{invitacionId}`, `GET .../invitados`, `DELETE .../invitados/{invitadoId}` (el invitado recibe `ACCESO_PERDIDO`) |
+| Compartir plantas (invitado) | `GET /api/v1/plantas/compartidas`, `DELETE /api/v1/plantas/compartidas/{id}` (renunciar), `POST /api/v1/invitaciones/aceptar {token}`, `POST /api/v1/invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}` (público: el visitante sin cuenta se registra y acepta en un solo paso) |
+| Solicitudes de especie | `POST/GET /api/v1/solicitudes-especie` (pedir y ver las propias); administrador: `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` (con `{"respuesta"}`; aprobar no da de alta la especie, eso es `POST /admin/especies`) |
+| Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO` y `CAMBIO_DE_ESTADO`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
+
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
 
-Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura, que llega con el bloque de invitaciones) puede consultar pero no editar, eliminar ni medir (403). Registrar una medición guarda el diagnóstico en el historial y, si el estado global cambió respecto del anterior, avisa al dueño y a los invitados (por ahora, una línea en el registro de la aplicación). Eliminar una planta, o una cuenta, elimina sus plantas, su historial y sus accesos. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
+Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta (y avisa a los invitados). Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
 
 Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
@@ -91,6 +117,7 @@ Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
 
 | HTTP | `error` | Cuándo |
 |---|---|---|
+| 415 | `TIPO_DE_CONTENIDO_NO_SOPORTADO` | el cuerpo no se envió como `application/json` |
 | 400 | `PARAMETRO_INVALIDO` | campo ausente/en blanco, valor no numérico, JSON malformado, o lectura físicamente imposible (p. ej. humedad negativa) |
 | 404 | `ESPECIE_NO_SOPORTADA` | la especie no existe en la tabla de referencia |
 | 401 | `NO_AUTENTICADO` / `CREDENCIALES_INVALIDAS` | sin token o token inválido / correo o contraseña incorrectos |
@@ -99,6 +126,9 @@ Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
 | 404 | `PLANTA_NO_ENCONTRADA` | la planta no existe **o** no es tuya ni compartida contigo (mismo cuerpo en ambos casos) |
 | 403 | `OPERACION_NO_PERMITIDA` | un invitado intenta editar, eliminar o medir una planta ajena que sí puede ver |
 | 409 | `CORREO_YA_REGISTRADO` / `ULTIMO_ADMINISTRADOR` / `ESPECIE_YA_EXISTE` / `ESPECIE_DESCONTINUADA` | conflicto con el estado actual (`ESPECIE_DESCONTINUADA`: registrar una planta, o cambiarla, a una especie ya desactivada) |
+| 404 | `INVITACION_NO_ENCONTRADA` / `INVITADO_NO_ENCONTRADO` / `SOLICITUD_NO_ENCONTRADA` | el token no corresponde a ninguna invitación / ese usuario no es invitado de la planta / no existe la solicitud |
+| 410 | `INVITACION_YA_ACEPTADA` / `INVITACION_CADUCADA` / `INVITACION_REVOCADA` / `RESTABLECIMIENTO_NO_VIGENTE` | el enlace existió pero ya no sirve (un enlace de invitación se usa una sola vez y caduca; el de restablecimiento caduca a la hora y se invalida si la contraseña cambia) |
+| 409 | `SOLICITUD_YA_RESUELTA` | la solicitud ya fue aprobada o rechazada |
 | 404 | `RECURSO_NO_ENCONTRADO` | ruta inexistente |
 | 405 | `METODO_NO_PERMITIDO` | método HTTP no soportado por el recurso |
 | 500 | `ERROR_INTERNO` | cualquier otra excepción; nunca expone traza ni SQL |
@@ -115,17 +145,17 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 ## Pruebas
 
 ```bash
-./mvnw verify     # 441 pruebas (113 antes del corte 2, 294 antes del bloque de plantas)
+./mvnw verify     # 663 pruebas (113 antes del corte 2, 294 antes del bloque de plantas, 442 antes del bloque 4)
 ```
 
 | Grupo | Qué cubre |
 |---|---|
 | Dominio (JUnit puro) | modelo (`Especie`, `Usuario`, `Credencial`, `Rango`, ...) y servicios (`PoliticaDeAdministradores`, clasificador, evaluador, ...) |
-| Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion`, `ServicioPlantas`, `ServicioMediciones`, `ServicioConsultaDeDiagnosticos` y la cascada de eliminación con dobles en memoria de los puertos (sin Spring ni base) |
+| Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion`, `ServicioPlantas`, `ServicioMediciones`, `ServicioConsultaDeDiagnosticos`, `ServicioInvitaciones`, `ServicioRecuperacion`, `ServicioSolicitudes` y la cascada de eliminación con dobles en memoria de los puertos (sin Spring ni base) |
 | Contrato de puertos | `ContratoFuenteDeEspeciesTest` (lectura y escritura) contra el adaptador JPA y un doble en memoria: el puerto es sustituible (LSP) |
-| Infraestructura | adaptadores JPA de especies, usuarios, plantas, accesos e historial con Flyway real (V1 a V7), BCrypt, JWT, sembradores, notificador por registro |
-| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest` y `FlujoDePlantasIntegracionTest` de punta a punta |
-| ArchUnit | 12 reglas de `ArquitecturaTest`: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket) y 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) |
+| Infraestructura | adaptadores JPA de especies, usuarios, plantas, accesos, historial, invitaciones, restablecimientos y solicitudes con Flyway real (V1 a V10), BCrypt, JWT, generador de tokens, sembradores, y los notificadores (registro, correo, WebSocket, compuesto, después del commit) |
+| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest`, `FlujoDePlantasIntegracionTest`, `FlujoDeCompartirIntegracionTest` (compartir, recuperación y solicitudes con correo capturado) y `VistaEnVivoIntegracionTest` (cliente STOMP real) de punta a punta |
+| ArchUnit | 17 reglas de `ArquitecturaTest`: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket), 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) y 5 del bloque 4 (el dominio no conoce el correo; correo y WebSocket solo en infraestructura; la aplicación no sincroniza transacciones; las entidades no guardan tokens en claro; la web no depende de infraestructura) |
 
 `scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo el paquete `infraestructura` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita infraestructura para compilar ni para pasar sus pruebas.
 
@@ -144,7 +174,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 ## Documentación
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
-- [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo) y 3 (plantas, mediciones, cambio de estado, cascadas): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
+- [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo), 3 (plantas, mediciones, cambio de estado, cascadas) y 4 (compartir plantas, recuperación de contraseña, correo, vista en vivo por WebSocket, solicitudes de especie): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

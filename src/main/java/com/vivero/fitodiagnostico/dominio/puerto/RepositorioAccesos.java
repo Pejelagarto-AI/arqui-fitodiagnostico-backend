@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.dominio.puerto;
 
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -10,6 +11,9 @@ public interface RepositorioAccesos {
 
     /** Ids de los invitados de la planta; vacío si no se ha compartido. */
     Set<UUID> invitadosDe(UUID plantaId);
+
+    /** Los accesos de la planta con su fecha, el más antiguo primero (el dueño ve a quién le dio acceso y cuándo, RF-E4). */
+    List<AccesoCompartido> accesosDe(UUID plantaId);
 
     /** Idempotente: otorgar dos veces el mismo acceso deja uno solo. */
     void otorgar(AccesoCompartido acceso);

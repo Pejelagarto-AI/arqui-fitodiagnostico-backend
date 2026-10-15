@@ -7,14 +7,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Único adaptador de {@link Notificador} en este bloque: escribe el aviso en el
- * registro de la aplicación. Cumple el contrato (el aviso "sale") sin
- * infraestructura de correo ni sockets, y es el que se ve en consola al
- * probar a mano. Cuando lleguen el correo y la vista en vivo serán clases
- * nuevas que implementen el mismo puerto; este adaptador no cambia.
+ * Adaptador de {@link Notificador} que escribe el aviso en el registro de la
+ * aplicación: es el que se ve en consola al probar a mano. Desde el bloque 4
+ * es uno de tres canales ({@code NotificadorCompuesto} reparte entre este, el
+ * correo y la vista en vivo); este adaptador no cambió.
  *
  * <p>Registra ids y tipo, y el texto del aviso (que menciona el apodo de la
- * planta); nunca correos ni nombres de personas.
+ * planta); nunca correos, nombres de personas ni el token de un enlace (viaja
+ * en {@link Aviso#datos()}, que aquí no se imprime).
  */
 @Component
 public class NotificadorEnRegistro implements Notificador {

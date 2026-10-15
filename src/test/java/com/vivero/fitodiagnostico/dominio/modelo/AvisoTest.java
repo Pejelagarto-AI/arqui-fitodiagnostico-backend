@@ -2,7 +2,9 @@ package com.vivero.fitodiagnostico.dominio.modelo;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,5 +35,28 @@ class AvisoTest {
         assertThat(TipoDeAviso.values()).extracting(Enum::name).containsExactlyInAnyOrder(
                 "CAMBIO_DE_ESTADO", "DIAGNOSTICO_NUEVO", "ACCESO_PERDIDO", "INVITACION",
                 "RESTABLECIMIENTO", "SOLICITUD_RESUELTA");
+    }
+
+    @Test
+    void llevaDatosYCorreosInmutablesYElConstructorCortoLosDejaVacios() {
+        Map<String, String> datos = new HashMap<>(Map.of(Aviso.TOKEN, "t"));
+        Aviso aviso = Aviso.aCorreos(Set.of("ana@vivero.co"), TipoDeAviso.INVITACION, "te invitaron", datos);
+        datos.put("otro", "x");
+
+        assertThat(aviso.datos()).containsOnlyKeys(Aviso.TOKEN);
+        assertThat(aviso.correos()).containsExactly("ana@vivero.co");
+        assertThat(aviso.destinatarios()).isEmpty();
+        Aviso corto = new Aviso(Set.of(UUID.randomUUID()), TipoDeAviso.CAMBIO_DE_ESTADO, "hola");
+        assertThat(corto.datos()).isEmpty();
+        assertThat(corto.correos()).isEmpty();
+    }
+
+    @Test
+    void elToStringNuncaImprimeElTokenNiLosCorreos() {
+        Aviso aviso = Aviso.aCorreos(Set.of("secreto@vivero.co"), TipoDeAviso.INVITACION, "te invitaron",
+                Map.of(Aviso.TOKEN, "TOKEN-SECRETO-123"));
+
+        assertThat(aviso.toString()).contains("INVITACION").contains("te invitaron")
+                .doesNotContain("TOKEN-SECRETO-123").doesNotContain("secreto@vivero.co");
     }
 }

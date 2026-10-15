@@ -11,6 +11,8 @@ import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
+
 /**
  * El dominio no se anota con @Component: es la infraestructura la que decide
  * cómo se ensambla. El umbral de la regla de agregación queda visible aquí,
@@ -54,5 +56,15 @@ public class ConfiguracionDominio {
     @Bean
     DetectorDeCambioDeEstado detectorDeCambioDeEstado() {
         return new DetectorDeCambioDeEstado();
+    }
+
+    /**
+     * El reloj de los casos de uso que deciden por la hora (caducidad de invitaciones y de
+     * enlaces de restablecimiento). Inyectado y no llamado con {@code Instant.now()} para
+     * probarlos con fechas fijas.
+     */
+    @Bean
+    Clock reloj() {
+        return Clock.systemUTC();
     }
 }

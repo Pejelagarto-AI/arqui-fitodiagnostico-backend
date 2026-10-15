@@ -10,3 +10,9 @@ fitodiagnostico:
   admin:
     correo: admin@pruebas.fitodiagnostico.local
     contrasena: contrasena-de-pruebas-1
+  # Bloque 4: el correo de las pruebas no sale a ninguna red; CorreoCapturado (src/test)
+  # sustituye al JavaMailSender y se envía en el mismo hilo para poder afirmar sin esperar.
+  correo:
+    asincrono: false
+  front:
+    url: http://front.pruebas.local

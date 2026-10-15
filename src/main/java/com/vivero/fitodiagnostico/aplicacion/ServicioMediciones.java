@@ -19,14 +19,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 /**
  * El caso de uso de registrar una medición sobre una planta (RF-F1) con sus
- * dos efectos: diagnosticar y guardar en el historial (RF-F3), y avisar si el
- * estado cambió (RF-G1). Es el ÚNICO camino que escribe en el historial (D3).
+ * dos efectos: diagnosticar y guardar en el historial (RF-F3), y avisar: siempre
+ * que hay un diagnóstico nuevo, para la vista en vivo (RF-G2, D62), y además si
+ * el estado cambió (RF-G1). Es el ÚNICO camino que escribe en el historial (D3).
  *
  * <p>Un caso de uso, dos adaptadores de entrada (D17): hoy entra por
  * {@link #registrarManual} desde HTTP; el módulo de macetas entrará por
@@ -91,10 +93,22 @@ public class ServicioMediciones {
         DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, evaluado);
         diagnosticos.guardar(registro);
 
+        // RF-G2: toda medición nueva se refleja en la vista en vivo, haya cambiado el estado o no.
+        Set<UUID> destinatarios = destinatariosDe(planta);
+        notificador.avisar(new Aviso(destinatarios, TipoDeAviso.DIAGNOSTICO_NUEVO,
+                "Nuevo diagnóstico de la planta «" + planta.apodo() + "»: " + registro.estado() + ".",
+                Map.of(Aviso.PLANTA_ID, planta.id().toString(),
+                        Aviso.ESTADO, registro.estado().name(),
+                        Aviso.REGISTRADO_EN, registro.registradoEn().toString(),
+                        Aviso.ORIGEN, origen.name())));
+
+        // RF-G1: solo si el estado cambió respecto del inmediatamente anterior (RN8).
         if (detector.huboCambio(anterior.map(DiagnosticoDePlanta::diagnostico).orElse(null), evaluado)) {
-            notificador.avisar(new Aviso(destinatariosDe(planta), TipoDeAviso.CAMBIO_DE_ESTADO,
+            notificador.avisar(new Aviso(destinatarios, TipoDeAviso.CAMBIO_DE_ESTADO,
                     "La planta «" + planta.apodo() + "» pasó de " + anterior.orElseThrow().estado()
-                            + " a " + registro.estado() + "."));
+                            + " a " + registro.estado() + ".",
+                    Map.of(Aviso.PLANTA_ID, planta.id().toString(),
+                            Aviso.ESTADO, registro.estado().name())));
         }
         return registro;
     }

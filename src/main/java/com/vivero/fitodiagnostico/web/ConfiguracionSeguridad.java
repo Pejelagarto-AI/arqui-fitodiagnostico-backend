@@ -20,7 +20,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * <p>Públicas, y por qué: {@code POST /diagnosticos} (RF-F6, D6: probar antes
  * de registrarse), {@code GET /especies} (el formulario necesita el listado),
- * registro e inicio de sesión (nadie tiene token todavía) y {@code /error}
+ * registro e inicio de sesión (nadie tiene token todavía), recuperación de
+ * contraseña, aceptar invitación registrándose, el handshake del WebSocket
+ * (se autentica en el primer frame, D59) y {@code /error}
  * (si exigiera sesión, el contenedor respondería 401 a cualquier error interno
  * en vez de su cuerpo JSON). Todo lo demás exige token.
  *
@@ -54,6 +56,13 @@ public class ConfiguracionSeguridad {
                 .requestMatchers(HttpMethod.POST, "/api/v1/diagnosticos").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/especies").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/registro", "/api/v1/auth/sesion").permitAll()
+                // Bloque 4: quien olvidó su contraseña y quien acepta una invitación sin tener cuenta
+                // todavía no pueden tener sesión.
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/recuperacion", "/api/v1/auth/restablecimiento",
+                        "/api/v1/invitaciones/aceptar-con-registro").permitAll()
+                // El handshake del WebSocket no lleva Authorization (el navegador no puede ponerla):
+                // la autenticación es el JWT del frame CONNECT (ProtectorDeCanalStomp).
+                .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMINISTRADOR")
                 .anyRequest().authenticated())

@@ -3,7 +3,9 @@ package com.vivero.fitodiagnostico.dobles;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
 
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -17,6 +19,12 @@ public class AccesosEnMemoria implements RepositorioAccesos {
         Set<UUID> invitados = new HashSet<>();
         accesos.stream().filter(a -> a.plantaId().equals(plantaId)).forEach(a -> invitados.add(a.invitadoId()));
         return invitados;
+    }
+
+    @Override
+    public List<AccesoCompartido> accesosDe(UUID plantaId) {
+        return accesos.stream().filter(a -> a.plantaId().equals(plantaId))
+                .sorted(Comparator.comparing(AccesoCompartido::otorgadoEn)).toList();
     }
 
     @Override

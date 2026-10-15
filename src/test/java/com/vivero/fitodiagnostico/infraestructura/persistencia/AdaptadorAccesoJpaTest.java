@@ -6,6 +6,8 @@ import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,5 +95,24 @@ class AdaptadorAccesoJpaTest extends BaseDePersistenciaDePlantas {
 
         assertThat(accesos.invitadosDe(una.id())).isEmpty();
         assertThat(accesos.invitadosDe(otra.id())).containsExactly(carla.id());
+    }
+
+    @Test
+    void accesosDeDevuelveCadaAccesoConSuFechaElMasAntiguoPrimero() {
+        Usuario dueno = usuario("dueno");
+        Usuario beto = usuario("beto");
+        Usuario carla = usuario("carla");
+        Planta planta = planta(dueno, especie());
+        Planta otra = planta(dueno, especie());
+        Instant t = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        accesos.otorgar(new AccesoCompartido(planta.id(), carla.id(), t));
+        accesos.otorgar(new AccesoCompartido(planta.id(), beto.id(), t.minusSeconds(60)));
+        accesos.otorgar(new AccesoCompartido(otra.id(), carla.id(), t));
+        sincronizar();
+
+        assertThat(accesos.accesosDe(planta.id())).containsExactly(
+                new AccesoCompartido(planta.id(), beto.id(), t.minusSeconds(60)),
+                new AccesoCompartido(planta.id(), carla.id(), t));
+        assertThat(accesos.accesosDe(UUID.randomUUID())).isEmpty();
     }
 }
