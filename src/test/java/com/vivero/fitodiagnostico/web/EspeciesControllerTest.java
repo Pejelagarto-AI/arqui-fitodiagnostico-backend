@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.EnumMap;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * minúscula, orden y cabecera de caché.
  */
 @WebMvcTest(EspeciesController.class)
+@Import(SeguridadDePruebas.class)
 class EspeciesControllerTest {
 
     private static final String RUTA = "/api/v1/especies";
