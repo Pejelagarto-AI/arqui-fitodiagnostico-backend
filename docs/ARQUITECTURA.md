@@ -2,7 +2,7 @@
 
 Arquitectura de Software · U. Sergio Arboleda · 2026-2 · Santiago Ortegón, Santiago Castellanos
 
-> **Estado: corte 1.** El corte 2 cambió partes de este documento; lo vigente está en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Lo que ya no es cierto aquí: (1) ya no hay dos adaptadores de especies seleccionables por propiedad: `AdaptadorEspecieJpa` es el único y el CSV es un dato semilla cargado por `SembradorDeEspecies` (D14); (2) hay seguridad JWT y nuevas rutas protegidas; (3) las reglas ArchUnit son 10, no 8. Las secciones 4 (LSP, DIP) y 5 (i, ii) describen el diseño de dos adaptadores y quedan como registro histórico.
+> **Estado: corte 1, con el corte 2 (bloques 1 y 3) resumido en la sección 7.** El corte 2 cambió partes de este documento; lo vigente está en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Lo que ya no es cierto aquí: (1) ya no hay dos adaptadores de especies seleccionables por propiedad: `AdaptadorEspecieJpa` es el único y el CSV es un dato semilla cargado por `SembradorDeEspecies` (D14); (2) hay seguridad JWT y nuevas rutas protegidas; (3) las reglas ArchUnit son 12, no 8; (4) el bloque 3 agregó plantas, accesos, historial de diagnósticos, avisos y cascadas de eliminación (sección 7 de este documento). Las secciones 4 (LSP, DIP) y 5 (i, ii) describen el diseño de dos adaptadores y quedan como registro histórico.
 
 ## 1. Diagrama de paquetes / componentes
 
@@ -204,3 +204,141 @@ Va en un módulo aparte (p. ej. `dominio.gamificacion` + `aplicacion.ServicioGam
 | **Dos puertos** separados (`RangosPorEspecie` / `CatalogoDeEspecies`) | Un `RepositorioEspecies` con `buscar` y `listar` | Mantener ambas operaciones en un puerto obligaba a `ServicioDiagnostico` a depender de un método que no usa (ISP, commit `ca61c34`) |
 | **POST con cuerpo JSON** en `/api/v1/diagnosticos` | GET con query params (primera versión) | El front consume el contrato del Anexo A con un cuerpo `{especie,humedad,luz,temperatura}`; una medición completa a evaluar no es una búsqueda idempotente por query params (commit `23f1a34`) |
 | **Dos repositorios** (backend / front separados) | Un monorepo con ambos | El front es un cliente independiente que solo conoce el contrato HTTP; vivir en repos separados hace visible esa frontera y obliga a versionar el contrato, no el código compartido (commits `4f50d7f`, `b3ef1cb`) |
+
+## 7. Corte 2, bloque 3: plantas, mediciones manuales, cambio de estado y cascadas
+
+Lo nuevo y cómo se conecta. El detalle de cada archivo, las decisiones D35 a D48 con su alternativa descartada y los límites están en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md).
+
+### 7.1 Componentes nuevos
+
+```mermaid
+flowchart TB
+    subgraph WEB["web"]
+        PC["PlantasController"]
+        MC["MedicionesController"]
+        DC2["DiagnosticosDePlantaController"]
+    end
+
+    subgraph APL["aplicacion"]
+        SP["ServicioPlantas"]
+        SM["ServicioMediciones"]
+        SCD["ServicioConsultaDeDiagnosticos"]
+        CAS["CascadaDeEliminacion"]
+        AUT["AutorizadorDePlantas"]
+        SCU["ServicioCuentas /\nServicioAdministracion"]
+    end
+
+    subgraph DOM["dominio"]
+        MOD["modelo\n(Planta, DiagnosticoDePlanta, OrigenDeMedicion,\nAccesoCompartido, Aviso, TipoDeAviso,\nPaginacion, Pagina)"]
+        POL["servicio\n(PoliticaDeAcceso, DetectorDeCambioDeEstado,\nEvaluadorDeEstado)"]
+        PUE["puerto\n(RepositorioPlantas, RepositorioAccesos,\nRepositorioDiagnosticos, Notificador)"]
+    end
+
+    subgraph INFRA["infraestructura"]
+        APLJPA["persistencia\n(AdaptadorPlantaJpa, AdaptadorAccesoJpa,\nAdaptadorDiagnosticoJpa + entidades)"]
+        NOT["notificacion.NotificadorEnRegistro"]
+        MIG["db/migration V6, V7"]
+    end
+
+    PC --> SP
+    MC --> SM
+    DC2 --> SCD
+    SP --> AUT
+    SM --> AUT
+    SCD --> AUT
+    SP --> CAS
+    SCU --> CAS
+    AUT --> POL
+    AUT --> PUE
+    SM --> POL
+    SM --> PUE
+    SCD --> PUE
+    CAS --> PUE
+    APLJPA --> PUE
+    NOT --> PUE
+    APLJPA --> MIG
+```
+
+Dos asimetrías que conviene poder explicar: `ServicioConsultaDeDiagnosticos` no tiene flecha hacia `EvaluadorDeEstado`, `DetectorDeCambioDeEstado` ni `Notificador` (consultar nunca escribe, D3, lo hace cumplir una regla ArchUnit), y `ServicioCuentas` y `ServicioAdministracion` llegan a las plantas solo a través de `CascadaDeEliminacion` (una secuencia, un dueño, D37).
+
+### 7.2 Registrar una medición manual y avisar del cambio de estado
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (dueño)
+    participant MC as MedicionesController
+    participant SM as ServicioMediciones
+    participant AUT as AutorizadorDePlantas
+    participant POL as PoliticaDeAcceso
+    participant RD as RepositorioDiagnosticos
+    participant EDE as EvaluadorDeEstado
+    participant DET as DetectorDeCambioDeEstado
+    participant NOT as Notificador
+
+    C->>MC: POST /api/v1/plantas/{id}/mediciones {humedad, luz, temperatura}
+    MC->>MC: @Valid + Medicion.de(Lectura...) en el borde (RA6)
+    MC->>SM: registrarManual(solicitante, plantaId, medicion)
+    SM->>AUT: paraModificar(solicitante, plantaId)
+    AUT->>POL: puedeLeer / puedeModificar(usuario, planta, invitados)
+    alt ajeno (no puede leer)
+        AUT--)MC: PlantaNoEncontradaException (404)
+    else invitado (lee, no modifica)
+        AUT--)MC: OperacionNoPermitidaException (403)
+    else dueño
+        AUT-->>SM: Planta
+        SM->>RD: ultimoDe(plantaId)
+        RD-->>SM: Optional[DiagnosticoDePlanta] (el anterior)
+        SM->>EDE: evaluar(planta.especie(), medicion)
+        EDE-->>SM: Diagnostico
+        SM->>RD: guardar(DiagnosticoDePlanta origen MANUAL)
+        SM->>DET: huboCambio(anterior, nuevo)
+        opt cambió el estado global
+            SM->>NOT: avisar(Aviso CAMBIO_DE_ESTADO, dueño + invitados)
+        end
+        SM-->>MC: DiagnosticoDePlanta
+        MC-->>C: 201 {id, plantaId, origen, registradoEn, diagnostico}
+    end
+```
+
+El módulo de macetas será otro adaptador de entrada que llame a `ServicioMediciones.registrar(plantaId, medicion, DISPOSITIVO)` y se salte la primera mitad del diagrama (la autenticación la hace su canal, RN19); de ahí hacia la derecha nada cambia.
+
+### 7.3 Eliminar una planta o una cuenta
+
+```mermaid
+sequenceDiagram
+    participant S as ServicioPlantas / ServicioCuentas / ServicioAdministracion
+    participant CAS as CascadaDeEliminacion
+    participant RA as RepositorioAccesos
+    participant RD as RepositorioDiagnosticos
+    participant RP as RepositorioPlantas
+    participant NOT as Notificador
+
+    S->>CAS: eliminarPlanta(planta)  /  eliminarLoDe(usuarioId)
+    CAS->>RA: invitadosDe(planta.id)   (se leen ANTES de quitar los accesos)
+    CAS->>RD: eliminarDe(planta.id)
+    CAS->>RA: revocarTodosDe(planta.id)
+    CAS->>RP: eliminar(planta.id)
+    opt había invitados
+        CAS->>NOT: avisar(Aviso ACCESO_PERDIDO, invitados)
+    end
+    Note over S,CAS: eliminarLoDe repite esto por cada planta del usuario y además<br/>revoca los accesos que él tenía como invitado en plantas ajenas.<br/>Después el servicio (con la RN4 delante) elimina al usuario.
+```
+
+### 7.4 Cambios a la tabla de responsabilidades
+
+| Capa | Lo que se agrega | Lo que sigue prohibido |
+|---|---|---|
+| **web** | tres controladores de plantas y siete DTO; 404, 403 y 409 nuevos en `ManejadorGlobalDeErrores` | decidir quién puede leer una planta: lo decide `AutorizadorDePlantas` con `PoliticaDeAcceso` |
+| **aplicacion** | tres servicios nuevos y la cascada; `AutorizadorDePlantas` y `CascadaDeEliminacion` como colaboradores compartidos | depender de `infraestructura`; el servicio de consulta no depende de lo que escribe ni avisa |
+| **dominio** | `Planta`, `DiagnosticoDePlanta`, `PoliticaDeAcceso`, `DetectorDeCambioDeEstado` y cuatro puertos; `Paginacion` y `Pagina` propias | `Pageable` de Spring Data, JPA, cualquier dependencia de otra capa; las políticas no llaman puertos (regla ArchUnit) |
+| **infraestructura** | tres adaptadores JPA con sus entidades, `NotificadorEnRegistro`, migraciones V6 y V7 en ambos dialectos | dejar salir una entidad del paquete `persistencia` (las nuevas también cumplen RA-04) |
+
+### 7.5 Plan de evolución: lo que ya está listo y lo que falta
+
+| Evolución | Estado después del bloque 3 |
+|---|---|
+| Compartir plantas por enlace (RF-E) | `RepositorioAccesos`, su tabla y `PoliticaDeAcceso.puedeLeer` ya existen y están probados; faltan `ServicioInvitaciones`, su repositorio y los endpoints. Los invitados ya reciben el aviso de cambio de estado y el de acceso perdido. |
+| Macetas (RF-D6 a D8, módulo I) | `ServicioMediciones.registrar(plantaId, medicion, origen)` y `OrigenDeMedicion.DISPOSITIVO` ya existen; falta el canal, el repositorio de macetas y la política de vinculación. |
+| Correo y vista en vivo (RF-G2) | Un `Notificador` más cada uno (con un compuesto que los reparta) y emitir `DIAGNOSTICO_NUEVO` desde `ServicioMediciones`. |
+| Serie temporal de cada magnitud | Una consulta sobre `diagnostico_parametro`; el esquema ya la permite (D39). |
+
