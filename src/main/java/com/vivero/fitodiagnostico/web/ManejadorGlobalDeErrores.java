@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
+import com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
 import com.vivero.fitodiagnostico.web.dto.ErrorRespuesta;
@@ -42,7 +45,7 @@ public class ManejadorGlobalDeErrores {
     private static final Logger log = LoggerFactory.getLogger(ManejadorGlobalDeErrores.class);
 
     /** Orden determinista para reportar el primer campo inválido cuando hay varios (sección 2 del contrato). */
-    private static final List<String> ORDEN_CAMPOS = List.of("especie", "humedad", "luz", "temperatura",
+    private static final List<String> ORDEN_CAMPOS = List.of("apodo", "especie", "humedad", "luz", "temperatura",
             "nombre", "correo", "contrasena", "contrasenaActual", "contrasenaNueva", "rangos");
 
     @ExceptionHandler(EspecieNoEncontradaException.class)
@@ -101,6 +104,31 @@ public class ManejadorGlobalDeErrores {
     ResponseEntity<ErrorRespuesta> contrasenaActualIncorrecta(ContrasenaActualIncorrectaException e) {
         return construir(HttpStatus.BAD_REQUEST, "CONTRASENA_ACTUAL_INCORRECTA", e.getMessage(),
                 Map.of("campo", "contrasenaActual"));
+    }
+
+    // ---- corte 2, bloque 3: plantas y mediciones ----
+
+    /**
+     * RN3 (404): la misma respuesta para una planta que no existe y para una ajena sin
+     * permiso. Un 403 le confirmaría a cualquiera que ese id existe (D35).
+     */
+    @ExceptionHandler(PlantaNoEncontradaException.class)
+    ResponseEntity<ErrorRespuesta> plantaNoEncontrada(PlantaNoEncontradaException e) {
+        return construir(HttpStatus.NOT_FOUND, "PLANTA_NO_ENCONTRADA", e.getMessage(),
+                Map.of("id", e.getId().toString()));
+    }
+
+    /** RN5 (403): un invitado intenta lo que solo puede el dueño. Ya sabe que la planta existe. */
+    @ExceptionHandler(OperacionNoPermitidaException.class)
+    ResponseEntity<ErrorRespuesta> operacionNoPermitida(OperacionNoPermitidaException e) {
+        return construir(HttpStatus.FORBIDDEN, "OPERACION_NO_PERMITIDA", e.getMessage(), Map.of());
+    }
+
+    /** RN11 (409): petición bien formada que choca con el estado del catálogo (D30). */
+    @ExceptionHandler(EspecieInactivaException.class)
+    ResponseEntity<ErrorRespuesta> especieDescontinuada(EspecieInactivaException e) {
+        return construir(HttpStatus.CONFLICT, "ESPECIE_DESCONTINUADA", e.getMessage(),
+                Map.of("especie", e.getNombre()));
     }
 
     /**

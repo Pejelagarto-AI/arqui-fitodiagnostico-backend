@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.web;
 
 import com.vivero.fitodiagnostico.aplicacion.ServicioAdministracion;
+import com.vivero.fitodiagnostico.web.dto.RespuestaDetalleDeUsuario;
 import com.vivero.fitodiagnostico.web.dto.RespuestaUsuario;
 import com.vivero.fitodiagnostico.web.dto.SolicitudActualizarDatos;
 import jakarta.validation.Valid;
@@ -42,10 +43,10 @@ public class AdministracionUsuariosController {
         return servicio.listarUsuarios(texto).stream().map(RespuestaUsuario::desde).toList();
     }
 
-    /** RF-B2 (las plantas del usuario se agregan con el módulo de plantas). */
+    /** RF-B2: el usuario y un resumen de sus plantas. */
     @GetMapping("/{id}")
-    public RespuestaUsuario detalle(@PathVariable UUID id) {
-        return RespuestaUsuario.desde(servicio.detalleDeUsuario(id));
+    public RespuestaDetalleDeUsuario detalle(@PathVariable UUID id) {
+        return RespuestaDetalleDeUsuario.desde(servicio.detalleDeUsuario(id));
     }
 
     /** RF-B3. */
