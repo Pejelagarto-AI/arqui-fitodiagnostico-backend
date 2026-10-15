@@ -302,3 +302,229 @@ Además se comprobó que las pruebas muerden: se rompió a propósito `PoliticaD
 8. **¿Qué pasa si la planta cambia de especie con diagnósticos ya guardados?** Nada en el historial: cada diagnóstico guarda el nombre de la especie y los rangos con que se evaluó (D48); el siguiente diagnóstico usa la especie nueva. Hay una prueba de adaptador y otra de integración que lo muestran.
 9. **¿Por qué el aviso de cambio incluye al dueño si él mismo midió?** Porque RF-G1 dice "dueño e invitados" y la medición puede venir de la maceta (origen `DISPOSITIVO`), cuando el dueño no está mirando. Excluirlo según el origen sería una regla que hoy nadie pidió.
 
+
+
+---
+
+# Corte 2, bloque 4: compartir plantas, recuperación, correo, vista en vivo y solicitudes de especie
+
+Qué se construyó, dónde vive cada pieza y por qué, qué requerimiento cubre y qué decisiones se tomaron (D49 en adelante, con la alternativa descartada). Misma convención de los bloques anteriores: puertos en `dominio.puerto`, "quién soy" como `UUID` desde `IdentidadDelSolicitante`, errores con `ErrorRespuesta` desde `ManejadorGlobalDeErrores`, migraciones nuevas en ambos dialectos (V8 a V10), perfil `test` para los `@SpringBootTest`, planta ajena 404 (D35), cascadas explícitas (D37).
+
+Alcance: invitaciones por enlace de un solo uso (RF-E1 a RF-E6, RN13), recuperación de contraseña (RF-A7, RF-A8, RN14), notificación por correo (D13), varios notificadores con reparto por tipo, avisos después del commit, vista en vivo por WebSocket (RF-G2), solicitudes de especie (RF-H1 a RF-H5) y el arreglo del 415. **Fuera: macetas, emparejamiento, canal de dispositivos y front.** El WebSocket de este bloque es solo la vista del navegador; el canal de la maceta (DA7, MQTT o WebSocket) no se tocó. El núcleo del corte 1 tampoco (`Medicion`, `Lectura`, `Diagnostico`, `EvaluadorDeEstado`).
+
+## 1. Cómo se prueba a mano
+
+Variables nuevas (todas con valor de desarrollo; ninguna es obligatoria):
+
+| Variable | Para qué | Por defecto |
+|---|---|---|
+| `FITO_SMTP_HOST`, `FITO_SMTP_PUERTO` | Servidor SMTP | `localhost`, `1025` (Mailpit) |
+| `FITO_SMTP_USUARIO`, `FITO_SMTP_CONTRASENA` | Credenciales SMTP; vacías = sin autenticación | vacías |
+| `FITO_SMTP_AUTH`, `FITO_SMTP_STARTTLS` | `true` cuando el servidor lo exige | `false` |
+| `FITO_CORREO_REMITENTE` | Dirección "De:" | `no-responder@fitodiagnostico.local` |
+| `FITO_CORREO_ASINCRONO` | Enviar en otro hilo | `true` |
+| `FITO_FRONT_URL` | Base de los enlaces de los correos (`/invitacion?token=`, `/restablecer?token=`) | `http://localhost:5500` |
+
+Si no hay servidor SMTP, la aplicación arranca y funciona: cada correo falla con una línea de `WARN` y nada más (el aviso es mejor esfuerzo, ver límites).
+
+```bash
+# 1. Mailpit: SMTP en 1025, bandeja web en http://localhost:8025
+docker run -d --rm --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+# 2. La aplicación (variables del bloque 1) y listo: ya apunta a localhost:1025
+./mvnw spring-boot:run
+
+U=http://localhost:8080/api/v1; H='Content-Type: application/json'
+# Dos cuentas y una planta
+for n in ana beto; do curl -s -X POST $U/auth/registro -H "$H" -d "{\"nombre\":\"$n\",\"correo\":\"$n@vivero.co\",\"contrasena\":\"clave-larga-1\"}" >/dev/null; done
+TA=$(curl -s -X POST $U/auth/sesion -H "$H" -d '{"correo":"ana@vivero.co","contrasena":"clave-larga-1"}' | jq -r .token)
+P=$(curl -s -X POST $U/plantas -H "$H" -H "Authorization: Bearer $TA" -d '{"apodo":"Pepa","especie":"potos"}' | jq -r .id)
+# Ana invita a alguien sin cuenta (el correo es opcional; sin él, ella reparte el enlace)
+curl -s -X POST $U/plantas/$P/invitaciones -H "$H" -H "Authorization: Bearer $TA" -d '{"correo":"visita@vivero.co"}'
+#   -> {"token":"...","enlace":"http://localhost:5500/invitacion?token=...", ...}  y un correo en Mailpit
+# La visita se registra y acepta en un solo paso (ruta pública)
+curl -s -X POST $U/invitaciones/aceptar-con-registro -H "$H" -d "{\"token\":\"<token>\",\"nombre\":\"Visita\",\"correo\":\"visita@vivero.co\",\"contrasena\":\"clave-larga-1\"}"
+# Recuperación: el enlace llega a Mailpit; el token sale del correo
+curl -s -X POST $U/auth/recuperacion -H "$H" -d '{"correo":"beto@vivero.co"}'
+curl -s -X POST $U/auth/restablecimiento -H "$H" -d '{"token":"<del correo>","contrasenaNueva":"otra-clave-larga-1"}'
+```
+
+Vista en vivo (cliente de ejemplo con `@stomp/stompjs`; el JWT va en el primer frame, no en la URL):
+
+```js
+const cliente = new StompJs.Client({
+  brokerURL: 'ws://localhost:8080/ws',
+  connectHeaders: { Authorization: 'Bearer ' + token },
+  onConnect: () => {
+    cliente.subscribe('/user/queue/plantas/' + plantaId, m => console.log(JSON.parse(m.body)));  // DIAGNOSTICO_NUEVO y CAMBIO_DE_ESTADO
+    cliente.subscribe('/user/queue/avisos', m => console.log(JSON.parse(m.body)));               // ACCESO_PERDIDO, SOLICITUD_RESUELTA
+  },
+});
+cliente.activate();
+```
+
+Esta cadena se verificó además contra un PostgreSQL 16 y un Mailpit reales en contenedores (V8 a V10 aplican, Hibernate valida el esquema, los correos llegan); no hay prueba automática contra PostgreSQL (no hay Testcontainers en el proyecto), igual que en el bloque 3. Los contenedores se detuvieron al terminar.
+
+## 2. Mapa de archivos
+
+### dominio (sin Spring, sin JPA, sin HTTP, sin correo, sin WebSocket; ArchUnit lo vigila)
+
+| Archivo | Por qué vive en dominio | Cubre |
+|---|---|---|
+| `modelo/Invitacion.java`, `modelo/EstadoInvitacion.java` | Token de un solo uso con caducidad. Solo guarda la huella del token. `estadoEn(ahora)` deriva CADUCADA de la fecha; el dominio no llama al reloj, recibe `ahora`. | RF-E1..E3, RN13, D12, D49, D51 |
+| `modelo/SolicitudRestablecimiento.java` | Un solo uso, caduca (1 h) y se invalida si la huella de la credencial ya no es la de cuando se pidió. | RF-A7, RF-A8, RN14, D13, D52 |
+| `modelo/SolicitudEspecie.java`, `modelo/EstadoSolicitud.java` | PENDIENTE a APROBADA o RECHAZADA, una sola vez; rechazar exige respuesta. | RF-H1..H5, D55 |
+| `modelo/Aviso.java` (modificado) | Gana `datos` (token, id de planta, estado) y `correos` (personas sin cuenta). `toString` no imprime ninguno de los dos. El constructor de tres argumentos se conserva. | D53 |
+| `puerto/GeneradorDeTokens.java` | `generar()` y `huella(texto)`. | D51 |
+| `puerto/RepositorioInvitaciones`, `RepositorioRestablecimientos`, `RepositorioSolicitudes` | Persistencia de los tres agregados nuevos, con `eliminarDe...` para las cascadas. | D37, D56 |
+| `puerto/RepositorioAccesos.java` (modificado) | `accesosDe(plantaId)`: los accesos con su fecha, para que el dueño vea a quién le dio acceso y desde cuándo. | RF-E4 |
+| `excepcion/*` (6 nuevas) | `InvitacionNoEncontrada`, `InvitacionNoVigente` (lleva el estado), `InvitadoNoEncontrado`, `RestablecimientoNoVigente`, `SolicitudNoEncontrada`, `SolicitudYaResuelta`. | RN13, RN14 |
+
+### aplicacion
+
+| Archivo | Qué hace | Cubre |
+|---|---|---|
+| `ServicioInvitaciones.java` | Generar, listar y revocar invitaciones; aceptar con sesión; registrarse y aceptar en una transacción; listar invitados, revocar acceso, listar compartidas, renunciar. | RF-E1..E6, RF-G3 |
+| `ServicioRecuperacion.java` | Solicitar (misma respuesta exista o no el correo) y restablecer con token. | RF-A7, RF-A8, RN14 |
+| `ServicioSolicitudes.java` | Enviar, ver las propias, listar pendientes, aprobar y rechazar con aviso. | RF-H1..H5 |
+| `RutasDelFront.java` | Las pantallas del front a las que apunta un enlace con token (`/invitacion?token=`, `/restablecer?token=`), escritas en un solo sitio y sin Spring. | D53 |
+| `ServicioMediciones.java` (modificado) | Emite `DIAGNOSTICO_NUEVO` en cada medición, además de `CAMBIO_DE_ESTADO` cuando corresponde. | RF-G2, D62 |
+| `CascadaDeEliminacion.java` (modificado) | Borra también las invitaciones de la planta, y las solicitudes de especie y de restablecimiento del usuario. | RN12, D56 |
+
+Ninguna clase de `aplicacion` ganó un import nuevo de Spring: siguen siendo `@Service`, `@Component` y `@Transactional`. Que los avisos esperen al commit no se ve desde aquí (D57).
+
+### infraestructura
+
+| Archivo | Por qué vive aquí | Cubre |
+|---|---|---|
+| `persistencia/InvitacionEntity`, `InvitacionJpaRepository`, `AdaptadorInvitacionJpa`; igual para `Restablecimiento` y `SolicitudEspecie` | Adaptadores de los tres puertos. Solo la huella del token llega a la base. Claves foráneas sin cascada. `AdaptadorAccesoJpa` gana `accesosDe`. | D37, D51 |
+| `seguridad/GeneradorDeTokensSeguro.java` | `SecureRandom` de 256 bits en Base64 URL, y huella SHA-256 hexadecimal. | D51 |
+| `notificacion/NotificadorPorCorreo.java` | Adaptador SMTP. Resuelve UUID a dirección con `RepositorioUsuarios`; envía en un hilo aparte. | D13, D54 |
+| `notificacion/NotificadorPorWebSocket.java` | Empuja el aviso por STOMP a cada destinatario. Nunca envía el token. | RF-G2, D59 |
+| `notificacion/NotificadorCompuesto.java` | Reparte cada tipo de aviso a sus canales con una tabla visible (`RUTAS`). | D58 |
+| `notificacion/NotificadorTrasCommit.java` | Decorador: retiene el aviso hasta el commit. En rollback no sale. | D57 |
+| `notificacion/ConfiguracionNotificacion.java` | Arma la cadena y marca el decorador como `@Primary`. | D57, D58 |
+| `websocket/ConfiguracionWebSocket.java` | STOMP en `/ws`, orígenes de CORS, broker simple, sentido único. | D59 |
+| `websocket/ProtectorDeCanalStomp.java` | CONNECT autentica con el mismo JWT; SUBSCRIBE autoriza por planta; SEND se rechaza. | D59 |
+| `websocket/HandshakeConErroresJson.java` | Los rechazos del handshake salen en JSON (RA1). | D59 |
+| `configuracion/EnlacesDelFront.java` | URL base configurable (`FITO_FRONT_URL`) para el adaptador de correo; las rutas vienen de `aplicacion.RutasDelFront`. | D53 |
+| `configuracion/ConfiguracionDominio.java` (modificado) | Bean `Clock`. | D50 |
+| `db/migration/{h2,postgresql}/V8__invitacion.sql`, `V9__restablecimiento.sql`, `V10__solicitud_especie.sql` | Tablas nuevas, claves foráneas sin cascada, huellas únicas. | D37, D51 |
+
+### web
+
+| Archivo | Qué hace | Cubre |
+|---|---|---|
+| `InvitacionesController.java` | Rutas del dueño bajo `/plantas/{id}` (invitaciones e invitados), del invitado (`/plantas/compartidas`) y de quien recibe el enlace (`/invitaciones/aceptar`, `/invitaciones/aceptar-con-registro`). | RF-E1..E6 |
+| `RecuperacionController.java` | `POST /auth/recuperacion` y `POST /auth/restablecimiento`, públicas. | RF-A7, RF-A8 |
+| `SolicitudesEspecieController.java`, `AdministracionSolicitudesController.java` | Las del cliente y las del administrador (`/admin/solicitudes-especie`). | RF-H1..H5 |
+| `ManejadorGlobalDeErrores.java` (modificado) | 404, 410, 409 y **415** nuevos. | D60 |
+| `ConfiguracionSeguridad.java` (modificado) | Rutas públicas nuevas y `/ws/**` (el handshake no lleva `Authorization`; la autenticación es el frame CONNECT). | D59 |
+| `dto/*` (12 nuevos) | Validación de forma y conversión. Ninguno expone credencial, hash ni, salvo el de generar, token. | RA6 |
+
+### Rutas nuevas
+
+| Ruta | Quién | Respuesta |
+|---|---|---|
+| `POST /api/v1/plantas/{id}/invitaciones` (cuerpo opcional `{"correo"}`) | dueño | 201 `{id, plantaId, token, enlace, estado, expiraEn, correoDestino}`; el token solo se entrega aquí |
+| `GET /api/v1/plantas/{id}/invitaciones` | dueño | invitaciones vigentes, sin token |
+| `DELETE /api/v1/plantas/{id}/invitaciones/{invitacionId}` | dueño | 204; 410 si ya no estaba pendiente |
+| `GET /api/v1/plantas/{id}/invitados` | dueño | `[{id, nombre, correo, otorgadoEn}]` |
+| `DELETE /api/v1/plantas/{id}/invitados/{invitadoId}` | dueño | 204; avisa ACCESO_PERDIDO al invitado |
+| `GET /api/v1/plantas/compartidas` | cliente | las plantas compartidas conmigo |
+| `DELETE /api/v1/plantas/compartidas/{id}` | invitado | 204; renunciar |
+| `POST /api/v1/invitaciones/aceptar` `{token}` | cliente | 200 con la planta; 410 si ya se usó, caducó o se revocó |
+| `POST /api/v1/invitaciones/aceptar-con-registro` `{token, nombre, correo, contrasena}` | **público** | 201 `{usuario, planta}` |
+| `POST /api/v1/auth/recuperacion` `{correo}` | **público** | 202 con el mismo cuerpo exista o no el correo |
+| `POST /api/v1/auth/restablecimiento` `{token, contrasenaNueva}` | **público** | 204; 410 si no sirve |
+| `POST /api/v1/solicitudes-especie` `{nombre, justificacion?}`, `GET /api/v1/solicitudes-especie` | cliente | 201 / las propias |
+| `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` `{respuesta}` | administrador | pendientes / la solicitud resuelta |
+| `ws://.../ws` (STOMP) | cliente | `/user/queue/plantas/{id}` y `/user/queue/avisos` |
+
+Códigos nuevos: 404 `INVITACION_NO_ENCONTRADA`, `INVITADO_NO_ENCONTRADO`, `SOLICITUD_NO_ENCONTRADA`; 410 `INVITACION_YA_ACEPTADA`, `INVITACION_CADUCADA`, `INVITACION_REVOCADA`, `RESTABLECIMIENTO_NO_VIGENTE`; 409 `SOLICITUD_YA_RESUELTA`; **415 `TIPO_DE_CONTENIDO_NO_SOPORTADO`**.
+
+## 3. Decisiones técnicas (D49 en adelante)
+
+**D49. Una invitación es PENDIENTE, ACEPTADA, REVOCADA o CADUCADA, y CADUCADA no se escribe nunca: se deriva de la fecha.** `Invitacion.estadoEn(ahora)` devuelve CADUCADA si está PENDIENTE y `expiraEn` ya pasó. Vigencia de una semana. Guardar CADUCADA exigiría un proceso periódico que recorra y marque, y hoy no hay ninguno en el sistema; derivarla da exactamente el mismo resultado visible. El dominio recibe `ahora` como parámetro y los servicios llevan un `Clock` inyectado (bean en `ConfiguracionDominio`): las pruebas de caducidad usan un reloj manual, sin `sleep`. Descartado: persistir CADUCADA con una tarea programada (primer proceso periódico del sistema para ganar nada visible) y filtrar por fecha en SQL (la regla quedaría en dos sitios: la consulta y el dominio).
+
+**D50. Aceptar es un cuerpo, no una ruta, y registrarse más aceptar es una sola transacción con la invitación validada primero.** `POST /invitaciones/aceptar {token}` (con sesión) y `POST /invitaciones/aceptar-con-registro` (pública). El token va en el cuerpo porque una ruta queda en los registros de acceso del servidor y de cualquier proxy. En la variante con registro la invitación se valida ANTES de crear la cuenta (un token inválido no deja una cuenta nueva) y las dos escrituras viajan juntas: si el correo ya tiene cuenta responde 409 y la invitación sigue vigente. Todas las comprobaciones van antes de escribir: el dueño que intenta aceptar su propia invitación recibe 403 y no la consume. Aceptar no inicia sesión (D30): el registro no lo hacía y esta ruta sigue el mismo contrato. Descartado: dos llamadas del front (registrar, luego aceptar), que dejan una cuenta sin acceso si la segunda falla; y `/invitaciones/{token}/aceptar`, con el token en la ruta. `ServicioInvitaciones` llama a `ServicioCuentas.registrar` en lugar de duplicar el alta: es un servicio que usa a otro de la misma capa, y la regla de correo duplicado (RN1) sigue en un solo sitio.
+
+**D51. Del token solo se guarda su huella SHA-256, y la huella viaja por el puerto `GeneradorDeTokens`.** El token (256 bits de `SecureRandom`) existe una vez, en la respuesta que crea la invitación; en la base queda `huella_token` y nadie, ni con acceso a una copia de seguridad, puede aceptar una invitación. SHA-256 sin sal ni costo es correcto aquí y no lo sería para una contraseña: la entrada es aleatoria de 256 bits, no algo que un humano eligió, así que no hay diccionario que probar y BCrypt solo agregaría latencia. La huella vive en el puerto (`generar()` más `huella(texto)`, una adición a la firma del diagrama) porque guardar solo la huella y buscar por huella son dos mitades de la misma decisión: si una estuviera fuera, alguien terminaría guardando el token. Una regla ArchUnit impide que una entidad JPA tenga un campo `token`. Costo: el dueño no puede volver a ver el enlace de una invitación pendiente, solo revocarla y generar otra. Descartado: guardar el token en claro (más cómodo: se podría relistar el enlace) y cifrarlo reversible (hace falta una clave que, si se filtra con la base, devuelve todo).
+
+**D52. El restablecimiento se invalida comparando la huella de la credencial, y no comparte abstracción con la invitación.** "Se invalida si la contraseña cambia por otra vía" (RN14) se resuelve sin acoplarse a ninguna de esas vías: al pedir el enlace se guarda la huella del hash vigente y al usarlo se compara con la de ahora; si difieren, la contraseña cambió. Cubre el cambio autenticado (RF-A5) y cualquier camino futuro sin tocarlos. `solicitar` responde igual exista o no el correo: no devuelve nada, ni lanza, ni tarda distinto en el aviso (el correo sale en otro hilo, D54), y un correo mal formado también se calla (la forma ya la valida el borde con 400). Invitación y restablecimiento son "la misma figura" (token de un solo uso con caducidad), pero tienen estados distintos (una se revoca; la otra se invalida por un hecho externo) y reglas distintas; una abstracción común habría tenido más parámetros que código compartido. Descartado: invalidar las solicitudes pendientes desde `ServicioCuentas.cambiarContrasena` (acopla el servicio de cuentas al de recuperación y se olvida al agregar la siguiente vía) y una versión de credencial en `Usuario` (columna y migración para algo que el hash ya dice).
+
+**D53. `Aviso` gana datos estructurados y correos externos; el enlace lo arma el borde.** El texto de un aviso es para leer; el token, el id de la planta o el estado son para máquinas, y van en `datos`. Así el dominio sigue sin conocer URLs: `EnlacesDelFront` (infraestructura, `FITO_FRONT_URL`) arma el enlace absoluto en el adaptador de correo y el controlador lo arma igual para la respuesta de generar, con las rutas de `RutasDelFront`. `correos` existe porque quien recibe una invitación sin tener cuenta no tiene `UUID`: es la única excepción a "los destinatarios son ids". El token es una credencial, así que `Aviso.toString()` no imprime `datos` ni `correos`, el log no lo muestra y el adaptador de WebSocket lo quita aunque llegue. Las rutas del front (`/invitacion`, `/restablecer`) son un acuerdo con el front; están escritas en un solo sitio, `aplicacion.RutasDelFront`, que usan el adaptador de correo y el controlador (cada uno lee la URL base de la propiedad), así la web no depende de infraestructura (lo vigila una regla ArchUnit y `scripts/probar-dominio-sin-infraestructura.sh`). Descartado: poner el enlace ya armado en `mensaje` (el token quedaría en el log y en la vista en vivo) y una `Map<String,Object>` sin claves nombradas (los typos se descubren en producción).
+
+**D54. Correo: resolución de dirección en el adaptador, envío asíncrono y un doble por perfil.** (a) UUID a dirección: en `NotificadorPorCorreo`, consultando `RepositorioUsuarios`. La dirección es un dato del canal (el WebSocket no la necesita y el log no debe verla), y el puerto ya existe. Una cuenta que ya no existe al momento de enviar se omite sin ruido. Descartado: llevar la dirección en el `Aviso` (dato de canal en el dominio) y un puerto `DirectorioDeContactos` (otra interfaz con una sola implementación que sería `RepositorioUsuarios` con otro nombre). (b) `spring-boot-starter-mail` con el tipo `MailSender`: el adaptador no nombra `JavaMailSender` ni `MimeMessage`; texto plano, un correo por persona y sin copias para que nadie vea las direcciones de los demás invitados. (c) Se envía en un hilo aparte (dos hilos daemon, propios del adaptador y no un bean `Executor`, que apagaría el ejecutor por defecto de Spring Boot): un SMTP lento o caído no retrasa la medición, y el tiempo de respuesta de `recuperacion` deja de depender de si el correo existe. `FITO_CORREO_ASINCRONO=false` lo desactiva. (d) En el perfil `test` el `MailSender` es `CorreoCapturado` (en `src/test`, `@Profile("test")`), que guarda los mensajes; nada sale a ninguna red. En desarrollo, Mailpit (sección 1).
+
+**D55. Aprobar una solicitud de especie NO crea la especie.** La solicitud solo trae un nombre y una justificación; una especie válida exige las tres magnitudes con rangos dentro del rango físico (D31), y esos rangos los define el administrador con `POST /admin/especies` (RF-C3). Aprobar es el compromiso de agregarla; el alta es otro acto, y el solicitante se entera de la resolución (RF-H5). Rechazar exige respuesta con el motivo (400 si falta) porque un rechazo sin motivo no le sirve a quien lo recibe; aprobar la admite opcional. Pedir una especie que ya está en el catálogo, activa o no, responde 409 `ESPECIE_YA_EXISTE`. Descartado: crear la especie inactiva y sin rangos (viola D31 y deja en el catálogo una fila que `RF-C3` tendría que completar) y crearla con rangos copiados de otra (inventa un dato agronómico).
+
+**D56. La cascada se extiende, y ninguna cuenta deja datos suyos vivos.** Eliminar una planta borra además sus invitaciones (un enlace repartido a una planta que ya no existe no debe seguir circulando; aceptarlo da 404). Eliminar una cuenta borra además todas sus solicitudes de especie (pendientes y resueltas) y sus solicitudes de restablecimiento. Razón: dejar una solicitud pendiente de alguien dado de baja obligaría al administrador a resolver algo cuya respuesta no llega a nadie, y RN12 y D11 dicen que no queden datos de un usuario dado de baja. Las invitaciones aceptadas por quien se da de baja no guardan quién las aceptó (solo `aceptada_en`), así que no hay nada que limpiar; sus accesos como invitado ya los quitaba `revocarTodosDelInvitado`. Las claves foráneas siguen sin `ON DELETE CASCADE` (D37) y hay una prueba de adaptador por tabla que lo demuestra. Descartado: conservar las solicitudes resueltas como historial del catálogo (son datos personales sin dueño).
+
+**D57. Los avisos salen después del commit, con un decorador del puerto y sin que la aplicación se entere.** `NotificadorTrasCommit` implementa `Notificador`, es `@Primary` y, si hay una transacción activa, registra el envío en `afterCommit`; sin transacción, sale de inmediato. En rollback el aviso no sale nunca (resuelve el límite del bloque 3 "el aviso sale aunque la transacción se revierta"). Los servicios siguen llamando `notificador.avisar(...)` y no ganaron un import: una regla ArchUnit impide que `aplicacion` nombre `TransactionSynchronization` o `ApplicationEventPublisher`. Un fallo del destino jamás se propaga: en `afterCommit` la excepción llegaría al llamador del commit y respondería 500 por una operación que sí quedó guardada. No hubo que mover nada de capa. Descartado: `@TransactionalEventListener(AFTER_COMMIT)` (es lo que D43 había anticipado: obliga a cada servicio a publicar eventos con `ApplicationEventPublisher`, o sea Spring dentro de aplicación, y a definir una clase de evento por tipo de aviso) y un `TransactionSynchronization` dentro de cada servicio (se olvida en el siguiente). Cómo se prueba: `NotificadorTrasCommitTest` (gestor de transacciones real: commit, rollback, `setRollbackOnly`, sin transacción, destino roto), `FlujoDeCompartirIntegracionTest.unAvisoDentroDeUnaTransaccionRevertidaNoSaleYUnoConfirmadoSi` con la cadena real, y la regla ArchUnit.
+
+**D58. Varios notificadores: `NotificadorCompuesto` con una tabla de rutas por tipo.** Los servicios ven un solo `Notificador`; el compuesto decide:
+
+| Tipo | Registro | Correo | Vista en vivo | Por qué |
+|---|---|---|---|---|
+| `CAMBIO_DE_ESTADO` | sí | sí | sí | Lo que quiere saber aunque no esté mirando, y verlo al instante si mira |
+| `ACCESO_PERDIDO` | sí | sí | sí (`/user/queue/avisos`) | Ídem |
+| `SOLICITUD_RESUELTA` | sí | sí | sí (`/user/queue/avisos`) | Ídem |
+| `DIAGNOSTICO_NUEVO` | no | no | sí (`/user/queue/plantas/{id}`) | Una por medición: en el registro es ruido y por correo una avalancha; existe para refrescar una pantalla abierta |
+| `INVITACION` | sí | sí | **no** | Lleva un token y su destinatario puede no tener sesión: solo le llega el correo |
+| `RESTABLECIMIENTO` | sí | sí | **no** | Ídem |
+
+La tabla es una constante visible (`NotificadorCompuesto.RUTAS`) y una prueba afirma que todo `TipoDeAviso` tiene ruta: si alguien agrega un tipo y olvida decidir, falla en vez de perder el aviso en silencio. Un canal que falla no impide a los demás. Descartado: una lista de `Notificador` en cada servicio (cada servicio decidiría los canales) y que cada adaptador filtre por tipo (la regla quedaría repartida en tres clases).
+
+**D59. Vista en vivo: STOMP sobre WebSocket plano, autenticado en el primer frame, entrega por usuario.** (a) Spring WebSocket con STOMP y el broker simple en memoria, sin SockJS. STOMP da suscripciones y destinos por usuario hechos; un WebSocket plano habría exigido inventar el formato de mensajes y el reparto. (b) El navegador no puede poner cabeceras en el handshake de un WebSocket, pero sí en el primer frame: el cliente manda `Authorization: Bearer <JWT>` en el CONNECT, y `ProtectorDeCanalStomp` lo valida con el MISMO `JwtDecoder` (firma, caducidad, emisor) y comprueba que la cuenta exista (D21: eliminarla surte efecto en la siguiente conexión). Sin token válido no hay sesión. (c) Cada SUBSCRIBE se autoriza: solo `/user/queue/avisos` y `/user/queue/plantas/{id}`, y esta última únicamente si el usuario puede leer esa planta, con la misma regla que el GET (`ServicioPlantas.detalle`); una ajena o inexistente se rechaza igual (D35) y un administrador no lee plantas ajenas. Cualquier otro destino se rechaza. (d) El cliente nunca envía: todo SEND se rechaza (sin esto, un cliente podría publicar frames directamente en el broker haciéndose pasar por el servidor). (e) Se entrega POR USUARIO a los destinatarios que el servicio calculó al emitir el aviso, no a un tema por planta. Un tema compartido deja suscrito para siempre a quien ya perdió el acceso (la suscripción se autorizó cuando la hizo y no se vuelve a evaluar); por usuario, la autorización es la del momento del aviso y revocar surte efecto en el siguiente mensaje (hay una prueba de punta a punta). (f) Orígenes: la misma lista de `fitodiagnostico.cors.origenes`; el handshake responde 403 a cualquier otro `Origin`. CORS no cubre WebSocket; el origen defiende al usuario del navegador (CSWSH), no autentica. (g) El handshake fallido (GET sin `Upgrade`) responde 400 en JSON, no en el texto plano de Spring (RA1): `HandshakeConErroresJson`. Descartado: WebSocket plano con formato propio; JWT en la URL (`?token=`), que queda en registros de acceso; y un tema por planta con comprobación al suscribirse como única barrera (el problema de (e)). Esto NO es el canal de la maceta (DA7): no hay nada de macetas.
+
+**D60. `Content-Type` no soportado responde 415 con el cuerpo uniforme.** `HttpMediaTypeNotSupportedException` tiene su manejador: `415 TIPO_DE_CONTENIDO_NO_SOPORTADO`, antes un 500 genérico por algo que es culpa del cliente (límite del bloque 1, que afectaba a todos los endpoints con cuerpo). Hay prueba de rebanada (ruta pública y autenticada, varios tipos) y contra el contenedor real (JSON, nunca HTML).
+
+**D61. Revocar avisa; renunciar no. Las rutas cuelgan de la planta para el dueño y de `/plantas/compartidas` para el invitado.** RF-G3 es para quien pierde el acceso sin haberlo decidido: la revocación del dueño y la eliminación de la planta o de la cuenta del dueño avisan ACCESO_PERDIDO; que el propio invitado renuncie (RF-E6) no avisa a nadie, él lo hizo. Revocar una invitación (RF-E3) y revocar un acceso (RF-E4) son dos rutas porque son dos cosas: la primera cancela un enlace aún no usado y falla con 410 si ya se aceptó (lo que corresponde entonces es quitar el acceso). `/plantas/compartidas` es una ruta literal y por eso tiene prioridad sobre `/plantas/{id}`; `GET /plantas` sigue listando solo las propias. Solo el dueño lista invitaciones e invitados (D2: un invitado no ve a los demás).
+
+**D62. `DIAGNOSTICO_NUEVO` se emite en cada medición y solo viaja por la vista en vivo.** Cumple lo que D43 dejó anunciado: ahora que existe un canal que lo usa, `ServicioMediciones` lo emite siempre (haya cambiado el estado o no) al dueño y a los invitados, antes de `CAMBIO_DE_ESTADO` si lo hay. Lleva en `datos` el id de la planta, el estado, el origen y la fecha, lo que la pantalla necesita para refrescarse sin otra petición. Una medición rechazada (403, 400) no emite nada. Los destinatarios incluyen al dueño aunque él haya medido, por la misma razón que en el bloque 3 (pregunta de mutación 9): la medición puede venir de la maceta.
+
+## 4. Límites conocidos (decirlos antes de que los encuentren)
+
+- **El aviso es de mejor esfuerzo y no se reintenta.** Sale después del commit y, el correo, en otro hilo. Si el proceso muere entre el commit y el envío, o el SMTP está caído, el aviso se pierde (queda una línea de `WARN`, sin dirección ni token). La salida es una tabla `outbox` escrita en la misma transacción y un despachador que reintente; no se hizo porque exigiría el primer proceso periódico del sistema.
+- **La vista en vivo no repite lo que se perdió.** El broker simple es en memoria: sin historial, y con más de una instancia del backend un aviso solo llega a los clientes conectados a la instancia que lo emitió (haría falta un broker externo). Un cliente que se reconecta debe pedir `GET /plantas/{id}/diagnostico` para ponerse al día.
+- **La identidad del WebSocket se verifica al conectar.** Una conexión abierta no se revalida cuando el JWT caduca, ni cuando se elimina la cuenta (la cuenta eliminada ya no está en los destinatarios, así que no recibe nada, pero la conexión sigue abierta hasta que el cliente se vaya). La suscripción tampoco se reautoriza (D59 e).
+- **Las rutas públicas no tienen límite de intentos.** `recuperacion` puede usarse para mandarle correos a alguien; `aceptar-con-registro` y `restablecimiento` aceptan intentos sin freno (con 256 bits de entropía no hay nada que adivinar, pero sí que inundar). Hace falta un limitador por IP y por correo; no se hizo.
+- **`recuperacion` no es de tiempo constante.** Existe una escritura en la base solo si el correo existe. El envío de correo ya no se nota (otro hilo), pero un atacante muy paciente podría medir la diferencia de la escritura. Mismo límite que el login del bloque 1.
+- **Aceptar la misma invitación en dos peticiones simultáneas.** Se comprueba que esté vigente y después se consume, sin bloqueo: dos peticiones exactamente concurrentes podrían pasar las dos (las dos quedarían invitadas con el mismo enlace). La salida es un `UPDATE ... WHERE estado = 'PENDIENTE'` que cuente filas, o una versión optimista; mismo motivo que los límites de concurrencia de los bloques 1 y 3.
+- **Las filas de invitaciones caducadas, aceptadas o revocadas no se purgan.** Quedan hasta que se elimine la planta. Con correo opcional, una invitación con `correo_destino` conserva una dirección ajena más tiempo del necesario; purgar es otra tarea periódica.
+- **El correo es texto plano, sin plantilla, sin idioma elegible.**
+- **Sin SMTP configurado la aplicación arranca y los correos fallan en silencio** (con `WARN`). Es a propósito (el correo no debe tumbar la aplicación) pero un despliegue mal configurado no lo notaría por un error.
+- **No hay prueba automática contra PostgreSQL ni contra un SMTP real** (verificado a mano, sección 1).
+- **Un cliente que sabe que su invitación es para su correo no está obligado a usar ese correo al registrarse**: el `correo_destino` es solo adónde se mandó el enlace, no una restricción de quién lo acepta (el enlace es el permiso, D12).
+
+## 5. Pruebas
+
+Antes del bloque: **442** según el informe de surefire de `develop`. Después: **663** (`./mvnw verify`), 221 nuevas. ArchUnit pasa de 12 a 17 reglas (las 12 anteriores sin modificar).
+
+| Capa | Pruebas nuevas relevantes |
+|---|---|
+| Dominio (JUnit puro) | `InvitacionTest` (estados, caducidad con fechas fijas, un solo uso), `SolicitudRestablecimientoTest` (caduca, un solo uso, se invalida por la huella), `SolicitudEspecieTest` (transiciones, motivo obligatorio al rechazar), ampliación de `AvisoTest` (datos, correos, `toString` sin token) |
+| Aplicación (dobles, sin Spring) | `ServicioInvitacionesTest` (quién puede qué, un solo uso, caducidad con reloj manual, registrar y aceptar en una transacción, autoinvitación, revocar), `ServicioRecuperacionTest`, `ServicioSolicitudesTest`, `CascadaDeEliminacionTest` y `ServicioMedicionesTest` ampliados (invitaciones, solicitudes, `DIAGNOSTICO_NUEVO`); el doble `NotificadorGrabador` captura los avisos |
+| Infraestructura | `AdaptadorInvitacionJpaTest`, `AdaptadorRestablecimientoJpaTest`, `AdaptadorSolicitudEspecieJpaTest` y ampliación de `AdaptadorAccesoJpaTest` (H2 con Flyway V1 a V10; solo la huella en la base; las claves foráneas rechazan borrar sin cascada); `GeneradorDeTokensSeguroTest` (SHA-256 contra un valor de referencia); `NotificadorCompuestoTest` (la tabla de rutas), `NotificadorTrasCommitTest` (transacciones reales), `NotificadorPorCorreoTest`, `NotificadorPorWebSocketTest`, `ProtectorDeCanalStompTest` (frame por frame, sin red) |
+| Web (MockMvc) | `InvitacionesControllerTest`, `RecuperacionControllerTest`, `SolicitudesEspecieControllerTest`, `SeguridadCompartirYAvisosWebTest` (401/403/rutas públicas), `TipoDeContenidoWebTest` (415), `SinHtmlTest` ampliado (415 y rutas nuevas con el contenedor real, el handshake en JSON) |
+| Contenedor real | `FlujoDeCompartirIntegracionTest` (28 casos: compartir con invitados reales, recuperación, solicitudes, cascadas, correo capturado, rollback sin aviso) y `VistaEnVivoIntegracionTest` (10 casos con un cliente STOMP de verdad: el recorrido de punta a punta, autenticación, orígenes, suscripción a planta ajena rechazada, sentido único) |
+| ArchUnit | `el_dominio_no_conoce_el_correo`, `correo_y_websocket_solo_en_infraestructura`, `la_aplicacion_no_conoce_la_sincronizacion_de_transacciones`, `las_entidades_no_guardan_tokens_en_claro`, `la_web_no_depende_de_infraestructura` |
+
+El recorrido pedido, de punta a punta, está en `VistaEnVivoIntegracionTest`: el dueño invita, el visitante se registra y acepta en el mismo flujo, el dueño mide con cambio de estado, el invitado recibe el aviso por correo (doble) y por WebSocket, el dueño revoca y el invitado recibe ACCESO_PERDIDO.
+
+Además se comprobó que las pruebas muerden. Se rompió a propósito, una por una, y fallaron las pruebas esperadas: (1) `ProtectorDeCanalStomp` sin comprobar la planta al suscribirse: 4 fallos (`ProtectorDeCanalStompTest` y `VistaEnVivoIntegracionTest`); (2) `NotificadorTrasCommit` enviando de inmediato en vez de esperar al commit: 6 fallos (los de transacciones reales y el de rollback de la cadena completa); (3) `ServicioInvitaciones` sin consumir la invitación al aceptar: 9 fallos; (4) un campo `token` en una entidad: 2 fallos de ArchUnit; (5) el CONNECT del WebSocket sin exigir token: 5 fallos; (6) quitar el manejador del 415: 5 fallos; (7) `ServicioMediciones` sin los invitados entre los destinatarios del cambio de estado: 7 fallos (aplicación, integración por correo y por WebSocket); (8) la cascada de la planta sin borrar sus invitaciones: 5 fallos. También se rompió `RutasDelFront` en el camino: `scripts/probar-dominio-sin-infraestructura.sh` falló mientras `web` dependía de `infraestructura`, y por eso pasó a existir `la_web_no_depende_de_infraestructura`.
+
+`FlujoDeCompartirIntegracionTest` y `VistaEnVivoIntegracionTest` usan el prefijo `compartir-` y limpian en `@AfterEach`, hijos antes que padres (las claves foráneas no tienen cascada). Los mensajes del WebSocket se esperan con una sonda por el mismo destino hasta que llega: el broker simple no envía RECEIPT, y sin ella el test mediría antes de que alguien escuche.
+
+## 6. Preguntas de mutación: "si mañana cambia X, ¿qué archivos tocas?"
+
+1. **Mañana se agrega notificación por WhatsApp.** Una clase nueva en `infraestructura.notificacion` que implementa `Notificador` (`NotificadorPorWhatsApp`), un valor nuevo en `NotificadorCompuesto.Canal` y las entradas de `RUTAS` que lo usen, y una línea en `ConfiguracionNotificacion` que lo pase al mapa de canales: tres archivos de producción y la prueba del adaptador. No cambian ni el dominio, ni la aplicación, ni la web, ni `NotificadorTrasCommit` (el "después del commit" y el no propagar errores valen para el canal nuevo sin hacer nada). Con el envío por un proveedor externo conviene el mismo patrón asíncrono de `NotificadorPorCorreo`. Si hace falta el número de teléfono de cada usuario, esa es otra historia y sí toca más: `Usuario`, `UsuarioEntity`, `MapeadorUsuario`, una migración V11 en los dos dialectos y los DTO de la cuenta; la resolución UUID a número viviría en el adaptador, como la del correo (D54).
+2. **El WebSocket del navegador se cambia por Server-Sent Events.** Cambia solo la infraestructura de la vista en vivo: se van `ConfiguracionWebSocket`, `ProtectorDeCanalStomp`, `HandshakeConErroresJson` y `NotificadorPorWebSocket`, y entran un `NotificadorPorSse` que empuja a un registro de `SseEmitter` por usuario más el endpoint HTTP que los abre (un `GET` que valida el JWT como cualquier otro y autoriza la planta con `ServicioPlantas.detalle`, con la misma regla de D59 c). En `ConfiguracionNotificacion` cambia el tipo que se pasa como canal `VIVO`; en `ConfiguracionSeguridad` se quita `/ws/**` (el SSE sí lleva `Authorization`); en el `pom`, `spring-boot-starter-websocket` sale. **No cambian** `ServicioMediciones`, `CascadaDeEliminacion`, `Aviso`, `NotificadorCompuesto` ni la tabla `RUTAS`, ni el dominio ni los demás servicios; la regla ArchUnit `correo_y_websocket_solo_en_infraestructura` sigue cumpliéndose sin tocarla. Se reescribe `VistaEnVivoIntegracionTest` y se reemplazan `NotificadorPorWebSocketTest` y `ProtectorDeCanalStompTest`. Dos diferencias de fondo: SSE solo va del servidor al cliente, que es justo el sentido único que ya teníamos, y el `EventSource` del navegador no permite poner `Authorization`, así que el front tendría que usar `fetch` con un lector de flujo o aceptar otra forma de autenticación.
+3. **Las invitaciones caducan a las 24 horas.** Una constante en `Invitacion.VIGENCIA` y su prueba. La caducidad se deriva de `expiraEn` (D49), así que las ya creadas conservan su fecha. El texto del correo ("caduca en N días") lee la misma constante.
+4. **Los avisos tienen que salir aunque la transacción se revierta (p. ej., "intento de acceso fallido").** Esos avisos no pasan por `NotificadorTrasCommit`: se llamaría directamente al compuesto desde un servicio que lo reciba por otro puerto. Hoy no hay ninguno; el decorador existe para el caso contrario (el normal).
+5. **El proveedor de correo pasa de SMTP a la API de un tercero.** Solo `NotificadorPorCorreo` (o un `MailSender` que lo reemplace: el adaptador depende de la interfaz `MailSender` de Spring, no de `JavaMailSender`) y las propiedades de `application.yml`. Dominio, aplicación y web no se enteran, y `CorreoCapturado` sigue sirviendo para las pruebas.
+6. **¿Por qué se guarda la huella del token y no el token?** Porque quien lea la base (una copia de seguridad, un volcado, una inyección SQL) no debe poder aceptar invitaciones ni restablecer contraseñas. SHA-256 sin sal alcanza porque el token es aleatorio de 256 bits; para una contraseña, que un humano eligió, no (D51). Lo vigila una regla ArchUnit y una prueba que mira el esquema.
+7. **¿Dónde se prueba que el aviso sale después del commit y no si hay rollback?** En tres sitios: `NotificadorTrasCommitTest` (gestor de transacciones real), `FlujoDeCompartirIntegracionTest.unAvisoDentroDeUnaTransaccionRevertidaNoSaleYUnoConfirmadoSi` (la cadena real con el "SMTP" de pruebas) y la regla ArchUnit que impide que la aplicación sincronice transacciones por su cuenta.
+8. **¿Por qué `DIAGNOSTICO_NUEVO` no va por correo ni por registro?** Porque es uno por medición: con una maceta que mide cada quince minutos serían cien correos al día por planta. Existe para refrescar una pantalla abierta (RF-G2); lo que sí le interesa a quien no está mirando es el cambio de estado (RF-G1), y ese sí va por correo. Es una fila de la tabla `RUTAS` y se cambia ahí.
+9. **¿Qué impide que un invitado al que le quitaron el acceso siga viendo la planta en vivo?** La entrega es por usuario con los destinatarios que calcula el servicio al emitir el aviso, no un tema compartido; el que ya no es invitado no está en esa lista (D59 e). Hay una prueba de punta a punta: revoca y, con su suscripción todavía abierta, no recibe la medición siguiente.
+10. **¿Por qué `registrarYAceptar` valida la invitación antes de crear la cuenta?** Para que un token inválido, caducado o ya usado no deje una cuenta nueva sin acceso a nada; y todo corre en una transacción, así que si el correo ya existe tampoco se consume el enlace (D50). Hay un caso de aplicación y uno de integración por cada rama.

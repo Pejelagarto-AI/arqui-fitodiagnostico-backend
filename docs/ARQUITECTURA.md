@@ -2,7 +2,7 @@
 
 Arquitectura de Software · U. Sergio Arboleda · 2026-2 · Santiago Ortegón, Santiago Castellanos
 
-> **Estado: corte 1, con el corte 2 (bloques 1 y 3) resumido en la sección 7.** El corte 2 cambió partes de este documento; lo vigente está en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Lo que ya no es cierto aquí: (1) ya no hay dos adaptadores de especies seleccionables por propiedad: `AdaptadorEspecieJpa` es el único y el CSV es un dato semilla cargado por `SembradorDeEspecies` (D14); (2) hay seguridad JWT y nuevas rutas protegidas; (3) las reglas ArchUnit son 12, no 8; (4) el bloque 3 agregó plantas, accesos, historial de diagnósticos, avisos y cascadas de eliminación (sección 7 de este documento). Las secciones 4 (LSP, DIP) y 5 (i, ii) describen el diseño de dos adaptadores y quedan como registro histórico.
+> **Estado: corte 1, con el corte 2 (bloques 1, 3 y 4) resumido en las secciones 7 y 8.** El corte 2 cambió partes de este documento; lo vigente está en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Lo que ya no es cierto aquí: (1) ya no hay dos adaptadores de especies seleccionables por propiedad: `AdaptadorEspecieJpa` es el único y el CSV es un dato semilla cargado por `SembradorDeEspecies` (D14); (2) hay seguridad JWT y nuevas rutas protegidas; (3) las reglas ArchUnit son 17, no 8; (4) el bloque 3 agregó plantas, accesos, historial de diagnósticos, avisos y cascadas de eliminación (sección 7 de este documento); (5) el bloque 4 agregó compartir plantas, recuperación de contraseña, correo, vista en vivo por WebSocket y solicitudes de especie, y cambió cómo salen los avisos (sección 8). Las secciones 4 (LSP, DIP) y 5 (i, ii) describen el diseño de dos adaptadores y quedan como registro histórico.
 
 ## 1. Diagrama de paquetes / componentes
 
@@ -337,8 +337,192 @@ sequenceDiagram
 
 | Evolución | Estado después del bloque 3 |
 |---|---|
-| Compartir plantas por enlace (RF-E) | `RepositorioAccesos`, su tabla y `PoliticaDeAcceso.puedeLeer` ya existen y están probados; faltan `ServicioInvitaciones`, su repositorio y los endpoints. Los invitados ya reciben el aviso de cambio de estado y el de acceso perdido. |
+| Compartir plantas por enlace (RF-E) | **Hecho en el bloque 4** (sección 8). |
 | Macetas (RF-D6 a D8, módulo I) | `ServicioMediciones.registrar(plantaId, medicion, origen)` y `OrigenDeMedicion.DISPOSITIVO` ya existen; falta el canal, el repositorio de macetas y la política de vinculación. |
-| Correo y vista en vivo (RF-G2) | Un `Notificador` más cada uno (con un compuesto que los reparta) y emitir `DIAGNOSTICO_NUEVO` desde `ServicioMediciones`. |
+| Correo y vista en vivo (RF-G2) | **Hecho en el bloque 4** (sección 8): un `Notificador` por canal, un compuesto que los reparte y `DIAGNOSTICO_NUEVO` desde `ServicioMediciones`. |
 | Serie temporal de cada magnitud | Una consulta sobre `diagnostico_parametro`; el esquema ya la permite (D39). |
 
+## 8. Corte 2, bloque 4: compartir, recuperación, correo, vista en vivo y solicitudes
+
+Lo nuevo y cómo se conecta. El detalle de cada archivo, las decisiones D49 a D62 con su alternativa descartada, los límites y las preguntas de mutación están en [`corte2/IMPLEMENTACION.md`](corte2/IMPLEMENTACION.md). Este bloque no toca macetas ni el canal de dispositivos: el WebSocket que aparece aquí es solo la vista del navegador.
+
+### 8.1 Componentes nuevos
+
+```mermaid
+flowchart TB
+    subgraph WEB["web"]
+        IC["InvitacionesController"]
+        RC["RecuperacionController"]
+        SEC["SolicitudesEspecieController /\nAdministracionSolicitudesController"]
+    end
+
+    subgraph APL["aplicacion"]
+        SI["ServicioInvitaciones"]
+        SR["ServicioRecuperacion"]
+        SS["ServicioSolicitudes"]
+        SM["ServicioMediciones"]
+        CAS["CascadaDeEliminacion"]
+    end
+
+    subgraph DOM["dominio"]
+        MOD["modelo\n(Invitacion, SolicitudRestablecimiento,\nSolicitudEspecie, Aviso con datos y correos)"]
+        PUE["puerto\n(RepositorioInvitaciones, RepositorioRestablecimientos,\nRepositorioSolicitudes, GeneradorDeTokens, Notificador)"]
+    end
+
+    subgraph INFRA["infraestructura"]
+        PER["persistencia\n(3 adaptadores JPA, V8 a V10)"]
+        TOK["seguridad.GeneradorDeTokensSeguro"]
+        subgraph NOTIF["notificacion"]
+            TC["NotificadorTrasCommit\n(@Primary, decorador)"]
+            COMP["NotificadorCompuesto\n(tabla RUTAS)"]
+            LOG["NotificadorEnRegistro"]
+            MAIL["NotificadorPorCorreo"]
+            WSN["NotificadorPorWebSocket"]
+        end
+        WSC["websocket\n(ConfiguracionWebSocket, ProtectorDeCanalStomp)"]
+    end
+
+    IC --> SI
+    RC --> SR
+    SEC --> SS
+    SI --> PUE
+    SR --> PUE
+    SS --> PUE
+    SM --> PUE
+    CAS --> PUE
+    PER --> PUE
+    TOK --> PUE
+    TC --> PUE
+    TC --> COMP
+    COMP --> LOG
+    COMP --> MAIL
+    COMP --> WSN
+    WSC --> SI
+    WSN -.mensajes por usuario.-> WSC
+```
+
+Tres cosas que conviene poder explicar: (1) los servicios de aplicación solo conocen el puerto `Notificador`; que haya un decorador, un compuesto y tres canales es cableado de `ConfiguracionNotificacion`, invisible para ellos; (2) ni `aplicacion` ni `web` conocen el correo ni el WebSocket (regla ArchUnit `correo_y_websocket_solo_en_infraestructura`), y `web` no depende de `infraestructura` en absoluto (`la_web_no_depende_de_infraestructura`; los enlaces al front salen de `aplicacion.RutasDelFront` y de la propiedad `fitodiagnostico.front.url`); (3) `ProtectorDeCanalStomp` llama a `aplicacion` (`ServicioCuentas`, `ServicioPlantas`) para reutilizar la misma regla de "quién puede leer esta planta" del GET.
+
+### 8.2 De la medición al navegador y al correo
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (dueño)
+    participant SM as ServicioMediciones
+    participant TC as NotificadorTrasCommit
+    participant TX as Transacción
+    participant COMP as NotificadorCompuesto
+    participant L as Registro
+    participant M as Correo (otro hilo)
+    participant W as WebSocket
+    participant I as Navegador del invitado
+
+    C->>SM: POST /plantas/{id}/mediciones
+    activate TX
+    SM->>SM: evaluar, guardar en el historial
+    SM->>TC: avisar(DIAGNOSTICO_NUEVO, dueño + invitados)
+    TC->>TX: registrar envío para después del commit
+    SM->>TC: avisar(CAMBIO_DE_ESTADO) (si cambió)
+    TC->>TX: registrar envío para después del commit
+    SM-->>C: (el método termina)
+    TX->>TX: commit
+    deactivate TX
+    alt rollback
+        TX--xTC: los envíos registrados se descartan
+    else commit
+        TX->>TC: afterCommit
+        TC->>COMP: avisar(DIAGNOSTICO_NUEVO)
+        COMP->>W: solo vista en vivo
+        W-->>I: /user/queue/plantas/{id}
+        TC->>COMP: avisar(CAMBIO_DE_ESTADO)
+        COMP->>L: línea de registro
+        COMP->>M: un correo por persona
+        COMP->>W: vista en vivo
+        W-->>I: /user/queue/plantas/{id}
+    end
+```
+
+### 8.3 Autenticación y autorización del WebSocket
+
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant H as /ws (handshake)
+    participant P as ProtectorDeCanalStomp
+    participant JWT as JwtDecoder
+    participant SC as ServicioCuentas
+    participant SP as ServicioPlantas
+
+    N->>H: GET /ws (Upgrade, Origin)
+    alt Origin fuera de fitodiagnostico.cors.origenes
+        H--)N: 403
+    else Origin permitido o ausente
+        H-->>N: 101 Switching Protocols
+    end
+    N->>P: CONNECT  Authorization: Bearer <JWT>
+    P->>JWT: decode (firma, caducidad, emisor)
+    P->>SC: consultar(id del sub)  (la cuenta sigue existiendo)
+    alt token inválido, ausente o cuenta eliminada
+        P--)N: ERROR (sin sesión)
+    else válido
+        P-->>N: CONNECTED (la sesión queda con el id del usuario)
+    end
+    N->>P: SUBSCRIBE /user/queue/plantas/{id}
+    P->>SP: detalle(usuario, planta)   (la misma regla del GET)
+    alt ajena, inexistente u otro destino
+        P--)N: ERROR
+    else dueño o invitado
+        P-->>N: suscripción registrada
+    end
+    N->>P: SEND (cualquiera)
+    P--)N: ERROR (el canal es de solo lectura)
+```
+
+### 8.4 Aceptar una invitación sin tener cuenta
+
+```mermaid
+sequenceDiagram
+    participant V as Visitante
+    participant IC as InvitacionesController
+    participant SI as ServicioInvitaciones
+    participant RI as RepositorioInvitaciones
+    participant SC as ServicioCuentas
+    participant RA as RepositorioAccesos
+
+    V->>IC: POST /invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}
+    IC->>SI: registrarYAceptar(...)
+    activate SI
+    SI->>RI: porHuella(huella(token))
+    alt no existe / ya aceptada / revocada / caducada
+        SI--)V: 404 o 410, y NO se crea la cuenta
+    else vigente
+        SI->>SC: registrar(nombre, correo, contrasena)
+        alt el correo ya tiene cuenta
+            SC--)V: 409 (la invitación sigue vigente)
+        else cuenta nueva
+            SI->>RA: otorgar(planta, usuario nuevo)
+            SI->>RI: guardar(invitación ACEPTADA)
+        end
+    end
+    deactivate SI
+    SI-->>V: 201 {usuario, planta}  (sin sesión: iniciar sesión es un paso aparte)
+```
+
+### 8.5 Cambios a la tabla de responsabilidades
+
+| Capa | Lo que se agrega | Lo que sigue prohibido |
+|---|---|---|
+| **web** | tres controladores de compartir, recuperación y solicitudes más uno de administración, doce DTO; 404, 410, 409 y 415 en `ManejadorGlobalDeErrores`; rutas públicas nuevas en `ConfiguracionSeguridad` | decidir quién es dueño de una planta (lo decide `AutorizadorDePlantas`), nombrar el correo o el WebSocket |
+| **aplicacion** | tres servicios (`ServicioInvitaciones`, `ServicioRecuperacion`, `ServicioSolicitudes`); la cascada y `ServicioMediciones` ampliados | depender de `infraestructura`; nombrar el correo, el WebSocket, la sincronización de transacciones o los eventos de Spring |
+| **dominio** | `Invitacion`, `SolicitudRestablecimiento`, `SolicitudEspecie` y cuatro puertos; `Aviso` con datos | Spring, JPA, correo, WebSocket, cifrado; llamar al reloj (las decisiones por hora reciben `ahora`) |
+| **infraestructura** | tres adaptadores JPA, el generador de tokens, cuatro notificadores más el compuesto y el decorador, la configuración y la puerta del WebSocket, migraciones V8 a V10 | guardar un token en claro; dejar salir una entidad del paquete `persistencia` |
+
+### 8.6 Plan de evolución: lo que ya está listo y lo que falta
+
+| Evolución | Estado después del bloque 4 |
+|---|---|
+| Macetas (RF-D6 a D8, módulo I) | Igual que tras el bloque 3: falta el canal, el repositorio de macetas y la política de vinculación. Lo nuevo que ayuda: `ServicioMediciones` ya emite `DIAGNOSTICO_NUEVO` con origen `DISPOSITIVO` hacia la vista en vivo sin cambios. |
+| Otro canal de aviso (WhatsApp, push) | Una clase que implementa `Notificador`, una entrada en `NotificadorCompuesto.Canal` y en `RUTAS`, y una línea de cableado. |
+| Entrega garantizada de avisos | Una tabla `outbox` escrita en la misma transacción y un despachador que reintente; es el primer proceso periódico del sistema. |
+| Varias instancias del backend | Un broker externo para la vista en vivo (RabbitMQ con el plugin STOMP) en lugar del broker simple en memoria. |
+| Limpieza periódica | Purgar invitaciones y solicitudes de restablecimiento vencidas; comparte el proceso periódico del outbox. |
