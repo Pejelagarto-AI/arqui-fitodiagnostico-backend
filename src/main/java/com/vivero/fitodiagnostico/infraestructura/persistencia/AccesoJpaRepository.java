@@ -12,6 +12,8 @@ public interface AccesoJpaRepository extends JpaRepository<AccesoEntity, AccesoI
 
     List<AccesoEntity> findByIdPlantaId(UUID plantaId);
 
+    List<AccesoEntity> findByIdPlantaIdOrderByOtorgadoEnAscIdInvitadoIdAsc(UUID plantaId);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from AccesoEntity a where a.id.plantaId = :plantaId")
     void borrarDeLaPlanta(@Param("plantaId") UUID plantaId);
