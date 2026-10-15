@@ -1,8 +1,8 @@
 package com.vivero.fitodiagnostico.web;
 
+import com.vivero.fitodiagnostico.aplicacion.RutasDelFront;
 import com.vivero.fitodiagnostico.aplicacion.ServicioInvitaciones;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
-import com.vivero.fitodiagnostico.infraestructura.configuracion.EnlacesDelFront;
 import com.vivero.fitodiagnostico.web.dto.RespuestaAceptacionConRegistro;
 import com.vivero.fitodiagnostico.web.dto.RespuestaInvitacion;
 import com.vivero.fitodiagnostico.web.dto.RespuestaInvitacionGenerada;
@@ -12,6 +12,7 @@ import com.vivero.fitodiagnostico.web.dto.SolicitudAceptacion;
 import com.vivero.fitodiagnostico.web.dto.SolicitudAceptacionConRegistro;
 import com.vivero.fitodiagnostico.web.dto.SolicitudInvitacion;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -46,12 +47,18 @@ import java.util.UUID;
 public class InvitacionesController {
 
     private final ServicioInvitaciones servicio;
-    private final EnlacesDelFront enlaces;
+    private final String urlDelFront;
     private final Clock reloj;
 
-    public InvitacionesController(ServicioInvitaciones servicio, EnlacesDelFront enlaces, Clock reloj) {
+    /**
+     * La URL base del front es configuración ({@code FITO_FRONT_URL}); las rutas de las pantallas
+     * salen de {@link RutasDelFront}. Así la web no depende de infraestructura.
+     */
+    public InvitacionesController(ServicioInvitaciones servicio,
+                                  @Value("${fitodiagnostico.front.url:http://localhost:5500}") String urlDelFront,
+                                  Clock reloj) {
         this.servicio = servicio;
-        this.enlaces = enlaces;
+        this.urlDelFront = urlDelFront;
         this.reloj = reloj;
     }
 
@@ -68,7 +75,7 @@ public class InvitacionesController {
         return ResponseEntity
                 .created(URI.create("/api/v1/plantas/" + plantaId + "/invitaciones"))
                 .body(RespuestaInvitacionGenerada.desde(generada.invitacion(), generada.token(),
-                        enlaces.invitacion(generada.token())));
+                        RutasDelFront.absoluta(urlDelFront, RutasDelFront.invitacion(generada.token()))));
     }
 
     /** Las invitaciones vigentes de la planta, sin token. */

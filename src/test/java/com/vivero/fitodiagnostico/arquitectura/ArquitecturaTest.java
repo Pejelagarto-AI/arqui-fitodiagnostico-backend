@@ -154,4 +154,12 @@ class ArquitecturaTest {
     static final ArchRule las_entidades_no_guardan_tokens_en_claro =
         noFields().that().areDeclaredInClassesThat().areAnnotatedWith(Entity.class)
             .should().haveNameMatching("(?i)token|tokenEnClaro|contrasena");
+
+    // Corte 2, bloque 4 (RA5): la web tampoco depende de infraestructura, no solo de su persistencia. La
+    // configuración que ambas comparten (p. ej. la URL del front) se lee de las propiedades; las rutas de
+    // las pantallas viven en aplicacion.RutasDelFront. Lo comprueba también scripts/probar-dominio-sin-infraestructura.sh.
+    @ArchTest
+    static final ArchRule la_web_no_depende_de_infraestructura =
+        noClasses().that().resideInAPackage("..web..")
+            .should().dependOnClassesThat().resideInAPackage("..infraestructura..");
 }

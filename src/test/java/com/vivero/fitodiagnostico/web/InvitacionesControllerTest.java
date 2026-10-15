@@ -13,7 +13,6 @@ import com.vivero.fitodiagnostico.dominio.modelo.EstadoInvitacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Invitacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.infraestructura.configuracion.EnlacesDelFront;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -58,7 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * ({@code ServicioInvitacionesTest}) y el recorrido completo, la integración.
  */
 @WebMvcTest(InvitacionesController.class)
-@Import({SeguridadDePruebas.class, EnlacesDelFront.class, InvitacionesControllerTest.Reloj.class})
+@Import({SeguridadDePruebas.class, InvitacionesControllerTest.Reloj.class})
 class InvitacionesControllerTest {
 
     private static final UUID YO = UUID.fromString("7d4f2a56-9d0a-4a58-9d11-0a3a8a4b8f10");

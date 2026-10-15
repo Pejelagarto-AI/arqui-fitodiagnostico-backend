@@ -3,7 +3,6 @@ package com.vivero.fitodiagnostico.web;
 import com.vivero.fitodiagnostico.aplicacion.ServicioInvitaciones;
 import com.vivero.fitodiagnostico.aplicacion.ServicioRecuperacion;
 import com.vivero.fitodiagnostico.aplicacion.ServicioSolicitudes;
-import com.vivero.fitodiagnostico.infraestructura.configuracion.EnlacesDelFront;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest({InvitacionesController.class, RecuperacionController.class, SolicitudesEspecieController.class,
         AdministracionSolicitudesController.class})
-@Import({SeguridadDePruebas.class, EnlacesDelFront.class, SeguridadCompartirYAvisosWebTest.Reloj.class})
+@Import({SeguridadDePruebas.class, SeguridadCompartirYAvisosWebTest.Reloj.class})
 class SeguridadCompartirYAvisosWebTest {
 
     private static final String UN_ID = "7d4f2a56-9d0a-4a58-9d11-0a3a8a4b8f10";
