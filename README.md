@@ -17,7 +17,19 @@ export FITO_ADMIN_CONTRASENA="una-contrasena-larga"     # si todavía no existe 
 ./mvnw spring-boot:run     # http://localhost:8080
 ```
 
-La base de datos es la única fuente de las especies en ejecución. `src/main/resources/referencia/especies.csv` son datos semilla: se cargan a la base al arrancar solo si la tabla `especie` está vacía (el modo `tabla-referencia=csv` ya no existe). Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md).
+### Fuente de la tabla de referencia (fase 2)
+
+La tabla de especies se lee de la base de datos o del CSV, **elegido por configuración** y sin tocar código:
+
+```bash
+./mvnw spring-boot:run                              # bd (por defecto): la base es la fuente y se administra con la API
+FITO_CATALOGO_FUENTE=csv ./mvnw spring-boot:run     # csv: se lee src/main/resources/referencia/especies.csv
+```
+
+- `bd`: el administrador crea, edita, desactiva y reactiva especies. El CSV solo siembra la tabla `especie` al arrancar si está vacía.
+- `csv`: el catálogo es de solo lectura; cualquier alta, edición o (des)activación responde `409 CATALOGO_SOLO_LECTURA`. La tabla `especie` se reescribe con el CSV en cada arranque porque la planta guarda una clave foránea a ella.
+
+Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) y [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md).
 
 **`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**` y de los que se acepta el handshake del WebSocket (`/ws`). Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
 
@@ -41,9 +53,41 @@ docker run -d --rm --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit   # 
 
 Sin servidor SMTP la aplicación arranca y funciona; cada correo falla con un `WARN` y nada más. Las pruebas no envían nada: el perfil `test` reemplaza el servidor por un doble que captura los mensajes.
 
+## Cómo ejecutar el back, el front y el simulador
+
+| Pieza | Comando | Dónde |
+|---|---|---|
+| **Back** (este repo) | `./mvnw spring-boot:run` (con `FITO_JWT_SECRETO`, ver arriba) | http://localhost:8080 |
+| **Front** ([repo del front](https://github.com/Pejelagarto-AI/arqui-fitodiagnostico-frontend)) | desde su carpeta: `python3 -m http.server 5500` | http://localhost:5500 (el origen que el back acepta por defecto) |
+| **Simulador del ESP32** | `FITO_TOKEN_DISPOSITIVO=<token> python3 simulador/simulador_esp32.py` | solo Python 3, ver [`simulador/README.md`](simulador/README.md) |
+
+### Token de dispositivo (fase 2)
+
+El dueño de una planta autoriza un dispositivo y recibe un token de **alcance limitado**: sirve únicamente para reportar lecturas de esa planta y se rechaza (403) en cualquier otro endpoint. Un token de persona, al revés, no abre el endpoint del dispositivo.
+
+```bash
+B=http://localhost:8080/api/v1
+
+# 1. El dueño (JWT de usuario) emite el token del dispositivo. 201; 403 si es invitado; 404 si la planta es ajena.
+curl -X POST $B/plantas/$PLANTA_ID/dispositivos \
+  -H "Authorization: Bearer $TOKEN_DE_USUARIO" -H "Content-Type: application/json" \
+  -d '{"dispositivoId": "esp32-01"}'
+# {"dispositivoId":"esp32-01","plantaId":"...","token":"eyJ...","expira":"2027-10-19T15:00:00Z"}
+
+# 2. El dispositivo reporta una lectura con ese token. La planta sale del token. 201 con el diagnóstico.
+curl -X POST $B/dispositivos/esp32-01/lecturas \
+  -H "Authorization: Bearer $TOKEN_DEL_DISPOSITIVO" -H "Content-Type: application/json" \
+  -d '{"marcaDeTiempo": "2026-10-19T14:30:05Z", "humedad": 55, "luz": 700, "temperatura": 22}'
+
+# 3. El dueño ve la lectura como el diagnóstico vigente de su planta (origen DISPOSITIVO).
+curl $B/plantas/$PLANTA_ID/diagnostico -H "Authorization: Bearer $TOKEN_DE_USUARIO"
+```
+
+Errores del dispositivo: `400 PARAMETRO_INVALIDO` (campo ausente, valor no numérico, fuera del rango físico del sensor, fecha mal formada), `401` sin token, `403` con un token de persona o de otro dispositivo. El token caduca a los 365 días (`FITO_JWT_DISPOSITIVO_EXPIRACION`, ISO-8601) y **no se puede revocar de forma individual**: no se guardan dispositivos en la base.
+
 ## Endpoints
 
-Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
+Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{id}/lecturas`; en todas las demás rutas (también las públicas) ese token responde 403. Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
 
 | Módulo | Rutas (corte 2, bloques 1, 3 y 4) |
 |---|---|
@@ -57,6 +101,7 @@ Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POS
 | Compartir plantas (dueño) | `POST/GET /api/v1/plantas/{id}/invitaciones` (genera un enlace de un solo uso con caducidad de 7 días; el token se entrega solo en esta respuesta; `{"correo"}` opcional lo envía por correo), `DELETE .../invitaciones/{invitacionId}`, `GET .../invitados`, `DELETE .../invitados/{invitadoId}` (el invitado recibe `ACCESO_PERDIDO`) |
 | Compartir plantas (invitado) | `GET /api/v1/plantas/compartidas`, `DELETE /api/v1/plantas/compartidas/{id}` (renunciar), `POST /api/v1/invitaciones/aceptar {token}`, `POST /api/v1/invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}` (público: el visitante sin cuenta se registra y acepta en un solo paso) |
 | Solicitudes de especie | `POST/GET /api/v1/solicitudes-especie` (pedir y ver las propias); administrador: `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` (con `{"respuesta"}`; aprobar no da de alta la especie, eso es `POST /admin/especies`) |
+| Dispositivos (fase 2) | `POST /api/v1/plantas/{id}/dispositivos {dispositivoId}` (solo el dueño; devuelve el token del dispositivo), `POST /api/v1/dispositivos/{dispositivoId}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`) |
 | Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO` y `CAMBIO_DE_ESTADO`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
@@ -128,6 +173,7 @@ Todos los errores tienen la forma `{"error", "mensaje", "detalle"}`.
 | 409 | `CORREO_YA_REGISTRADO` / `ULTIMO_ADMINISTRADOR` / `ESPECIE_YA_EXISTE` / `ESPECIE_DESCONTINUADA` | conflicto con el estado actual (`ESPECIE_DESCONTINUADA`: registrar una planta, o cambiarla, a una especie ya desactivada) |
 | 404 | `INVITACION_NO_ENCONTRADA` / `INVITADO_NO_ENCONTRADO` / `SOLICITUD_NO_ENCONTRADA` | el token no corresponde a ninguna invitación / ese usuario no es invitado de la planta / no existe la solicitud |
 | 410 | `INVITACION_YA_ACEPTADA` / `INVITACION_CADUCADA` / `INVITACION_REVOCADA` / `RESTABLECIMIENTO_NO_VIGENTE` | el enlace existió pero ya no sirve (un enlace de invitación se usa una sola vez y caduca; el de restablecimiento caduca a la hora y se invalida si la contraseña cambia) |
+| 409 | `CATALOGO_SOLO_LECTURA` | modificar el catálogo cuando la fuente es el CSV (`FITO_CATALOGO_FUENTE=csv`) |
 | 409 | `SOLICITUD_YA_RESUELTA` | la solicitud ya fue aprobada o rechazada |
 | 404 | `RECURSO_NO_ENCONTRADO` | ruta inexistente |
 | 405 | `METODO_NO_PERMITIDO` | método HTTP no soportado por el recurso |
@@ -145,7 +191,7 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 ## Pruebas
 
 ```bash
-./mvnw verify     # 663 pruebas (113 antes del corte 2, 294 antes del bloque de plantas, 442 antes del bloque 4)
+./mvnw verify     # 718 pruebas (113 antes del corte 2, 442 antes del bloque 4, 663 antes de la fase 2)
 ```
 
 | Grupo | Qué cubre |
@@ -153,9 +199,9 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 | Dominio (JUnit puro) | modelo (`Especie`, `Usuario`, `Credencial`, `Rango`, ...) y servicios (`PoliticaDeAdministradores`, clasificador, evaluador, ...) |
 | Aplicación | `ServicioDiagnostico`, `ServicioCatalogo`, `ServicioCuentas`, `ServicioAdministracion`, `ServicioPlantas`, `ServicioMediciones`, `ServicioConsultaDeDiagnosticos`, `ServicioInvitaciones`, `ServicioRecuperacion`, `ServicioSolicitudes` y la cascada de eliminación con dobles en memoria de los puertos (sin Spring ni base) |
 | Contrato de puertos | `ContratoFuenteDeEspeciesTest` (lectura y escritura) contra el adaptador JPA y un doble en memoria: el puerto es sustituible (LSP) |
-| Infraestructura | adaptadores JPA de especies, usuarios, plantas, accesos, historial, invitaciones, restablecimientos y solicitudes con Flyway real (V1 a V10), BCrypt, JWT, generador de tokens, sembradores, y los notificadores (registro, correo, WebSocket, compuesto, después del commit) |
-| Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest`, `FlujoDePlantasIntegracionTest`, `FlujoDeCompartirIntegracionTest` (compartir, recuperación y solicitudes con correo capturado) y `VistaEnVivoIntegracionTest` (cliente STOMP real) de punta a punta |
-| ArchUnit | 17 reglas de `ArquitecturaTest`: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket), 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) y 5 del bloque 4 (el dominio no conoce el correo; correo y WebSocket solo en infraestructura; la aplicación no sincroniza transacciones; las entidades no guardan tokens en claro; la web no depende de infraestructura) |
+| Adaptadores de salida | adaptadores JPA de especies, usuarios, plantas, accesos, historial, invitaciones, restablecimientos y solicitudes con Flyway real (V1 a V10), BCrypt, JWT, generador de tokens, sembradores, y los notificadores (registro, correo, WebSocket, compuesto, después del commit) |
+| Adaptadores de entrada | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest`, `FlujoDePlantasIntegracionTest`, `FlujoDeCompartirIntegracionTest` (compartir, recuperación y solicitudes con correo capturado) y `VistaEnVivoIntegracionTest` (cliente STOMP real) de punta a punta |
+| ArchUnit | 26 reglas de `ArquitecturaTest` (9 nuevas de la fase 2: el dominio solo depende de dominio y `java.*`, los puertos son interfaces, entrada y salida no se conocen, los adaptadores no dependen de `config` ni de servicios de aplicación). De las 17 anteriores: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket), 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) y 5 del bloque 4 (el dominio no conoce el correo; correo y WebSocket solo en adaptadores; la aplicación no sincroniza transacciones; las entidades no guardan tokens en claro; la entrada no depende de la salida) |
 
 `scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo los paquetes `adaptador` y `config` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita adaptadores para compilar ni para pasar sus pruebas.
 
@@ -175,6 +221,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
 - [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo), 3 (plantas, mediciones, cambio de estado, cascadas) y 4 (compartir plantas, recuperación de contraseña, correo, vista en vivo por WebSocket, solicitudes de especie): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
+- [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---
