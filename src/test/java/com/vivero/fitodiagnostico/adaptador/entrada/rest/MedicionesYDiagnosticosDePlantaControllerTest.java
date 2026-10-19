@@ -70,7 +70,7 @@ class MedicionesYDiagnosticosDePlantaControllerTest {
                 new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO), new RedactorDeRecomendaciones())
                 .evaluar(Muestras.especie("helecho"), medicion);
         return new DiagnosticoDePlanta(UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), PLANTA, origen,
-                Instant.parse("2026-10-01T12:00:00Z"), diagnostico);
+                Instant.parse("2026-10-01T11:59:50Z"), Instant.parse("2026-10-01T12:00:00Z"), diagnostico);
     }
 
     // ---- POST /plantas/{id}/mediciones ----

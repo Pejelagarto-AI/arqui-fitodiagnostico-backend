@@ -42,6 +42,9 @@ public class DiagnosticoDePlantaEntity {
     @Enumerated(EnumType.STRING)
     private OrigenDeMedicion origen;
 
+    @Column(name = "tomada_en", nullable = false)
+    private Instant tomadaEn;
+
     @Column(name = "registrado_en", nullable = false)
     private Instant registradoEn;
 
@@ -84,6 +87,10 @@ public class DiagnosticoDePlantaEntity {
         return origen;
     }
 
+    public Instant getTomadaEn() {
+        return tomadaEn;
+    }
+
     public Instant getRegistradoEn() {
         return registradoEn;
     }
@@ -118,6 +125,10 @@ public class DiagnosticoDePlantaEntity {
 
     void setOrigen(OrigenDeMedicion origen) {
         this.origen = origen;
+    }
+
+    void setTomadaEn(Instant tomadaEn) {
+        this.tomadaEn = tomadaEn;
     }
 
     void setRegistradoEn(Instant registradoEn) {

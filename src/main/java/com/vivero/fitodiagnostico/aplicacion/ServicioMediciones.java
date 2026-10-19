@@ -20,6 +20,8 @@ import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -49,11 +51,12 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
     private final DetectorDeCambioDeEstado detector;
     private final Notificador notificador;
     private final AutorizadorDePlantas autorizador;
+    private final Clock reloj;
 
     public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
                               RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
                               DetectorDeCambioDeEstado detector, Notificador notificador,
-                              PoliticaDeAcceso politica) {
+                              PoliticaDeAcceso politica, Clock reloj) {
         this.plantas = plantas;
         this.accesos = accesos;
         this.diagnosticos = diagnosticos;
@@ -61,6 +64,7 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         this.detector = detector;
         this.notificador = notificador;
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
+        this.reloj = reloj;
     }
 
     /**
@@ -72,7 +76,7 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
     @Override
     public DiagnosticoDePlanta registrarManual(UUID solicitante, UUID plantaId, Medicion medicion) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
-        return registrar(planta, medicion, OrigenDeMedicion.MANUAL);
+        return registrar(planta, medicion, OrigenDeMedicion.MANUAL, reloj.instant());
     }
 
     /**
@@ -83,18 +87,20 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
      */
     @Transactional
     @Override
-    public DiagnosticoDePlanta registrar(UUID plantaId, Medicion medicion, OrigenDeMedicion origen) {
+    public DiagnosticoDePlanta registrar(UUID plantaId, Medicion medicion, OrigenDeMedicion origen,
+                                         Instant tomadaEn) {
         Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new PlantaNoEncontradaException(plantaId));
-        return registrar(planta, medicion, origen);
+        return registrar(planta, medicion, origen, tomadaEn);
     }
 
-    private DiagnosticoDePlanta registrar(Planta planta, Medicion medicion, OrigenDeMedicion origen) {
+    private DiagnosticoDePlanta registrar(Planta planta, Medicion medicion, OrigenDeMedicion origen,
+                                          Instant tomadaEn) {
         // RN8: se compara contra el inmediatamente anterior de ESTA planta, leído antes de guardar el nuevo.
         Optional<DiagnosticoDePlanta> anterior = diagnosticos.ultimoDe(planta.id());
 
         // RN11: se evalúa con la especie de la planta aunque ya esté descontinuada.
         Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion);
-        DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, evaluado);
+        DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, tomadaEn, evaluado);
         diagnosticos.guardar(registro);
 
         // RF-G2: toda medición nueva se refleja en la vista en vivo, haya cambiado el estado o no.

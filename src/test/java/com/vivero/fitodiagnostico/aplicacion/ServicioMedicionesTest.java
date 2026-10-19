@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.aplicacion;
 
 import com.vivero.fitodiagnostico.dobles.Muestras;
 import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
+import com.vivero.fitodiagnostico.dobles.RelojManual;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
@@ -20,6 +21,7 @@ import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
@@ -37,6 +39,8 @@ class ServicioMedicionesTest {
     private final UUID invitado = UUID.randomUUID();
     private final UUID ajeno = UUID.randomUUID();
 
+    private final RelojManual reloj = RelojManual.enUnDiaCualquiera();
+
     private MundoEnMemoria mundo;
     private ServicioMediciones servicio;
     private Planta planta;
@@ -47,7 +51,7 @@ class ServicioMedicionesTest {
         servicio = new ServicioMediciones(mundo.plantas, mundo.accesos, mundo.diagnosticos,
                 new EvaluadorDeEstado(new ClasificadorDeParametros(),
                         new ReglaPorDesviacion(ReglaPorDesviacion.UMBRAL_POR_DEFECTO), new RedactorDeRecomendaciones()),
-                new DetectorDeCambioDeEstado(), mundo.notificador, new PoliticaDeAcceso());
+                new DetectorDeCambioDeEstado(), mundo.notificador, new PoliticaDeAcceso(), reloj);
         planta = Planta.nueva(dueno, "Pepa", Muestras.especie("helecho"));
         mundo.plantas.guardar(planta);
         mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(planta.id(), invitado));
@@ -69,16 +73,29 @@ class ServicioMedicionesTest {
     void elCasoDeUsoRecibeElOrigenComoParametroYGuardaElDeDispositivoSinTocarNadaMas() {
         // D17: la maceta será "otro adaptador de entrada": mismo caso de uso, otro origen.
         DiagnosticoDePlanta registro = servicio.registrar(planta.id(), Muestras.medicionSaludable(),
-                OrigenDeMedicion.DISPOSITIVO);
+                OrigenDeMedicion.DISPOSITIVO, reloj.instant());
 
         assertThat(registro.origen()).isEqualTo(OrigenDeMedicion.DISPOSITIVO);
         assertThat(mundo.diagnosticos.ultimoDe(planta.id()).orElseThrow().origen()).isEqualTo(OrigenDeMedicion.DISPOSITIVO);
     }
 
     @Test
+    void laEntradaManualUsaElRelojYElDispositivoConservaLaMarcaDeTiempoQueInforma() {
+        DiagnosticoDePlanta manual = servicio.registrarManual(dueno, planta.id(), Muestras.medicionSaludable());
+        assertThat(manual.tomadaEn()).isEqualTo(reloj.instant());
+
+        Instant tomada = reloj.instant().minusSeconds(3600);
+        DiagnosticoDePlanta delDispositivo = servicio.registrar(planta.id(), Muestras.medicionSaludable(),
+                OrigenDeMedicion.DISPOSITIVO, tomada);
+
+        assertThat(delDispositivo.tomadaEn()).isEqualTo(tomada);
+        assertThat(delDispositivo.registradoEn()).isNotEqualTo(tomada);
+    }
+
+    @Test
     void registrarSobreUnaPlantaInexistenteLanza() {
         assertThatThrownBy(() -> servicio.registrar(UUID.randomUUID(), Muestras.medicionSaludable(),
-                OrigenDeMedicion.DISPOSITIVO)).isInstanceOf(PlantaNoEncontradaException.class);
+                OrigenDeMedicion.DISPOSITIVO, reloj.instant())).isInstanceOf(PlantaNoEncontradaException.class);
         assertThat(mundo.diagnosticos.escrituras()).isZero();
     }
 

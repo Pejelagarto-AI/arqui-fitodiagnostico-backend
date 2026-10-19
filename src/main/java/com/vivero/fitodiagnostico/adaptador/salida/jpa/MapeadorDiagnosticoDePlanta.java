@@ -49,7 +49,7 @@ public class MapeadorDiagnosticoDePlanta {
         Diagnostico diagnostico = new Diagnostico(especie, medicion, entidad.getEstado(), parametros,
                 List.copyOf(entidad.getRecomendaciones()), entidad.getEvaluadoEn());
         return new DiagnosticoDePlanta(entidad.getId(), entidad.getPlantaId(), entidad.getOrigen(),
-                entidad.getRegistradoEn(), diagnostico);
+                entidad.getTomadaEn(), entidad.getRegistradoEn(), diagnostico);
     }
 
     DiagnosticoDePlantaEntity nuevaEntidad() {
@@ -61,6 +61,7 @@ public class MapeadorDiagnosticoDePlanta {
         entidad.setId(registro.id());
         entidad.setPlantaId(registro.plantaId());
         entidad.setOrigen(registro.origen());
+        entidad.setTomadaEn(registro.tomadaEn());
         entidad.setRegistradoEn(registro.registradoEn());
         entidad.setEvaluadoEn(diagnostico.evaluadoEn());
         entidad.setEspecieNombre(diagnostico.especie().nombre());

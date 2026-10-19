@@ -9,15 +9,19 @@ import java.util.UUID;
  * sigue sirviendo sin planta ni cuenta (RF-F6), y un campo opcional es una
  * invitación permanente a olvidar comprobarlo.
  *
- * <p>{@code registradoEn} es cuándo entró al historial; {@code diagnostico.evaluadoEn()}
- * es cuándo corrió la evaluación. {@link #deUnaEvaluacion} los hace coincidir,
- * que es lo normal; el constructor permite que difieran para reconstruir
- * registros desde la base sin inventar fechas.
+ * <p>Tres instantes distintos: {@code tomadaEn} es cuándo se midió (lo informa
+ * quien mide: el dispositivo manda su marca de tiempo y la entrada manual usa el
+ * reloj del servidor); {@code registradoEn} es cuándo entró al historial y por él
+ * se ordena "el último"; {@code diagnostico.evaluadoEn()} es cuándo corrió la
+ * evaluación. Separar {@code tomadaEn} de {@code registradoEn} permite que un
+ * dispositivo con el reloj desfasado, o que reenvía lecturas acumuladas, no
+ * altere cuál es el diagnóstico vigente.
  */
 public record DiagnosticoDePlanta(
         UUID id,
         UUID plantaId,
         OrigenDeMedicion origen,
+        Instant tomadaEn,
         Instant registradoEn,
         Diagnostico diagnostico) {
 
@@ -28,14 +32,21 @@ public record DiagnosticoDePlanta(
         if (origen == null) {
             throw new IllegalArgumentException("el diagnóstico de planta requiere origen");
         }
-        if (registradoEn == null || diagnostico == null) {
-            throw new IllegalArgumentException("el diagnóstico de planta requiere fecha y diagnóstico");
+        if (tomadaEn == null || registradoEn == null || diagnostico == null) {
+            throw new IllegalArgumentException("el diagnóstico de planta requiere fechas y diagnóstico");
         }
     }
 
+    /** Una medición tomada "ahora": {@code tomadaEn} coincide con el momento de la evaluación. */
     public static DiagnosticoDePlanta deUnaEvaluacion(UUID plantaId, OrigenDeMedicion origen,
                                                       Diagnostico diagnostico) {
-        return new DiagnosticoDePlanta(UUID.randomUUID(), plantaId, origen,
+        return deUnaEvaluacion(plantaId, origen, diagnostico.evaluadoEn(), diagnostico);
+    }
+
+    /** Una medición tomada en {@code tomadaEn} (la informa quien mide) y registrada ahora. */
+    public static DiagnosticoDePlanta deUnaEvaluacion(UUID plantaId, OrigenDeMedicion origen,
+                                                      Instant tomadaEn, Diagnostico diagnostico) {
+        return new DiagnosticoDePlanta(UUID.randomUUID(), plantaId, origen, tomadaEn,
                 diagnostico.evaluadoEn(), diagnostico);
     }
 
