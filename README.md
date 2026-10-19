@@ -157,7 +157,7 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 | Web | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest`, `FlujoDePlantasIntegracionTest`, `FlujoDeCompartirIntegracionTest` (compartir, recuperación y solicitudes con correo capturado) y `VistaEnVivoIntegracionTest` (cliente STOMP real) de punta a punta |
 | ArchUnit | 17 reglas de `ArquitecturaTest`: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket), 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) y 5 del bloque 4 (el dominio no conoce el correo; correo y WebSocket solo en infraestructura; la aplicación no sincroniza transacciones; las entidades no guardan tokens en claro; la web no depende de infraestructura) |
 
-`scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo el paquete `infraestructura` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita infraestructura para compilar ni para pasar sus pruebas.
+`scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo los paquetes `adaptador` y `config` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita adaptadores para compilar ni para pasar sus pruebas.
 
 ## Tabla de referencia
 

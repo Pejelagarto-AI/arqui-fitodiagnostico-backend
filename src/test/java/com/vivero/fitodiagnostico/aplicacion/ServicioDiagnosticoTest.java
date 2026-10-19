@@ -7,7 +7,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;

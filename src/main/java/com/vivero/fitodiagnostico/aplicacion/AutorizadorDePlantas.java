@@ -3,8 +3,8 @@ package com.vivero.fitodiagnostico.aplicacion;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 
 import java.util.UUID;

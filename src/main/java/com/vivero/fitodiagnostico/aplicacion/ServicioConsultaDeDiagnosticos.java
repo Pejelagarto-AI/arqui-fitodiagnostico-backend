@@ -1,11 +1,13 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarEstadoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarHistorialPort;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
 import com.vivero.fitodiagnostico.dominio.modelo.Pagina;
 import com.vivero.fitodiagnostico.dominio.modelo.Paginacion;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioDiagnosticos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDiagnosticos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +24,7 @@ import java.util.UUID;
  * usar dueño e invitados (RN3).
  */
 @Service
-public class ServicioConsultaDeDiagnosticos {
+public class ServicioConsultaDeDiagnosticos implements ConsultarEstadoPort, ConsultarHistorialPort {
 
     private final RepositorioDiagnosticos diagnosticos;
     private final AutorizadorDePlantas autorizador;
@@ -35,6 +37,7 @@ public class ServicioConsultaDeDiagnosticos {
 
     /** RF-F4: el último guardado, o vacío si la planta nunca se midió (RN9: no es un error). */
     @Transactional(readOnly = true)
+    @Override
     public Optional<DiagnosticoDePlanta> vigente(UUID solicitante, UUID plantaId) {
         autorizador.paraLeer(solicitante, plantaId);
         return diagnosticos.ultimoDe(plantaId);
@@ -42,6 +45,7 @@ public class ServicioConsultaDeDiagnosticos {
 
     /** RF-F5: paginado desde el principio (DA6). */
     @Transactional(readOnly = true)
+    @Override
     public Pagina<DiagnosticoDePlanta> historial(UUID solicitante, UUID plantaId, Paginacion paginacion) {
         autorizador.paraLeer(solicitante, plantaId);
         return diagnosticos.historialDe(plantaId, paginacion);

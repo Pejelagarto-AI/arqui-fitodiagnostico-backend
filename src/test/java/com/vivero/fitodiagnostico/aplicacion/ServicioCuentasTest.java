@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.IniciarSesionPort;
 import com.vivero.fitodiagnostico.dobles.CifradorFalso;
 import com.vivero.fitodiagnostico.dobles.Muestras;
 import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
@@ -66,7 +67,7 @@ class ServicioCuentasTest {
     void iniciarSesionConCredencialesCorrectasDevuelveUsuarioYToken() {
         servicio.registrar("Ana", "ana@vivero.co", "clave-larga-1");
 
-        ServicioCuentas.Sesion sesion = servicio.iniciarSesion("ANA@vivero.co", "clave-larga-1");
+        IniciarSesionPort.Sesion sesion = servicio.iniciarSesion("ANA@vivero.co", "clave-larga-1");
 
         assertThat(sesion.usuario().correo()).isEqualTo("ana@vivero.co");
         assertThat(sesion.token().valor()).isEqualTo("token-de-ana@vivero.co");

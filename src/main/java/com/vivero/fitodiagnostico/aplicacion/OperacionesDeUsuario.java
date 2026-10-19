@@ -3,7 +3,7 @@ package com.vivero.fitodiagnostico.aplicacion;
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UsuarioNoEncontradoException;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 
 import java.util.UUID;
 

@@ -1,7 +1,7 @@
 package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
 
 import java.util.Comparator;
 import java.util.HashSet;

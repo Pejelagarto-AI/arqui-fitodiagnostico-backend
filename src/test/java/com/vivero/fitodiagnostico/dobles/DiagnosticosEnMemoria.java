@@ -3,7 +3,7 @@ package com.vivero.fitodiagnostico.dobles;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
 import com.vivero.fitodiagnostico.dominio.modelo.Pagina;
 import com.vivero.fitodiagnostico.dominio.modelo.Paginacion;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioDiagnosticos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDiagnosticos;
 
 import java.util.ArrayList;
 import java.util.Comparator;

@@ -1,7 +1,7 @@
 package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;

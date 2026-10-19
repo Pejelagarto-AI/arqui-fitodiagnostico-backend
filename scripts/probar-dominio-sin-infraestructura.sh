@@ -2,20 +2,17 @@
 #
 # RA4/RA5: demuestra que el dominio y la aplicación no necesitan infraestructura.
 # Copia el repo a un directorio temporal, BORRA por completo
-# src/main/java/.../infraestructura y src/test/java/.../infraestructura (el
-# CSV, el adaptador JPA, la entidad, Flyway-facing config, todo) y corre SOLO
-# las pruebas de dominio y aplicación sobre esa copia mutilada.
+# src/main/java/.../adaptador y .../config (y sus pruebas): los adaptadores de
+# entrada REST, dispositivo y WebSocket, los de salida JPA, CSV, JWT y correo, y
+# la composición con Spring). Corre SOLO las pruebas de dominio y aplicación
+# sobre esa copia mutilada. Es la prueba material de la arquitectura hexagonal:
+# el hexágono (dominio + puertos + aplicación) compila sin un solo adaptador.
 #
-# No hace falta excluir nada más: web/, arquitectura/ y
-# FitodiagnosticoApplicationTests siguen compilando sin infraestructura (nada
-# en ellos importa una clase de ese paquete en tiempo de compilación), y el
-# filtro -Dtest de abajo nunca los ejecuta. Si en el futuro alguno de esos
-# paquetes empieza a fallar la compilación por depender de infraestructura,
-# la respuesta correcta es borrar también esa copia de src/test/.../web,
-# src/test/.../arquitectura y FitodiagnosticoApplicationTests aquí abajo (NO
-# relajar el filtro ni la regla): lo que este script demuestra es que
-# dominio y aplicación no necesitan infraestructura, no que todo el árbol
-# de pruebas la ignore.
+# Las pruebas de integración de la raíz de src/test (que arrancan Spring con
+# todos los adaptadores) y arquitectura/ no pueden compilar sin adaptadores, así
+# que también se borran de la copia; el filtro -Dtest solo ejecuta dominio y
+# aplicación. Lo que este script demuestra es que dominio y aplicación no
+# necesitan adaptadores, no que todo el árbol de pruebas los ignore.
 #
 # Responde en la sustentación a: "si borro infraestructura, ¿compilan/pasan
 # tus pruebas de dominio? Ejecútalas."
@@ -40,13 +37,21 @@ cp -r "$REPO_ROOT" "$TMP_DIR/repo"
 rm -rf "$TMP_DIR/repo/target" "$TMP_DIR/repo/.git"
 
 PKG_BASE="com/vivero/fitodiagnostico"
-MAIN_INFRA="$TMP_DIR/repo/src/main/java/$PKG_BASE/infraestructura"
-TEST_INFRA="$TMP_DIR/repo/src/test/java/$PKG_BASE/infraestructura"
+BORRAR=(
+    "src/main/java/$PKG_BASE/adaptador"
+    "src/main/java/$PKG_BASE/config"
+    "src/main/java/$PKG_BASE/FitodiagnosticoApplication.java"
+    "src/test/java/$PKG_BASE/adaptador"
+    "src/test/java/$PKG_BASE/arquitectura"
+)
 
-echo "== borrando infraestructura de la copia =="
-echo "  - ${MAIN_INFRA#"$TMP_DIR/repo/"}"
-echo "  - ${TEST_INFRA#"$TMP_DIR/repo/"}"
-rm -rf "$MAIN_INFRA" "$TEST_INFRA"
+echo "== borrando adaptadores y composicion de la copia =="
+for ruta in "${BORRAR[@]}"; do
+    echo "  - $ruta"
+    rm -rf "$TMP_DIR/repo/$ruta"
+done
+# Pruebas de integracion de la raiz: arrancan Spring con todos los adaptadores.
+find "$TMP_DIR/repo/src/test/java/$PKG_BASE" -maxdepth 1 -name '*.java' -delete
 
 cd "$TMP_DIR/repo"
 
@@ -62,7 +67,7 @@ echo
 echo "=========================================================="
 if [ "$RESULTADO" -eq 0 ]; then
     echo "RESULTADO: PASA — dominio y aplicación compilan y pasan sus"
-    echo "pruebas sin que exista un solo archivo de infraestructura."
+    echo "pruebas sin que exista un solo adaptador ni la composición."
 else
     echo "RESULTADO: FALLA — revisa el log de Maven arriba (relanza sin -q"
     echo "si hace falta más detalle: quita el flag '-q' de este script)."

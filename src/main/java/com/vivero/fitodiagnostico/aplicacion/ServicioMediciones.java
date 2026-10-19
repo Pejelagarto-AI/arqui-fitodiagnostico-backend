@@ -1,5 +1,7 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarMedicionManualPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
@@ -8,10 +10,10 @@ import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
-import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioDiagnosticos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDiagnosticos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
@@ -38,7 +40,7 @@ import java.util.UUID;
  * un usuario, se autentica con su credencial (RN19).
  */
 @Service
-public class ServicioMediciones {
+public class ServicioMediciones implements RegistrarMedicionManualPort, RegistrarLecturaPort {
 
     private final RepositorioPlantas plantas;
     private final RepositorioAccesos accesos;
@@ -67,6 +69,7 @@ public class ServicioMediciones {
      * {@code PlantaNoEncontradaException} que si la planta no existiera.
      */
     @Transactional
+    @Override
     public DiagnosticoDePlanta registrarManual(UUID solicitante, UUID plantaId, Medicion medicion) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
         return registrar(planta, medicion, OrigenDeMedicion.MANUAL);
@@ -79,6 +82,7 @@ public class ServicioMediciones {
      * @throws PlantaNoEncontradaException si la planta no existe
      */
     @Transactional
+    @Override
     public DiagnosticoDePlanta registrar(UUID plantaId, Medicion medicion, OrigenDeMedicion origen) {
         Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new PlantaNoEncontradaException(plantaId));
         return registrar(planta, medicion, origen);

@@ -1,12 +1,12 @@
 # Catálogo de especies (D14): la base de datos es la única fuente en ejecución.
 # El CSV src/main/resources/referencia/especies.csv son datos semilla: la
-# clase infraestructura.referencia.SembradorDeEspecies lo carga a la base al
+# clase adaptador.salida.csv.SembradorDeEspecies lo carga a la base al
 # arrancar, solo si la tabla `especie` está vacía. Desde ahí el administrador
 # edita, desactiva y reactiva especies con la API; el CSV no vuelve a leerse.
 # (Ya no existe la propiedad fitodiagnostico.tabla-referencia ni el modo csv.)
 
 # fitodiagnostico.cors.origenes: lista separada por comas de orígenes con
-# permiso de CORS sobre /api/** (RA7, web.ConfiguracionCors). Por defecto
+# permiso de CORS sobre /api/** (RA7, adaptador.entrada.rest.ConfiguracionCors). Por defecto
 # http://localhost:5500,http://127.0.0.1:5500 (el front servido con
 # `python3 -m http.server 5500` en desarrollo). En otros ambientes se
 # sobreescribe con el/los orígenes reales del front.
@@ -51,7 +51,7 @@ fitodiagnostico:
 
 
 # RA1: sin esto, un error que por algún motivo no pase por
-# ManejadorGlobalDeErrores ni por web.ControladorDeErrores podría caer en la
+# ManejadorGlobalDeErrores ni por adaptador.entrada.rest.ControladorDeErrores podría caer en la
 # página blanca (whitelabel) de Spring Boot, que es HTML. Con
 # ControladorDeErrores registrado como ErrorController esto ya no debería
 # pasar, pero se deja explícito como cinturón de seguridad.

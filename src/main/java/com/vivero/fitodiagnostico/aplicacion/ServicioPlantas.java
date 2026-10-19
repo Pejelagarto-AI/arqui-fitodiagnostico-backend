@@ -1,11 +1,13 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarPlantasPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.GestionarPlantasPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +22,7 @@ import java.util.UUID;
  * (RN11) lo decide la propia {@link Planta}; aquí solo se busca la especie.
  */
 @Service
-public class ServicioPlantas {
+public class ServicioPlantas implements ConsultarPlantasPort, GestionarPlantasPort {
 
     private final RepositorioPlantas plantas;
     private final RangosPorEspecie especies;
@@ -42,6 +44,7 @@ public class ServicioPlantas {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException si está descontinuada (RN11)
      */
     @Transactional
+    @Override
     public Planta registrar(UUID duenoId, String apodo, String nombreDeEspecie) {
         Planta nueva = Planta.nueva(duenoId, apodo, buscarEspecie(nombreDeEspecie));
         plantas.guardar(nueva);
@@ -50,18 +53,21 @@ public class ServicioPlantas {
 
     /** RF-D2: solo las propias. Las compartidas conmigo son otro listado (RF-E5, bloque siguiente). */
     @Transactional(readOnly = true)
+    @Override
     public List<Planta> listarPropias(UUID duenoId) {
         return plantas.deDueno(duenoId);
     }
 
     /** RF-D3: dueño o invitado. */
     @Transactional(readOnly = true)
+    @Override
     public Planta detalle(UUID solicitante, UUID plantaId) {
         return autorizador.paraLeer(solicitante, plantaId);
     }
 
     /** RF-D4: solo el dueño. Cambiar a otra especie exige que esté activa (RN11); conservar la misma, no. */
     @Transactional
+    @Override
     public Planta editar(UUID solicitante, UUID plantaId, String apodo, String nombreDeEspecie) {
         Planta actual = autorizador.paraModificar(solicitante, plantaId);
         Planta editada = actual.conApodo(apodo).conEspecie(buscarEspecie(nombreDeEspecie));
@@ -71,6 +77,7 @@ public class ServicioPlantas {
 
     /** RF-D5: solo el dueño; con la cascada de la RN12 y el aviso a los invitados (RF-G3). */
     @Transactional
+    @Override
     public void eliminar(UUID solicitante, UUID plantaId) {
         cascada.eliminarPlanta(autorizador.paraModificar(solicitante, plantaId));
     }

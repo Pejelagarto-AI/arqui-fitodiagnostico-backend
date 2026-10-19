@@ -1,7 +1,7 @@
 package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.SolicitudRestablecimiento;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioRestablecimientos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioRestablecimientos;
 
 import java.util.LinkedHashMap;
 import java.util.List;

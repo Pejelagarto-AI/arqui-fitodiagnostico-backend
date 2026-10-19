@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
  * con el front, escrito en UN solo sitio. Lo usan quienes arman enlaces absolutos
  * (el adaptador de correo, en infraestructura, y la respuesta de generar una
  * invitación, en web) sin que ninguno de los dos dependa del otro, ni la web
- * de infraestructura. La URL base es configuración de despliegue
+ * de un adaptador. La URL base es configuración de despliegue
  * ({@code fitodiagnostico.front.url}) y la pone cada uno.
  *
  * <p>Sin Spring ni estado: funciones puras sobre texto.

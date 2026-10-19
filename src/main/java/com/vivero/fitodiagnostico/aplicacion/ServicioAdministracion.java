@@ -1,5 +1,7 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AdministrarUsuariosPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AdministrarEspeciesPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
@@ -8,10 +10,10 @@ import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoEditable;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoEditable;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +34,7 @@ import java.util.UUID;
  * catálogo, no una modificación.
  */
 @Service
-public class ServicioAdministracion {
+public class ServicioAdministracion implements AdministrarUsuariosPort, AdministrarEspeciesPort {
 
     private final RepositorioUsuarios usuarios;
     private final PoliticaDeAdministradores politicaDeAdministradores;
@@ -40,9 +42,6 @@ public class ServicioAdministracion {
     private final RangosPorEspecie rangosPorEspecie;
     private final RepositorioPlantas plantas;
     private final CascadaDeEliminacion cascada;
-
-    /** RF-B2: el usuario y las plantas de las que es dueño. */
-    public record DetalleDeUsuario(Usuario usuario, List<Planta> plantas) { }
 
     public ServicioAdministracion(RepositorioUsuarios usuarios,
                                   PoliticaDeAdministradores politicaDeAdministradores,
@@ -62,6 +61,7 @@ public class ServicioAdministracion {
 
     /** RF-B1: sin texto lista todos; con texto, los que lo contienen en nombre o correo. */
     @Transactional(readOnly = true)
+    @Override
     public List<Usuario> listarUsuarios(String texto) {
         return texto == null || texto.isBlank() ? usuarios.listar() : usuarios.buscar(texto.trim());
     }
@@ -72,6 +72,7 @@ public class ServicioAdministracion {
      * sus invitados, que siguen siendo del dueño (RN3).
      */
     @Transactional(readOnly = true)
+    @Override
     public DetalleDeUsuario detalleDeUsuario(UUID id) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         return new DetalleDeUsuario(usuario, plantas.deDueno(id));
@@ -79,12 +80,14 @@ public class ServicioAdministracion {
 
     /** RF-B3. */
     @Transactional
+    @Override
     public Usuario editarUsuario(UUID id, String nombre, String correo) {
         return OperacionesDeUsuario.editarDatos(usuarios, id, nombre, correo);
     }
 
     /** RF-B4. Con la misma cascada de plantas que RF-A6 (RN12). @throws UltimoAdministradorException RN4 */
     @Transactional
+    @Override
     public void eliminarUsuario(UUID id) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         exigirQuePuedaDejarDeSerAdministrador(usuario);
@@ -94,6 +97,7 @@ public class ServicioAdministracion {
 
     /** RF-B5 (otorgar). Idempotente. */
     @Transactional
+    @Override
     public Usuario otorgarAdministrador(UUID id) {
         Usuario promovido = OperacionesDeUsuario.cargar(usuarios, id).conRolAdministrador();
         usuarios.guardar(promovido);
@@ -102,6 +106,7 @@ public class ServicioAdministracion {
 
     /** RF-B5 (revocar). Idempotente. @throws UltimoAdministradorException RN4 */
     @Transactional
+    @Override
     public Usuario revocarAdministrador(UUID id) {
         Usuario actual = OperacionesDeUsuario.cargar(usuarios, id);
         exigirQuePuedaDejarDeSerAdministrador(actual);
@@ -120,6 +125,7 @@ public class ServicioAdministracion {
 
     /** RF-C3. La especie nace activa. @throws EspecieYaExisteException si el nombre ya existe, activa o no */
     @Transactional
+    @Override
     public Especie crearEspecie(String nombre, Map<Magnitud, Rango> rangos) {
         exigirRangosCompletosYFisicos(rangos);
         if (rangosPorEspecie.buscar(nombre).isPresent()) {
@@ -132,6 +138,7 @@ public class ServicioAdministracion {
 
     /** RF-C4: cambia los rangos; el nombre es la clave y no se edita, y el estado de activación se conserva. */
     @Transactional
+    @Override
     public Especie editarEspecie(String nombre, Map<Magnitud, Rango> rangos) {
         exigirRangosCompletosYFisicos(rangos);
         Especie editada = existente(nombre).conRangos(rangos);
@@ -141,6 +148,7 @@ public class ServicioAdministracion {
 
     /** RF-C5. Idempotente. No elimina: deja de ofrecerse, sigue diagnosticándose (RN11). */
     @Transactional
+    @Override
     public Especie desactivarEspecie(String nombre) {
         Especie descontinuada = existente(nombre).desactivada();
         catalogoEditable.cambiarActivacion(descontinuada.nombre(), false);
@@ -149,6 +157,7 @@ public class ServicioAdministracion {
 
     /** RF-C6. Idempotente. */
     @Transactional
+    @Override
     public Especie reactivarEspecie(String nombre) {
         Especie reactivada = existente(nombre).reactivada();
         catalogoEditable.cambiarActivacion(reactivada.nombre(), true);

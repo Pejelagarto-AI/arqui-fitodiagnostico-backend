@@ -1,10 +1,11 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.DiagnosticarPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
  * nunca de Spring Data ni de la entidad JPA (RA-02, RA-04).
  */
 @Service
-public class ServicioDiagnostico {
+public class ServicioDiagnostico implements DiagnosticarPort {
 
     private final RangosPorEspecie rangosPorEspecie;
     private final EvaluadorDeEstado evaluador;
@@ -29,6 +30,7 @@ public class ServicioDiagnostico {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public Diagnostico diagnosticar(String nombre, Medicion medicion) {
 
         Especie especie = rangosPorEspecie
