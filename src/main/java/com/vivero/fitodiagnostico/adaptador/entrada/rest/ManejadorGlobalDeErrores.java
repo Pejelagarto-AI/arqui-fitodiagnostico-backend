@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
+import com.vivero.fitodiagnostico.dominio.excepcion.CatalogoSoloLecturaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
@@ -130,6 +131,12 @@ public class ManejadorGlobalDeErrores {
     @ExceptionHandler(OperacionNoPermitidaException.class)
     ResponseEntity<ErrorRespuesta> operacionNoPermitida(OperacionNoPermitidaException e) {
         return construir(HttpStatus.FORBIDDEN, "OPERACION_NO_PERMITIDA", e.getMessage(), Map.of());
+    }
+
+    /** Fuente CSV (409): el catálogo está configurado como solo lectura. */
+    @ExceptionHandler(CatalogoSoloLecturaException.class)
+    ResponseEntity<ErrorRespuesta> catalogoSoloLectura(CatalogoSoloLecturaException e) {
+        return construir(HttpStatus.CONFLICT, "CATALOGO_SOLO_LECTURA", e.getMessage(), Map.of());
     }
 
     /** RN11 (409): petición bien formada que choca con el estado del catálogo (D30). */

@@ -4,7 +4,6 @@ import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoDeEspecies;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoEditable;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
-import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -12,14 +11,16 @@ import java.util.Optional;
 
 /**
  * Adaptador: traduce entre el mundo JPA y el modelo de dominio. Implementa los
- * tres puertos del catálogo y es el único adaptador de producción (D14): ya no
- * hay modo CSV en caliente, el CSV solo siembra esta base al arrancar.
+ * tres puertos del catálogo. Es la fuente cuando
+ * {@code fitodiagnostico.catalogo.fuente=bd} (por defecto); con {@code csv} la
+ * lectura sale de {@code AdaptadorEspecieCsv} y esta clase solo sirve de espejo
+ * para la clave foránea de las plantas. No lleva anotación de Spring: quien
+ * decide si es un bean de los puertos o solo el espejo es {@code config.ConfiguracionCatalogo}.
  *
  * <p>{@link #buscar} y {@link #listar} devuelven también las especies
  * inactivas: filtrar es decisión de la aplicación (D8), y una especie
  * descontinuada debe seguir siendo diagnosticable (RN11).
  */
-@Repository
 public class AdaptadorEspecieJpa implements RangosPorEspecie, CatalogoDeEspecies, CatalogoEditable {
 
     private final EspecieJpaRepository jpa;

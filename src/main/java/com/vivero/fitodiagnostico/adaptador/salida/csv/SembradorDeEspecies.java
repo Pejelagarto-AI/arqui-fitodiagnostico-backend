@@ -8,20 +8,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 /**
  * Carga el CSV de referencia a la base al arrancar, solo si el catálogo está
- * vacío (D14). Habla con los puertos, no con JPA: así la misma clase siembra
+ * vacío (D14; modo {@code bd}). Lo arma {@code config.ConfiguracionCatalogo}, no el escaneo. Habla con los puertos, no con JPA: así la misma clase siembra
  * cualquier adaptador y se prueba con un doble en memoria.
  *
  * <p>"Solo si está vacío" es lo que lo hace seguro de ejecutar en cada
  * arranque: una vez que el administrador edita o desactiva especies, el CSV
  * nunca vuelve a pisar sus cambios.
  */
-@Component
 @Order(1)
 public class SembradorDeEspecies implements ApplicationRunner {
 
