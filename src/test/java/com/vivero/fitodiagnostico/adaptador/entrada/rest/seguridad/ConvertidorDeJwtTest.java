@@ -77,4 +77,53 @@ class ConvertidorDeJwtTest {
         assertThatThrownBy(() -> convertidor.convert(tokenDe(null))).isInstanceOf(InvalidBearerTokenException.class);
         assertThatThrownBy(() -> convertidor.convert(tokenDe("no-es-uuid"))).isInstanceOf(InvalidBearerTokenException.class);
     }
+
+    // ---- token de dispositivo ----
+
+    private static Jwt tokenDeDispositivo(String sub, String planta, String scope) {
+        Jwt.Builder builder = Jwt.withTokenValue("t").header("alg", "HS256")
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60))
+                .claim("tipo", "dispositivo");
+        if (sub != null) builder.subject(sub); else builder.claim("otro", "x");
+        if (planta != null) builder.claim("planta", planta);
+        if (scope != null) builder.claim("scope", scope);
+        return builder.build();
+    }
+
+    @Test
+    void unTokenDeDispositivoSoloTieneElAlcanceDeReportarLecturasYNoConsultaLaBase() {
+        var autenticacion = convertidor.convert(
+                tokenDeDispositivo("esp32-01", UUID.randomUUID().toString(), "lecturas:reportar"));
+
+        assertThat(autenticacion.getName()).isEqualTo("esp32-01");
+        assertThat(autenticacion.getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactly("SCOPE_lecturas:reportar");
+        org.mockito.Mockito.verifyNoInteractions(cuentas);
+    }
+
+    @Test
+    void unTokenDeDispositivoIncoherenteSeRechaza() {
+        String planta = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> convertidor.convert(tokenDeDispositivo(null, planta, "lecturas:reportar")))
+                .isInstanceOf(InvalidBearerTokenException.class);
+        assertThatThrownBy(() -> convertidor.convert(tokenDeDispositivo("esp32-01", null, "lecturas:reportar")))
+                .isInstanceOf(InvalidBearerTokenException.class);
+        assertThatThrownBy(() -> convertidor.convert(tokenDeDispositivo("esp32-01", "no-uuid", "lecturas:reportar")))
+                .isInstanceOf(InvalidBearerTokenException.class);
+        assertThatThrownBy(() -> convertidor.convert(tokenDeDispositivo("esp32-01", planta, "admin")))
+                .isInstanceOf(InvalidBearerTokenException.class);
+    }
+
+    @Test
+    void unTipoDeTokenDesconocidoSeRechazaYUnTipoUsuarioExplicitoSeTrataComoUsuario() {
+        Usuario ana = Usuario.nuevo("Ana", "ana@vivero.co", new Credencial("h"));
+        when(cuentas.consultar(ana.id())).thenReturn(ana);
+        Jwt explicito = Jwt.withTokenValue("t").header("alg", "HS256").subject(ana.id().toString())
+                .claim("tipo", "usuario").issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).build();
+        Jwt raro = Jwt.withTokenValue("t").header("alg", "HS256").subject(ana.id().toString())
+                .claim("tipo", "otro").issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).build();
+
+        assertThat(convertidor.convert(explicito).getName()).isEqualTo(ana.id().toString());
+        assertThatThrownBy(() -> convertidor.convert(raro)).isInstanceOf(InvalidBearerTokenException.class);
+    }
 }

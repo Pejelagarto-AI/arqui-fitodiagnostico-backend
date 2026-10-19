@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /**
  * Convierte un JWT ya verificado (firma, caducidad, emisor) en la identidad con
- * la que corre la petición. El token solo prueba QUIÉN es (claim {@code sub});
+ * la que corre la petición. Hay dos tipos de token: de usuario (por defecto) y de dispositivo. El token solo prueba QUIÉN es (claim {@code sub});
  * los roles se leen de la base en cada petición. Costo: una consulta por
  * petición autenticada. Beneficio: revocar el rol de administrador o eliminar
  * una cuenta surte efecto al instante y no cuando el token caduque.
@@ -33,8 +33,53 @@ public final class ConvertidorDeJwt implements Converter<Jwt, AbstractAuthentica
         this.cuentas = cuentas;
     }
 
+    /**
+     * Contrato del token (lo escribe {@code EmisorTokenDispositivoJwt}, otro adaptador; los nombres se repiten
+     * aquí a propósito: la dirección de dependencia entre adaptadores está prohibida, y esta prueba cubre que
+     * coincidan).
+     */
+    public static final String CLAIM_TIPO = "tipo";
+    public static final String TIPO_USUARIO = "usuario";
+    public static final String TIPO_DISPOSITIVO = "dispositivo";
+    public static final String ALCANCE_REPORTAR_LECTURAS = "lecturas:reportar";
+    public static final String AUTORIDAD_REPORTAR_LECTURAS = "SCOPE_" + ALCANCE_REPORTAR_LECTURAS;
+
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
+        String tipo = jwt.getClaimAsString(CLAIM_TIPO);
+        if (TIPO_DISPOSITIVO.equals(tipo)) {
+            return convertirDispositivo(jwt);
+        }
+        if (tipo != null && !TIPO_USUARIO.equals(tipo)) {
+            throw new InvalidBearerTokenException("tipo de token desconocido");
+        }
+        // Sin claim "tipo" (tokens emitidos antes de la fase 2) se deriva: es de usuario.
+        return convertirUsuario(jwt);
+    }
+
+    /**
+     * Un dispositivo no es un usuario: no se consulta la base, no tiene roles y su única autoridad es el
+     * alcance del token. Que el token sea coherente (alcance, planta) se comprueba aquí; que ese alcance
+     * sirva para la ruta lo decide la cadena de seguridad.
+     */
+    private AbstractAuthenticationToken convertirDispositivo(Jwt jwt) {
+        String dispositivoId = jwt.getSubject();
+        if (dispositivoId == null || dispositivoId.isBlank()) {
+            throw new InvalidBearerTokenException("el token de dispositivo no identifica al dispositivo");
+        }
+        try {
+            UUID.fromString(jwt.getClaimAsString("planta"));
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new InvalidBearerTokenException("el token de dispositivo no identifica una planta");
+        }
+        if (!ALCANCE_REPORTAR_LECTURAS.equals(jwt.getClaimAsString("scope"))) {
+            throw new InvalidBearerTokenException("el token de dispositivo no tiene un alcance conocido");
+        }
+        return new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority(AUTORIDAD_REPORTAR_LECTURAS)),
+                dispositivoId);
+    }
+
+    private AbstractAuthenticationToken convertirUsuario(Jwt jwt) {
         Usuario usuario = cargarUsuario(jwt);
         List<GrantedAuthority> autoridades = usuario.roles().stream()
                 .<GrantedAuthority>map(rol -> new SimpleGrantedAuthority("ROLE_" + rol.name()))

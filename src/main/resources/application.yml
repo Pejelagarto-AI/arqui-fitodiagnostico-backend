@@ -26,7 +26,9 @@
 #   FITO_ADMIN_CORREO       correo y contraseña del primer administrador, usados al
 #   FITO_ADMIN_CONTRASENA   arrancar SOLO si todavía no existe ningún administrador.
 #                           Contraseña de al menos 8 caracteres.
-#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token (por defecto PT2H).
+#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token de usuario (por defecto PT2H).
+#   FITO_JWT_DISPOSITIVO_EXPIRACION   opcional, duración ISO-8601 del token de un dispositivo
+#                           (por defecto P365D: un ESP32 no puede iniciar sesión; no hay revocación individual).
 #   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
 
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
@@ -45,6 +47,7 @@ fitodiagnostico:
     jwt:
       secreto: ${FITO_JWT_SECRETO}
       expiracion: ${FITO_JWT_EXPIRACION:PT2H}
+      dispositivo-expiracion: ${FITO_JWT_DISPOSITIVO_EXPIRACION:P365D}
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   admin:
     correo: ${FITO_ADMIN_CORREO:}

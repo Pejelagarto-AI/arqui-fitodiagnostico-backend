@@ -28,6 +28,9 @@ public class EmisorDeTokensJwt implements EmisorDeTokens {
 
     public static final String EMISOR = "fitodiagnostico";
 
+    /** Valor del claim {@code tipo} de un token de persona; el de dispositivo es {@code dispositivo}. */
+    public static final String TIPO_USUARIO = "usuario";
+
     private final JwtEncoder codificador;
     private final Duration duracion;
     private final Clock reloj;
@@ -53,6 +56,7 @@ public class EmisorDeTokensJwt implements EmisorDeTokens {
                 .subject(usuario.id().toString())
                 .issuedAt(ahora)
                 .expiresAt(expira)
+                .claim("tipo", TIPO_USUARIO)
                 .build();
         String valor = codificador
                 .encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))

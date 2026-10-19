@@ -46,8 +46,9 @@ class EmisorDeTokensJwtTest {
 
         assertThat(jwt.getSubject()).isEqualTo(ana.id().toString());
         assertThat(jwt.getClaimAsString("iss")).isEqualTo("fitodiagnostico");
-        // Sin roles, correo ni nombre en el token: se leen de la base en cada petición.
-        assertThat(jwt.getClaims().keySet()).containsExactlyInAnyOrder("iss", "sub", "iat", "exp");
+        // Sin roles, correo ni nombre en el token: se leen de la base en cada petición. Solo el tipo.
+        assertThat(jwt.getClaims().keySet()).containsExactlyInAnyOrder("iss", "sub", "iat", "exp", "tipo");
+        assertThat(jwt.getClaimAsString("tipo")).isEqualTo("usuario");
     }
 
     @Test
