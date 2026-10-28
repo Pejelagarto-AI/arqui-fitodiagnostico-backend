@@ -1,13 +1,15 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.SolicitarEspeciePort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ResolverSolicitudesDeEspeciePort;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.SolicitudNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.SolicitudEspecie;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
-import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioSolicitudes;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioSolicitudes;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +28,7 @@ import java.util.UUID;
  * <p>Aprobar NO da de alta la especie (D55): ver {@link SolicitudEspecie}.
  */
 @Service
-public class ServicioSolicitudes {
+public class ServicioSolicitudes implements SolicitarEspeciePort, ResolverSolicitudesDeEspeciePort {
 
     private final RepositorioSolicitudes solicitudes;
     private final RangosPorEspecie especies;
@@ -50,6 +52,7 @@ public class ServicioSolicitudes {
      * @throws IllegalArgumentException si falta el nombre o algún texto es demasiado largo
      */
     @Transactional
+    @Override
     public SolicitudEspecie enviar(UUID solicitanteId, String nombrePropuesto, String justificacion) {
         SolicitudEspecie nueva = SolicitudEspecie.nueva(solicitanteId, nombrePropuesto, justificacion,
                 reloj.instant());
@@ -62,12 +65,14 @@ public class ServicioSolicitudes {
 
     /** RF-H2: las solicitudes propias con su estado y su respuesta. */
     @Transactional(readOnly = true)
+    @Override
     public List<SolicitudEspecie> deSolicitante(UUID solicitanteId) {
         return solicitudes.deSolicitante(solicitanteId);
     }
 
     /** RF-H3: las pendientes, la más antigua primero. */
     @Transactional(readOnly = true)
+    @Override
     public List<SolicitudEspecie> pendientes() {
         return solicitudes.pendientes();
     }
@@ -79,6 +84,7 @@ public class ServicioSolicitudes {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.SolicitudYaResueltaException si ya estaba resuelta
      */
     @Transactional
+    @Override
     public SolicitudEspecie aprobar(UUID solicitudId, String respuesta) {
         SolicitudEspecie aprobada = cargar(solicitudId).aprobada(respuesta, reloj.instant());
         return resolver(aprobada, "aprobada");
@@ -90,6 +96,7 @@ public class ServicioSolicitudes {
      * @throws IllegalArgumentException si la respuesta está vacía
      */
     @Transactional
+    @Override
     public SolicitudEspecie rechazar(UUID solicitudId, String respuesta) {
         SolicitudEspecie rechazada = cargar(solicitudId).rechazada(respuesta, reloj.instant());
         return resolver(rechazada, "rechazada");

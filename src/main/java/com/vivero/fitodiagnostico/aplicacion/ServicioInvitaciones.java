@@ -1,5 +1,7 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.CompartirPlantaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AceptarInvitacionPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.InvitacionNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.InvitadoNoEncontradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
@@ -10,12 +12,12 @@ import com.vivero.fitodiagnostico.dominio.modelo.Invitacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.GeneradorDeTokens;
-import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioAccesos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioInvitaciones;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioPlantas;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.GeneradorDeTokens;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioInvitaciones;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,16 +44,7 @@ import java.util.UUID;
  * {@link #generar}. Lo que se guarda y se busca es su huella (D51).
  */
 @Service
-public class ServicioInvitaciones {
-
-    /** El resultado de generar: la invitación guardada y el token en claro, que no se puede volver a obtener. */
-    public record InvitacionGenerada(Invitacion invitacion, String token) { }
-
-    /** Un invitado de una planta, con desde cuándo tiene acceso (RF-E4). */
-    public record Invitado(Usuario usuario, Instant otorgadoEn) { }
-
-    /** El resultado de aceptar registrándose (RF-E2): la cuenta nueva y la planta a la que ya tiene acceso. */
-    public record AceptacionConRegistro(Usuario usuario, Planta planta) { }
+public class ServicioInvitaciones implements CompartirPlantaPort, AceptarInvitacionPort {
 
     private final RepositorioPlantas plantas;
     private final RepositorioAccesos accesos;
@@ -88,6 +81,7 @@ public class ServicioInvitaciones {
      * @throws IllegalArgumentException si el correo no tiene forma de dirección
      */
     @Transactional
+    @Override
     public InvitacionGenerada generar(UUID solicitante, UUID plantaId, String correoOpcional) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
         String correo = correoOpcional == null || correoOpcional.isBlank()
@@ -115,6 +109,7 @@ public class ServicioInvitaciones {
 
     /** Las invitaciones de la planta que siguen vigentes (las caducadas no se listan). Solo el dueño. */
     @Transactional(readOnly = true)
+    @Override
     public List<Invitacion> pendientes(UUID solicitante, UUID plantaId) {
         autorizador.paraModificar(solicitante, plantaId);
         Instant ahora = reloj.instant();
@@ -129,6 +124,7 @@ public class ServicioInvitaciones {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.InvitacionNoVigenteException si ya no estaba pendiente
      */
     @Transactional
+    @Override
     public void revocar(UUID solicitante, UUID plantaId, UUID invitacionId) {
         autorizador.paraModificar(solicitante, plantaId);
         Invitacion invitacion = invitaciones.buscar(invitacionId)
@@ -139,6 +135,7 @@ public class ServicioInvitaciones {
 
     /** Quiénes tienen acceso a la planta y desde cuándo. Solo el dueño. */
     @Transactional(readOnly = true)
+    @Override
     public List<Invitado> invitados(UUID solicitante, UUID plantaId) {
         autorizador.paraModificar(solicitante, plantaId);
         return accesos.accesosDe(plantaId).stream()
@@ -153,6 +150,7 @@ public class ServicioInvitaciones {
      * @throws InvitadoNoEncontradoException si ese usuario no era invitado de la planta
      */
     @Transactional
+    @Override
     public void revocarAcceso(UUID solicitante, UUID plantaId, UUID invitadoId) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
         if (!accesos.invitadosDe(plantaId).contains(invitadoId)) {
@@ -176,6 +174,7 @@ public class ServicioInvitaciones {
      * @throws OperacionNoPermitidaException si quien acepta es el dueño de la planta
      */
     @Transactional
+    @Override
     public Planta aceptar(UUID usuarioId, String token) {
         Instant ahora = reloj.instant();
         Invitacion invitacion = vigentePorToken(token, ahora);
@@ -194,6 +193,7 @@ public class ServicioInvitaciones {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException si el correo ya tiene cuenta (RN1)
      */
     @Transactional
+    @Override
     public AceptacionConRegistro registrarYAceptar(String token, String nombre, String correo, String contrasena) {
         Instant ahora = reloj.instant();
         Invitacion invitacion = vigentePorToken(token, ahora);
@@ -205,6 +205,7 @@ public class ServicioInvitaciones {
 
     /** RF-E5: las plantas que otros me compartieron, la más reciente primero. */
     @Transactional(readOnly = true)
+    @Override
     public List<Planta> compartidasConmigo(UUID usuarioId) {
         return plantas.compartidasCon(usuarioId);
     }
@@ -216,6 +217,7 @@ public class ServicioInvitaciones {
      * @throws PlantaNoEncontradaException si la planta no existe o no le estaba compartida
      */
     @Transactional
+    @Override
     public void renunciar(UUID usuarioId, UUID plantaId) {
         if (!accesos.invitadosDe(plantaId).contains(usuarioId)) {
             throw new PlantaNoEncontradaException(plantaId);

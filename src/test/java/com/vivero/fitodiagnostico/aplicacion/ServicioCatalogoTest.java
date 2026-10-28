@@ -3,7 +3,7 @@ package com.vivero.fitodiagnostico.aplicacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoDeEspecies;
 import org.junit.jupiter.api.Test;
 
 import java.util.EnumMap;

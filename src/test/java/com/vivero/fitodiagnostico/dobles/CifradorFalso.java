@@ -1,7 +1,7 @@
 package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Credencial;
-import com.vivero.fitodiagnostico.dominio.puerto.CifradorDeContrasena;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CifradorDeContrasena;
 
 /**
  * Doble determinista de {@link CifradorDeContrasena}: "cifra" anteponiendo un

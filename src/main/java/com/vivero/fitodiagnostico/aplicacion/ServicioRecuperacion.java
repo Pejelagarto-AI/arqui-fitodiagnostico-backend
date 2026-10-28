@@ -1,15 +1,16 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RecuperarContrasenaPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.RestablecimientoNoVigenteException;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.SolicitudRestablecimiento;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.CifradorDeContrasena;
-import com.vivero.fitodiagnostico.dominio.puerto.GeneradorDeTokens;
-import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioRestablecimientos;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CifradorDeContrasena;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.GeneradorDeTokens;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioRestablecimientos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +30,7 @@ import java.util.Set;
  * guarda la solicitud y se avisa.
  */
 @Service
-public class ServicioRecuperacion {
+public class ServicioRecuperacion implements RecuperarContrasenaPort {
 
     private final RepositorioUsuarios usuarios;
     private final RepositorioRestablecimientos restablecimientos;
@@ -51,6 +52,7 @@ public class ServicioRecuperacion {
 
     /** RF-A7. No devuelve nada a propósito: ni siquiera un booleano "se envió". */
     @Transactional
+    @Override
     public void solicitar(String correo) {
         Optional<Usuario> usuario = buscar(correo);
         if (usuario.isEmpty()) {
@@ -71,6 +73,7 @@ public class ServicioRecuperacion {
      *         contraseña cambió desde que se pidió
      */
     @Transactional
+    @Override
     public void restablecer(String token, String contrasenaNueva) {
         if (token == null || token.isBlank()) {
             throw new RestablecimientoNoVigenteException();

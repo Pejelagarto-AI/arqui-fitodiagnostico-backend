@@ -1,6 +1,6 @@
 package com.vivero.fitodiagnostico.dobles;
 
-import com.vivero.fitodiagnostico.dominio.puerto.GeneradorDeTokens;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.GeneradorDeTokens;
 
 /**
  * Doble de {@link GeneradorDeTokens} determinista: los tokens son

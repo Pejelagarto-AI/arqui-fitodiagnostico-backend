@@ -2,7 +2,7 @@ package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
-import com.vivero.fitodiagnostico.dominio.puerto.Notificador;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
 
 import java.util.ArrayList;
 import java.util.List;

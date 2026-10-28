@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AdministrarUsuariosPort;
 import com.vivero.fitodiagnostico.dobles.CifradorFalso;
 import com.vivero.fitodiagnostico.dobles.EspeciesEnMemoria;
 import com.vivero.fitodiagnostico.dobles.Muestras;
@@ -85,7 +86,7 @@ class ServicioAdministracionTest {
         mundo.plantas.guardar(deAna);
         mundo.plantas.guardar(deAdmin);
 
-        ServicioAdministracion.DetalleDeUsuario detalle = servicio.detalleDeUsuario(ana.id());
+        AdministrarUsuariosPort.DetalleDeUsuario detalle = servicio.detalleDeUsuario(ana.id());
 
         assertThat(detalle.usuario()).isEqualTo(ana);
         assertThat(detalle.plantas()).containsExactly(deAna);

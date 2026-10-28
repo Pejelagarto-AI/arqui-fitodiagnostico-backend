@@ -1,7 +1,9 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarEspeciesPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarCatalogoCompletoPort;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoDeEspecies;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +20,7 @@ import java.util.List;
  * obligaría a tocar los dos adaptadores y sus pruebas de contrato.
  */
 @Service
-public class ServicioCatalogo {
+public class ServicioCatalogo implements ConsultarEspeciesPort, ConsultarCatalogoCompletoPort {
 
     private final CatalogoDeEspecies catalogoDeEspecies;
 
@@ -28,6 +30,7 @@ public class ServicioCatalogo {
 
     /** RF-C1: las especies que se ofrecen al registrar una planta (RN11). */
     @Transactional(readOnly = true)
+    @Override
     public List<Especie> listar() {
         return catalogoDeEspecies.listar().stream()
                 .filter(Especie::activa)
@@ -36,6 +39,7 @@ public class ServicioCatalogo {
 
     /** RF-C2: vista de administración, incluye las descontinuadas. */
     @Transactional(readOnly = true)
+    @Override
     public List<Especie> listarTodas() {
         return catalogoDeEspecies.listar();
     }

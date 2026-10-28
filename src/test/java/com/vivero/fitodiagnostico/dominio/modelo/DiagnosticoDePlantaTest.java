@@ -49,15 +49,38 @@ class DiagnosticoDePlantaTest {
         Diagnostico diagnostico = Muestras.diagnosticoCon(EstadoGlobal.SALUDABLE);
         Instant ahora = Instant.now();
 
-        assertThatThrownBy(() -> new DiagnosticoDePlanta(null, planta, OrigenDeMedicion.MANUAL, ahora, diagnostico))
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(null, planta, OrigenDeMedicion.MANUAL, ahora, ahora, diagnostico))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), null, OrigenDeMedicion.MANUAL, ahora, diagnostico))
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), null, OrigenDeMedicion.MANUAL, ahora, ahora, diagnostico))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, null, ahora, diagnostico))
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, null, ahora, ahora, diagnostico))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, OrigenDeMedicion.MANUAL, null, diagnostico))
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, OrigenDeMedicion.MANUAL, ahora, null, diagnostico))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, OrigenDeMedicion.MANUAL, ahora, null))
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, OrigenDeMedicion.MANUAL, null, ahora, diagnostico))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new DiagnosticoDePlanta(UUID.randomUUID(), planta, OrigenDeMedicion.MANUAL, ahora, ahora, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void sinMarcaDeTiempoPropiaLaMedicionSeTomoCuandoSeEvaluo() {
+        Diagnostico diagnostico = Muestras.diagnosticoCon(EstadoGlobal.SALUDABLE);
+
+        DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta, OrigenDeMedicion.MANUAL, diagnostico);
+
+        assertThat(registro.tomadaEn()).isEqualTo(diagnostico.evaluadoEn());
+        assertThat(registro.registradoEn()).isEqualTo(diagnostico.evaluadoEn());
+    }
+
+    @Test
+    void conMarcaDeTiempoPropiaSeConservaDistintaDeCuandoSeRegistro() {
+        Diagnostico diagnostico = Muestras.diagnosticoCon(EstadoGlobal.SALUDABLE);
+        Instant tomada = diagnostico.evaluadoEn().minusSeconds(90);
+
+        DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta, OrigenDeMedicion.DISPOSITIVO, tomada, diagnostico);
+
+        assertThat(registro.tomadaEn()).isEqualTo(tomada);
+        assertThat(registro.registradoEn()).isEqualTo(diagnostico.evaluadoEn());
     }
 }

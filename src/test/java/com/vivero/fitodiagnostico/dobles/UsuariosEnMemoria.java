@@ -2,7 +2,7 @@ package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;

@@ -1,13 +1,18 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarCuentaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.IniciarSesionPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarCuentaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.GestionarCuentaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AsegurarAdministradorInicialPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
 import com.vivero.fitodiagnostico.dominio.excepcion.UltimoAdministradorException;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeSesion;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
-import com.vivero.fitodiagnostico.dominio.puerto.CifradorDeContrasena;
-import com.vivero.fitodiagnostico.dominio.puerto.EmisorDeTokens;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioUsuarios;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CifradorDeContrasena;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorDeTokens;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioUsuarios;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAdministradores;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +29,7 @@ import java.util.UUID;
  * estado en el servidor y el cliente lo descarta. Ver docs/corte2/IMPLEMENTACION.md.
  */
 @Service
-public class ServicioCuentas {
-
-    /** Resultado de iniciar sesión: quién es y con qué prueba entra. */
-    public record Sesion(Usuario usuario, TokenDeSesion token) { }
+public class ServicioCuentas implements RegistrarCuentaPort, IniciarSesionPort, ConsultarCuentaPort, GestionarCuentaPort, AsegurarAdministradorInicialPort {
 
     private final RepositorioUsuarios usuarios;
     private final CifradorDeContrasena cifrador;
@@ -47,6 +49,7 @@ public class ServicioCuentas {
 
     /** RF-A1. @throws com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException RN1 */
     @Transactional
+    @Override
     public Usuario registrar(String nombre, String correo, String contrasena) {
         String correoNormalizado = Usuario.normalizarCorreo(correo);
         OperacionesDeUsuario.exigirCorreoLibre(usuarios, correoNormalizado, null);
@@ -57,6 +60,7 @@ public class ServicioCuentas {
 
     /** RF-A2. Un correo mal formado, uno inexistente y una contraseña errónea dan el mismo error. */
     @Transactional(readOnly = true)
+    @Override
     public Sesion iniciarSesion(String correo, String contrasena) {
         String correoNormalizado;
         try {
@@ -72,18 +76,21 @@ public class ServicioCuentas {
 
     /** RF-A4 (consultar). */
     @Transactional(readOnly = true)
+    @Override
     public Usuario consultar(UUID id) {
         return OperacionesDeUsuario.cargar(usuarios, id);
     }
 
     /** RF-A4 (editar nombre y correo). */
     @Transactional
+    @Override
     public Usuario actualizarDatos(UUID id, String nombre, String correo) {
         return OperacionesDeUsuario.editarDatos(usuarios, id, nombre, correo);
     }
 
     /** RF-A5: exige la contraseña actual. */
     @Transactional
+    @Override
     public void cambiarContrasena(UUID id, String contrasenaActual, String contrasenaNueva) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         if (!cifrador.coincide(contrasenaActual, usuario.credencial())) {
@@ -98,6 +105,7 @@ public class ServicioCuentas {
      * @throws UltimoAdministradorException RN4, si es el único administrador
      */
     @Transactional
+    @Override
     public void eliminar(UUID id) {
         Usuario usuario = OperacionesDeUsuario.cargar(usuarios, id);
         if (!politicaDeAdministradores.puedeDejarDeSerAdministrador(usuario, usuarios.contarAdministradores())) {
@@ -119,6 +127,7 @@ public class ServicioCuentas {
      *         sistema arrancaría sin nadie que pueda administrarlo, así que se prefiere no arrancar
      */
     @Transactional
+    @Override
     public boolean asegurarAdministradorInicial(String correo, String contrasena) {
         if (usuarios.contarAdministradores() > 0) {
             return false;

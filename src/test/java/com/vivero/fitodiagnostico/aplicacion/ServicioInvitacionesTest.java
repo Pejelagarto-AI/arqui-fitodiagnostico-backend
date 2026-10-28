@@ -1,5 +1,7 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AceptarInvitacionPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.CompartirPlantaPort;
 import com.vivero.fitodiagnostico.dobles.CifradorFalso;
 import com.vivero.fitodiagnostico.dobles.GeneradorDeTokensFijo;
 import com.vivero.fitodiagnostico.dobles.Muestras;
@@ -73,7 +75,7 @@ class ServicioInvitacionesTest {
 
     @Test
     void elDuenoGeneraUnaInvitacionPendienteYSoloSeGuardaLaHuellaDelToken() {
-        ServicioInvitaciones.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
+        CompartirPlantaPort.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
 
         assertThat(generada.token()).isEqualTo("token-1");
         Invitacion guardada = mundo.invitaciones.todas().get(0);
@@ -180,7 +182,7 @@ class ServicioInvitacionesTest {
 
     @Test
     void unaInvitacionRevocadaNoSePuedeAceptar() {
-        ServicioInvitaciones.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
+        CompartirPlantaPort.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
         servicio.revocar(dueno.id(), planta.id(), generada.invitacion().id());
 
         assertThatThrownBy(() -> servicio.aceptar(beto.id(), generada.token()))
@@ -193,7 +195,7 @@ class ServicioInvitacionesTest {
     void elVisitanteSeRegistraYAceptaEnElMismoFlujo() {
         String token = servicio.generar(dueno.id(), planta.id(), null).token();
 
-        ServicioInvitaciones.AceptacionConRegistro resultado =
+        AceptarInvitacionPort.AceptacionConRegistro resultado =
                 servicio.registrarYAceptar(token, "Carla", "Carla@Vivero.co", "clave-larga-1");
 
         assertThat(resultado.usuario().correo()).isEqualTo("carla@vivero.co");
@@ -238,7 +240,7 @@ class ServicioInvitacionesTest {
     @Test
     void lasPendientesSoloListanLasVigentes() {
         servicio.generar(dueno.id(), planta.id(), null);                       // vigente
-        ServicioInvitaciones.InvitacionGenerada revocada = servicio.generar(dueno.id(), planta.id(), null);
+        CompartirPlantaPort.InvitacionGenerada revocada = servicio.generar(dueno.id(), planta.id(), null);
         servicio.revocar(dueno.id(), planta.id(), revocada.invitacion().id());
         String aceptada = servicio.generar(dueno.id(), planta.id(), null).token();
         servicio.aceptar(beto.id(), aceptada);
@@ -254,7 +256,7 @@ class ServicioInvitacionesTest {
 
     @Test
     void soloElDuenoListaYRevocaInvitaciones() {
-        ServicioInvitaciones.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
+        CompartirPlantaPort.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
 
         assertThatThrownBy(() -> servicio.pendientes(ajeno.id(), planta.id())).isInstanceOf(PlantaNoEncontradaException.class);
         assertThatThrownBy(() -> servicio.revocar(ajeno.id(), planta.id(), generada.invitacion().id()))
@@ -265,7 +267,7 @@ class ServicioInvitacionesTest {
     void revocarUnaInvitacionDeOtraPlantaEsNoEncontrada() {
         Planta otra = Planta.nueva(dueno.id(), "Otra", Muestras.especie("helecho"));
         mundo.plantas.guardar(otra);
-        ServicioInvitaciones.InvitacionGenerada deOtra = servicio.generar(dueno.id(), otra.id(), null);
+        CompartirPlantaPort.InvitacionGenerada deOtra = servicio.generar(dueno.id(), otra.id(), null);
 
         assertThatThrownBy(() -> servicio.revocar(dueno.id(), planta.id(), deOtra.invitacion().id()))
                 .isInstanceOf(InvitacionNoEncontradaException.class);
@@ -275,7 +277,7 @@ class ServicioInvitacionesTest {
 
     @Test
     void revocarUnaYaAceptadaFallaPorqueLoQueCorrespondeEsQuitarElAcceso() {
-        ServicioInvitaciones.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
+        CompartirPlantaPort.InvitacionGenerada generada = servicio.generar(dueno.id(), planta.id(), null);
         servicio.aceptar(beto.id(), generada.token());
 
         assertThatThrownBy(() -> servicio.revocar(dueno.id(), planta.id(), generada.invitacion().id()))

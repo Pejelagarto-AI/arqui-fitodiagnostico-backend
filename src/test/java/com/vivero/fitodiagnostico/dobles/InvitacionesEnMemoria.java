@@ -2,7 +2,7 @@ package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoInvitacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Invitacion;
-import com.vivero.fitodiagnostico.dominio.puerto.RepositorioInvitaciones;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioInvitaciones;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;

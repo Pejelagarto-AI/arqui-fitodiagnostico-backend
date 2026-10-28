@@ -1,9 +1,9 @@
 package com.vivero.fitodiagnostico.dobles;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoDeEspecies;
-import com.vivero.fitodiagnostico.dominio.puerto.CatalogoEditable;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoDeEspecies;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.CatalogoEditable;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
 
 import java.util.List;
 import java.util.Map;

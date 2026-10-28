@@ -1,12 +1,16 @@
-# Catálogo de especies (D14): la base de datos es la única fuente en ejecución.
-# El CSV src/main/resources/referencia/especies.csv son datos semilla: la
-# clase infraestructura.referencia.SembradorDeEspecies lo carga a la base al
-# arrancar, solo si la tabla `especie` está vacía. Desde ahí el administrador
-# edita, desactiva y reactiva especies con la API; el CSV no vuelve a leerse.
-# (Ya no existe la propiedad fitodiagnostico.tabla-referencia ni el modo csv.)
+# Tabla de referencia de especies: la fuente se elige por configuración, en un solo
+# punto (config.ConfiguracionCatalogo), sin tocar dominio ni aplicación.
+#   fitodiagnostico.catalogo.fuente = bd | csv        (variable FITO_CATALOGO_FUENTE)
+#   bd  (por defecto) la base de datos es la fuente: el administrador crea, edita, desactiva y
+#       reactiva especies con la API. El CSV src/main/resources/referencia/especies.csv solo
+#       siembra la tabla `especie` al arrancar si está vacía (adaptador.salida.csv.SembradorDeEspecies).
+#   csv el CSV es la fuente de lectura (adaptador.salida.csv.AdaptadorEspecieCsv): el catálogo es de
+#       solo lectura y cualquier alta, edición o (des)activación responde 409 CATALOGO_SOLO_LECTURA.
+#       La tabla `especie` se reescribe con el CSV en cada arranque porque la planta guarda una clave
+#       foránea a ella; editar el CSV y reiniciar cambia los rangos de todo.
 
 # fitodiagnostico.cors.origenes: lista separada por comas de orígenes con
-# permiso de CORS sobre /api/** (RA7, web.ConfiguracionCors). Por defecto
+# permiso de CORS sobre /api/** (RA7, adaptador.entrada.rest.ConfiguracionCors). Por defecto
 # http://localhost:5500,http://127.0.0.1:5500 (el front servido con
 # `python3 -m http.server 5500` en desarrollo). En otros ambientes se
 # sobreescribe con el/los orígenes reales del front.
@@ -22,7 +26,9 @@
 #   FITO_ADMIN_CORREO       correo y contraseña del primer administrador, usados al
 #   FITO_ADMIN_CONTRASENA   arrancar SOLO si todavía no existe ningún administrador.
 #                           Contraseña de al menos 8 caracteres.
-#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token (por defecto PT2H).
+#   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token de usuario (por defecto PT2H).
+#   FITO_JWT_DISPOSITIVO_EXPIRACION   opcional, duración ISO-8601 del token de un dispositivo
+#                           (por defecto P365D: un ESP32 no puede iniciar sesión; no hay revocación individual).
 #   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
 
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
@@ -35,10 +41,13 @@
 #   FITO_CORREO_ASINCRONO   "false" para enviar en el mismo hilo (por defecto true).
 #   FITO_FRONT_URL          base de los enlaces de los correos (invitación y restablecimiento).
 fitodiagnostico:
+  catalogo:
+    fuente: ${FITO_CATALOGO_FUENTE:bd}
   seguridad:
     jwt:
       secreto: ${FITO_JWT_SECRETO}
       expiracion: ${FITO_JWT_EXPIRACION:PT2H}
+      dispositivo-expiracion: ${FITO_JWT_DISPOSITIVO_EXPIRACION:P365D}
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   admin:
     correo: ${FITO_ADMIN_CORREO:}
@@ -51,7 +60,7 @@ fitodiagnostico:
 
 
 # RA1: sin esto, un error que por algún motivo no pase por
-# ManejadorGlobalDeErrores ni por web.ControladorDeErrores podría caer en la
+# ManejadorGlobalDeErrores ni por adaptador.entrada.rest.ControladorDeErrores podría caer en la
 # página blanca (whitelabel) de Spring Boot, que es HTML. Con
 # ControladorDeErrores registrado como ErrorController esto ya no debería
 # pasar, pero se deja explícito como cinturón de seguridad.
@@ -75,9 +84,8 @@ spring:
       add-mappings: false
 
   # Perfil por defecto: H2 en memoria. Útil para desarrollo local y pruebas
-  # de arranque sin depender de un servidor externo. Con el modo csv eliminado
-  # (D14) la base siempre es la fuente, así que Flyway y el datasource ya no
-  # son una tensión: se usan en cualquier configuración.
+  # de arranque sin depender de un servidor externo. Flyway y el datasource se usan en
+  # cualquier fuente de catálogo: con `csv` la tabla `especie` es el espejo del CSV.
   datasource:
     url: jdbc:h2:mem:fitodiagnostico;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
