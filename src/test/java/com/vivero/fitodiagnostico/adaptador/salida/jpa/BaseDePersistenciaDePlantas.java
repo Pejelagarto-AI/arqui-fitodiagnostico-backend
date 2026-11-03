@@ -24,7 +24,7 @@ import java.util.UUID;
 
 /**
  * Base de las pruebas de los adaptadores de plantas, accesos y diagnósticos:
- * H2 con Flyway real (V6 a V10). Cada prueba corre en una transacción que se
+ * H2 con Flyway real (V6 a V12). Cada prueba corre en una transacción que se
  * deshace, así que las especies y usuarios que crea (con nombres únicos, porque
  * la base es compartida en la JVM) no sobreviven a la prueba.
  *
@@ -37,7 +37,8 @@ import java.util.UUID;
 @Import({AdaptadorPlantaJpa.class, MapeadorPlanta.class, AdaptadorEspecieJpa.class, MapeadorEspecie.class,
         AdaptadorUsuarioJpa.class, MapeadorUsuario.class, AdaptadorAccesoJpa.class,
         AdaptadorDiagnosticoJpa.class, MapeadorDiagnosticoDePlanta.class,
-        AdaptadorInvitacionJpa.class, AdaptadorRestablecimientoJpa.class, AdaptadorSolicitudEspecieJpa.class})
+        AdaptadorInvitacionJpa.class, AdaptadorRestablecimientoJpa.class, AdaptadorSolicitudEspecieJpa.class,
+        AdaptadorDispositivoJpa.class})
 abstract class BaseDePersistenciaDePlantas {
 
     @Autowired protected AdaptadorPlantaJpa plantas;
@@ -48,6 +49,7 @@ abstract class BaseDePersistenciaDePlantas {
     @Autowired protected AdaptadorInvitacionJpa invitaciones;
     @Autowired protected AdaptadorRestablecimientoJpa restablecimientos;
     @Autowired protected AdaptadorSolicitudEspecieJpa solicitudes;
+    @Autowired protected AdaptadorDispositivoJpa dispositivos;
     @Autowired protected JdbcTemplate jdbc;
     @Autowired protected EntityManager entityManager;
 
