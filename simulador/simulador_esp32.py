@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 """Simulador del ESP32 de la matera (solo biblioteca estandar de Python 3).
 
-Envia lecturas periodicas a POST /api/v1/dispositivos/{id}/lecturas con el token
-de dispositivo que emite el dueno de la planta. Genera lecturas realistas
-alrededor del rango optimo de una especie (con una deriva lenta, como un
+Hace lo que hara el chip: arranca con un SERIAL y un SECRETO de fabrica (los del sticker), consigue solo su
+credencial demostrando que conoce el secreto (reto HMAC) y envia lecturas periodicas a
+POST /api/v1/dispositivos/{serial}/lecturas. Nadie le copia ningun token.
+
+Autenticacion (fase 3):
+  1. POST /dispositivos/{serial}/reto            -> {reto, expira}
+  2. POST /dispositivos/{serial}/credencial      {respuesta: base64(HMAC-SHA256(secreto, reto))}
+       200 {token, plantaId, expira}   se guarda en la "NVS" (un JSON) y empieza a reportar
+       409 DISPOSITIVO_SIN_RECLAMAR    nadie lo reclamo todavia: espera 5 s y reintenta
+  El token se renueva solo cuando faltan menos de 2 minutos para que expire, o al primer 401 de una lectura.
+  Si el dueno desvincula el dispositivo, la siguiente renovacion da 409 y el simulador vuelve a esperar.
+
+Genera lecturas realistas alrededor del rango optimo de una especie (con una deriva lenta, como un
 sustrato que se seca), de vez en cuando una lectura fuera del rango optimo
 (la planta pasa a EN_RIESGO o CRITICO) y de vez en cuando datos invalidos
 (campo ausente, valor no numerico, valor fisicamente imposible, fecha mal
@@ -12,27 +22,32 @@ se cae. Cada respuesta se registra en la salida.
 
 Configuracion (argumento de linea de comandos, o variable de entorno):
 
-  --url           FITO_URL                 base de la API         (http://localhost:8080)
-  --dispositivo   FITO_DISPOSITIVO_ID      id del dispositivo     (esp32-01)
-  --token         FITO_TOKEN_DISPOSITIVO   JWT del dispositivo    (obligatorio)
+  --url           FITO_URL                 base de la API          (http://localhost:8080)
+  --serial        FITO_SERIAL              serial de fabrica       (obligatorio)
+  --secreto       FITO_SECRETO             secreto de fabrica      (obligatorio)
+  --nvs           FITO_NVS                 JSON que hace de memoria no volatil
+                                                                   (simulador/.nvs-<serial>.json)
   --intervalo     FITO_INTERVALO           segundos entre lecturas (5)
-  --especie       FITO_ESPECIE             especie de la planta   (potos)
+  --especie       FITO_ESPECIE             especie de la planta    (potos)
   --lecturas      FITO_LECTURAS            cuantas enviar, 0 = sin fin (0)
 
-Ejemplo:
-  export FITO_TOKEN_DISPOSITIVO="eyJ..."          # lo entrega POST /api/v1/plantas/{id}/dispositivos
-  python3 simulador/simulador_esp32.py --intervalo 2 --prob-invalida 0.2
+Ejemplo (el serial y el secreto los imprime simulador/fabrica.py):
+  FITO_SERIAL=fito-7K2M9Q FITO_SECRETO=... python3 simulador/simulador_esp32.py --intervalo 2
 """
 
 import argparse
+import base64
+import hashlib
+import hmac
 import json
 import os
 import random
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # Rangos optimos del Anexo B (src/main/resources/referencia/especies.csv):
 # especie -> (humedad_min, humedad_max, luz_min, luz_max, temp_min, temp_max)
@@ -48,6 +63,10 @@ ESPECIES = {
 LIMITES_FISICOS = {"humedad": (0.0, 100.0), "luz": (0.0, 150000.0), "temperatura": (-20.0, 60.0)}
 
 CAMPOS = ("humedad", "luz", "temperatura")
+
+ESPERA_RECLAMO_S = 5                       # cada cuanto reintenta mientras nadie lo reclama
+MARGEN_DE_RENOVACION = timedelta(minutes=2)  # renueva cuando faltan menos de 2 minutos
+INTENTOS_CON_RESPUESTA_RECHAZADA = 3       # 401 seguidos antes de rendirse (casi seguro el secreto esta mal)
 
 
 def ahora_iso():
@@ -110,10 +129,12 @@ def cuerpo_invalido(lectura, azar):
 
 
 def enviar(url, token, cuerpo_texto):
-    """POST del cuerpo ya serializado; devuelve (codigo_http, texto_de_respuesta) sin lanzar por 4xx/5xx."""
-    peticion = urllib.request.Request(
-        url, data=cuerpo_texto.encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
+    """POST del cuerpo ya serializado; devuelve (codigo_http, texto_de_respuesta) sin lanzar por 4xx/5xx.
+    Sin token no manda Authorization: asi pide el chip su reto y su credencial."""
+    cabeceras = {"Content-Type": "application/json"}
+    if token:
+        cabeceras["Authorization"] = "Bearer " + token
+    peticion = urllib.request.Request(url, data=cuerpo_texto.encode("utf-8"), method="POST", headers=cabeceras)
     try:
         with urllib.request.urlopen(peticion, timeout=10) as respuesta:
             return respuesta.status, respuesta.read().decode("utf-8")
@@ -132,12 +153,147 @@ def resumen(codigo, texto):
     return "%s: %s" % (datos.get("error", "?"), datos.get("mensaje", ""))
 
 
+# ---- "NVS": la memoria no volatil del chip, aqui un JSON ----
+
+def leer_nvs(ruta, serial):
+    """Devuelve {token, expira} guardado, o {} si no hay nada, esta roto o es de otro serial."""
+    try:
+        with open(ruta, encoding="utf-8") as archivo:
+            datos = json.load(archivo)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(datos, dict) or datos.get("serial") != serial:
+        return {}
+    return datos
+
+
+def escribir_nvs(ruta, serial, token, expira):
+    datos = {"serial": serial, "token": token, "expira": expira}
+    with open(ruta, "w", encoding="utf-8") as archivo:
+        json.dump(datos, archivo)
+
+
+def borrar_nvs(ruta):
+    try:
+        os.remove(ruta)
+    except OSError:
+        pass
+
+
+def instante(texto):
+    """Lee un instante ISO-8601 de la API (hasta nanosegundos, con Z) en cualquier version de Python 3."""
+    m = re.fullmatch(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})", texto)
+    if not m:
+        raise ValueError("instante ilegible: " + texto)
+    base, fraccion, zona = m.groups()
+    micros = (fraccion or "0")[:6].ljust(6, "0")
+    return datetime.fromisoformat("%s.%s%s" % (base, micros, "+00:00" if zona == "Z" else zona))
+
+
+# ---- autenticacion por reto HMAC ----
+
+def responder_al_reto(secreto, reto):
+    """base64( HMAC-SHA256( clave = secreto como texto, mensaje = reto como texto ) ): lo que hace el chip."""
+    firma = hmac.new(secreto.encode("utf-8"), reto.encode("utf-8"), hashlib.sha256).digest()
+    return base64.b64encode(firma).decode("ascii")
+
+
+def pedir_credencial(base, serial, secreto):
+    """Un intento completo: reto + credencial. Devuelve (codigo, datos): 200 con {token, plantaId, expira}, o el
+    error de la API ({error, mensaje, detalle}). Lanza OSError/URLError si no hay red."""
+    ruta = base + "/api/v1/dispositivos/" + serial
+    codigo, texto = enviar(ruta + "/reto", None, "")
+    datos = cargar_json(texto)
+    if codigo != 200:
+        return codigo, datos
+    cuerpo = json.dumps({"respuesta": responder_al_reto(secreto, datos["reto"])})
+    codigo, texto = enviar(ruta + "/credencial", None, cuerpo)
+    return codigo, cargar_json(texto)
+
+
+def cargar_json(texto):
+    try:
+        datos = json.loads(texto)
+    except ValueError:
+        return {}
+    return datos if isinstance(datos, dict) else {}
+
+
+class Credencial:
+    """El token del chip: lo trae de la NVS, lo pide cuando falta o esta por vencer y espera si nadie lo reclamo."""
+
+    def __init__(self, base, serial, secreto, ruta_nvs, espera=ESPERA_RECLAMO_S, dormir=time.sleep, ahora=None):
+        self.base, self.serial, self.secreto, self.ruta_nvs = base, serial, secreto, ruta_nvs
+        self.espera, self.dormir = espera, dormir
+        self.ahora = ahora or (lambda: datetime.now(timezone.utc))
+        guardado = leer_nvs(ruta_nvs, serial)
+        self.token = guardado.get("token")
+        self.expira = None
+        if self.token:
+            try:
+                self.expira = instante(guardado["expira"])
+            except (KeyError, ValueError):
+                self.token = None
+
+    def vigente(self):
+        return bool(self.token) and self.expira - self.ahora() > MARGEN_DE_RENOVACION
+
+    def descartar(self):
+        """Un 401 en una lectura: el token ya no sirve. Se olvida (tambien de la NVS) y se vuelve al reto."""
+        self.token, self.expira = None, None
+        borrar_nvs(self.ruta_nvs)
+
+    def asegurar(self):
+        """Devuelve un token vigente; si no hay, lo consigue (y espera el reclamo todo lo que haga falta).
+        Devuelve None si el servidor rechaza al dispositivo de forma que esperar no arregla (serial inexistente
+        o secreto equivocado), tras avisar por que."""
+        if self.vigente():
+            return self.token
+        rechazos = 0
+        while True:
+            try:
+                codigo, datos = pedir_credencial(self.base, self.serial, self.secreto)
+            except (urllib.error.URLError, OSError) as error:
+                print("[%s] sin respuesta del servidor al pedir credencial: %s (reintento en %g s)"
+                      % (ahora_iso(), error, self.espera), flush=True)
+                self.dormir(self.espera)
+                continue
+            if codigo == 200:
+                self.token, self.expira = datos["token"], instante(datos["expira"])
+                escribir_nvs(self.ruta_nvs, self.serial, self.token, datos["expira"])
+                print("[%s] credencial obtenida para la planta %s (vence %s)"
+                      % (ahora_iso(), datos.get("plantaId", "?")[:8], datos["expira"]), flush=True)
+                return self.token
+            if codigo == 409:
+                self.token, self.expira = None, None
+                print("[%s] esperando reclamo del serial %s... (reintento en %g s)"
+                      % (ahora_iso(), self.serial, self.espera), flush=True)
+                self.dormir(self.espera)
+                continue
+            if codigo == 401:
+                rechazos += 1
+                print("[%s] credencial rechazada (%d/%d): %s" % (ahora_iso(), rechazos,
+                      INTENTOS_CON_RESPUESTA_RECHAZADA, datos.get("mensaje", "")), flush=True)
+                if rechazos >= INTENTOS_CON_RESPUESTA_RECHAZADA:
+                    print("el secreto no corresponde al serial %s: revise --secreto" % self.serial, file=sys.stderr)
+                    return None
+                self.dormir(self.espera)
+                continue
+            print("el servidor respondio HTTP %d %s: %s" % (codigo, datos.get("error", "?"), datos.get("mensaje", "")),
+                  file=sys.stderr)
+            return None
+
+
 def construir_parser():
     env = os.environ.get
     p = argparse.ArgumentParser(description="Simulador del ESP32 de la matera.")
     p.add_argument("--url", default=env("FITO_URL", "http://localhost:8080"))
-    p.add_argument("--dispositivo", default=env("FITO_DISPOSITIVO_ID", "esp32-01"))
-    p.add_argument("--token", default=env("FITO_TOKEN_DISPOSITIVO"))
+    p.add_argument("--serial", default=env("FITO_SERIAL"), help="serial de fabrica (el del sticker)")
+    p.add_argument("--secreto", default=env("FITO_SECRETO"), help="secreto de fabrica (el del sticker)")
+    p.add_argument("--nvs", default=env("FITO_NVS"),
+                   help="JSON que hace de memoria no volatil (por defecto simulador/.nvs-<serial>.json)")
+    p.add_argument("--espera-reclamo", type=float, default=float(env("FITO_ESPERA_RECLAMO", str(ESPERA_RECLAMO_S))),
+                   help="segundos entre reintentos mientras nadie lo reclama")
     p.add_argument("--intervalo", type=float, default=float(env("FITO_INTERVALO", "5")))
     p.add_argument("--especie", default=env("FITO_ESPECIE", "potos"), choices=sorted(ESPECIES))
     p.add_argument("--lecturas", type=int, default=int(env("FITO_LECTURAS", "0")),
@@ -152,8 +308,9 @@ def construir_parser():
 
 def main(argv=None):
     args = construir_parser().parse_args(argv)
-    if not args.token:
-        print("falta el token del dispositivo: use --token o la variable FITO_TOKEN_DISPOSITIVO", file=sys.stderr)
+    if not args.serial or not args.secreto:
+        print("faltan el serial y el secreto de fabrica: use --serial y --secreto (o FITO_SERIAL y FITO_SECRETO); "
+              "los imprime simulador/fabrica.py", file=sys.stderr)
         return 2
     if args.intervalo < 0:
         print("--intervalo no puede ser negativo", file=sys.stderr)
@@ -161,12 +318,20 @@ def main(argv=None):
 
     azar = random.Random(args.semilla)
     sensor = Sensor(args.especie, azar)
-    url = args.url.rstrip("/") + "/api/v1/dispositivos/" + args.dispositivo + "/lecturas"
-    print("simulador %s -> %s (especie %s, cada %.1f s)" % (args.dispositivo, url, args.especie, args.intervalo))
+    base = args.url.rstrip("/")
+    url = base + "/api/v1/dispositivos/" + args.serial + "/lecturas"
+    ruta_nvs = args.nvs or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".nvs-%s.json" % args.serial)
+    credencial = Credencial(base, args.serial, args.secreto, ruta_nvs, espera=args.espera_reclamo)
+    print("simulador %s -> %s (especie %s, cada %.1f s, NVS %s)"
+          % (args.serial, url, args.especie, args.intervalo, ruta_nvs), flush=True)
 
     enviadas = 0
     try:
         while args.lecturas == 0 or enviadas < args.lecturas:
+            token = credencial.asegurar()   # renueva sola si falta menos de 2 minutos o si no hay token
+            if token is None:
+                return 1
+
             sorteo = azar.random()
             if sorteo < args.prob_invalida:
                 tipo = "INVALIDA"
@@ -180,8 +345,11 @@ def main(argv=None):
                 cuerpo = json.dumps(dict(sensor.normal(), marcaDeTiempo=ahora_iso()))
 
             try:
-                codigo, texto = enviar(url, args.token, cuerpo)
+                codigo, texto = enviar(url, token, cuerpo)
                 salida = "HTTP %d %s" % (codigo, resumen(codigo, texto))
+                if codigo == 401:
+                    credencial.descartar()   # el token ya no sirve: la proxima vuelta pide reto y credencial
+                    salida += " (token descartado, se pedira otro)"
             except (urllib.error.URLError, OSError) as error:
                 salida = "sin respuesta del servidor: %s" % error
             enviadas += 1
