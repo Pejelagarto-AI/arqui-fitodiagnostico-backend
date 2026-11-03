@@ -12,5 +12,5 @@ import java.util.UUID;
  */
 public interface EmisorTokenDispositivoPort {
 
-    TokenDeDispositivo emitir(String dispositivoId, UUID plantaId);
+    TokenDeDispositivo emitir(String serial, UUID plantaId);
 }

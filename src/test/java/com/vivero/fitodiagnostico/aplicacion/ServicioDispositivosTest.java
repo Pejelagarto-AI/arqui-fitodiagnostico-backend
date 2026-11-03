@@ -43,7 +43,7 @@ class ServicioDispositivosTest {
     void elDuenoRecibeUnTokenParaEseDispositivoYESaPlanta() {
         TokenDeDispositivo token = servicio.vincular(dueno, planta.id(), "esp32-01");
 
-        assertThat(token.dispositivoId()).isEqualTo("esp32-01");
+        assertThat(token.serial()).isEqualTo("esp32-01");
         assertThat(token.plantaId()).isEqualTo(planta.id());
         assertThat(token.valor()).isNotBlank();
         assertThat(emisor.emitidos()).containsExactly(token);

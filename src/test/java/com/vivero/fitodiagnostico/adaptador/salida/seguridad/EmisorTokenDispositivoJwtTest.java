@@ -53,7 +53,7 @@ class EmisorTokenDispositivoJwtTest {
 
         assertThat(token.expiraEn()).isEqualTo(AHORA.plus(Duration.ofDays(365)));
         assertThat(token.plantaId()).isEqualTo(planta);
-        assertThat(token.dispositivoId()).isEqualTo("esp32-01");
+        assertThat(token.serial()).isEqualTo("esp32-01");
     }
 
     @Test

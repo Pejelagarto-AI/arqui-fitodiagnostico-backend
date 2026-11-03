@@ -19,7 +19,7 @@ import java.util.UUID;
 /**
  * Adaptador de {@link EmisorTokenDispositivoPort}: un JWT HS256 de ALCANCE LIMITADO. Lleva
  * {@code tipo=dispositivo} (los tokens de usuario llevan {@code tipo=usuario}), {@code scope=lecturas:reportar},
- * {@code sub=<dispositivoId>} y {@code planta=<plantaId>}: lo único que el borde necesita para saber qué
+ * {@code sub=<serial>} y {@code planta=<plantaId>}: lo único que el borde necesita para saber qué
  * dispositivo es, de qué planta y qué puede hacer. Misma clave y emisor que el token de usuario, pero el
  * borde rechaza uno donde se espera el otro.
  *
@@ -53,12 +53,12 @@ public class EmisorTokenDispositivoJwt implements EmisorTokenDispositivoPort {
     }
 
     @Override
-    public TokenDeDispositivo emitir(String dispositivoId, UUID plantaId) {
+    public TokenDeDispositivo emitir(String serial, UUID plantaId) {
         Instant ahora = reloj.instant();
         Instant expira = ahora.plus(duracion);
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(EmisorDeTokensJwt.EMISOR)
-                .subject(dispositivoId)
+                .subject(serial)
                 .issuedAt(ahora)
                 .expiresAt(expira)
                 .claim(TIPO, TIPO_DISPOSITIVO)
@@ -68,6 +68,6 @@ public class EmisorTokenDispositivoJwt implements EmisorTokenDispositivoPort {
         String valor = codificador
                 .encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
                 .getTokenValue();
-        return new TokenDeDispositivo(dispositivoId, plantaId, valor, expira);
+        return new TokenDeDispositivo(serial, plantaId, valor, expira);
     }
 }

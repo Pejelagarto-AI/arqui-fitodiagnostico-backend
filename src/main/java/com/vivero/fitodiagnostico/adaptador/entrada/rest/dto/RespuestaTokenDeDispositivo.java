@@ -9,6 +9,6 @@ import java.util.UUID;
 public record RespuestaTokenDeDispositivo(String dispositivoId, UUID plantaId, String token, Instant expira) {
 
     public static RespuestaTokenDeDispositivo desde(TokenDeDispositivo token) {
-        return new RespuestaTokenDeDispositivo(token.dispositivoId(), token.plantaId(), token.valor(), token.expiraEn());
+        return new RespuestaTokenDeDispositivo(token.serial(), token.plantaId(), token.valor(), token.expiraEn());
     }
 }
