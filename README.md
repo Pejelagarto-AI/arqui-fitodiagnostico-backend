@@ -29,7 +29,7 @@ FITO_CATALOGO_FUENTE=csv ./mvnw spring-boot:run     # csv: se lee src/main/resou
 - `bd`: el administrador crea, edita, desactiva y reactiva especies. El CSV solo siembra la tabla `especie` al arrancar si está vacía.
 - `csv`: el catálogo es de solo lectura; cualquier alta, edición o (des)activación responde `409 CATALOGO_SOLO_LECTURA`. La tabla `especie` se reescribe con el CSV en cada arranque porque la planta guarda una clave foránea a ella.
 
-Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) y [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md).
+Detalle de variables y decisiones en [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md), [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) y [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md).
 
 **`fitodiagnostico.cors.origenes`** — lista separada por comas de orígenes con permiso CORS sobre `/api/**` y de los que se acepta el handshake del WebSocket (`/ws`). Por defecto `http://localhost:5500,http://127.0.0.1:5500` (el front servido con `python3 -m http.server 5500`).
 
@@ -59,35 +59,47 @@ Sin servidor SMTP la aplicación arranca y funciona; cada correo falla con un `W
 |---|---|---|
 | **Back** (este repo) | `./mvnw spring-boot:run` (con `FITO_JWT_SECRETO`, ver arriba) | http://localhost:8080 |
 | **Front** ([repo del front](https://github.com/Pejelagarto-AI/arqui-fitodiagnostico-frontend)) | desde su carpeta: `python3 -m http.server 5500` | http://localhost:5500 (el origen que el back acepta por defecto) |
-| **Simulador del ESP32** | `FITO_TOKEN_DISPOSITIVO=<token> python3 simulador/simulador_esp32.py` | solo Python 3, ver [`simulador/README.md`](simulador/README.md) |
+| **Fábrica de dispositivos** | `FITO_ADMIN_CORREO=... FITO_ADMIN_CONTRASENA=... python3 simulador/fabrica.py` | da de alta un dispositivo y pinta su sticker (serial + secreto) |
+| **Simulador del ESP32** | `FITO_SERIAL=<serial> FITO_SECRETO=<secreto> python3 simulador/simulador_esp32.py` | solo Python 3, ver [`simulador/README.md`](simulador/README.md) |
 
-### Token de dispositivo (fase 2)
+### Vinculación de dispositivos "a modo Chromecast" (fase 3)
 
-El dueño de una planta autoriza un dispositivo y recibe un token de **alcance limitado**: sirve únicamente para reportar lecturas de esa planta y se rechaza (403) en cualquier otro endpoint. Un token de persona, al revés, no abre el endpoint del dispositivo.
+El humano nunca toca una credencial. Cada dispositivo sale de **fábrica** con un **serial** (impreso, por ejemplo `fito-7K2M9Q`) y un **secreto** (grabado en el chip). El dueño **reclama** el serial desde su planta; el dispositivo demuestra por su cuenta que conoce el secreto (**reto HMAC**) y recibe un token de **alcance limitado**: sirve únicamente para reportar lecturas de esa planta, caduca en una hora (`FITO_JWT_DISPOSITIVO_EXPIRACION`, ISO-8601, por defecto `PT1H`) y el chip lo renueva solo. Desvincular impide renovar: el token vivo muere en como máximo una hora. Un token de dispositivo se rechaza (403) en cualquier otro endpoint; un token de persona no abre el endpoint de lecturas.
 
 ```bash
 B=http://localhost:8080/api/v1
 
-# 1. El dueño (JWT de usuario) emite el token del dispositivo. 201; 403 si es invitado; 404 si la planta es ajena.
-curl -X POST $B/plantas/$PLANTA_ID/dispositivos \
-  -H "Authorization: Bearer $TOKEN_DE_USUARIO" -H "Content-Type: application/json" \
-  -d '{"dispositivoId": "esp32-01"}'
-# {"dispositivoId":"esp32-01","plantaId":"...","token":"eyJ...","expira":"2027-10-19T15:00:00Z"}
+# 1. FÁBRICA (administrador): serial y secreto, UNA sola vez. 201; 409 DISPOSITIVO_YA_EXISTE si el serial está tomado.
+curl -X POST $B/admin/dispositivos -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}'
+# {"serial":"fito-7K2M9Q","secreto":"...","creadoEn":"..."}      (o `python3 simulador/fabrica.py`, que pinta el sticker)
 
-# 2. El dispositivo reporta una lectura con ese token. La planta sale del token. 201 con el diagnóstico.
-curl -X POST $B/dispositivos/esp32-01/lecturas \
+# 2. DUEÑO: reclama el serial para su planta. 201; 404 serial inexistente; 409 ya reclamado por otra planta;
+#    403 si es invitado; 404 si la planta es ajena. Reclamar de nuevo lo mismo es idempotente (201).
+curl -X POST $B/plantas/$PLANTA_ID/dispositivos -H "Authorization: Bearer $TOKEN_DE_USUARIO" \
+  -H "Content-Type: application/json" -d '{"serial": "fito-7K2M9Q"}'
+# {"serial":"fito-7K2M9Q","plantaId":"...","reclamadoEn":"..."}
+
+# 3. DISPOSITIVO (rutas públicas, sin Authorization): reto y credencial.
+curl -X POST $B/dispositivos/fito-7K2M9Q/reto                      # {"reto":"<32 bytes en base64>","expira":"..."} (60 s, un solo uso)
+curl -X POST $B/dispositivos/fito-7K2M9Q/credencial -H "Content-Type: application/json" \
+  -d '{"respuesta": "<base64(HMAC-SHA256(secreto, reto))>"}'      # 200 {"token":"eyJ...","plantaId":"...","expira":"..."}
+#    409 DISPOSITIVO_SIN_RECLAMAR (nadie lo reclamó: reintentar cada 5 s), 401 CREDENCIAL_RECHAZADA
+
+# 4. DISPOSITIVO: reporta una lectura con ese token. La planta sale del token. 201 con el diagnóstico.
+curl -X POST $B/dispositivos/fito-7K2M9Q/lecturas \
   -H "Authorization: Bearer $TOKEN_DEL_DISPOSITIVO" -H "Content-Type: application/json" \
   -d '{"marcaDeTiempo": "2026-10-19T14:30:05Z", "humedad": 55, "luz": 700, "temperatura": 22}'
 
-# 3. El dueño ve la lectura como el diagnóstico vigente de su planta (origen DISPOSITIVO).
-curl $B/plantas/$PLANTA_ID/diagnostico -H "Authorization: Bearer $TOKEN_DE_USUARIO"
+# 5. DUEÑO: ve sus dispositivos ("conectado hace Xs" sale de ultimaCredencialEn; null = esperando que se conecte) y desvincula.
+curl $B/plantas/$PLANTA_ID/dispositivos -H "Authorization: Bearer $TOKEN_DE_USUARIO"
+curl -X DELETE $B/plantas/$PLANTA_ID/dispositivos/fito-7K2M9Q -H "Authorization: Bearer $TOKEN_DE_USUARIO"   # 204
 ```
 
-Errores del dispositivo: `400 PARAMETRO_INVALIDO` (campo ausente, valor no numérico, fuera del rango físico del sensor, fecha mal formada), `401` sin token, `403` con un token de persona o de otro dispositivo. El token caduca a los 365 días (`FITO_JWT_DISPOSITIVO_EXPIRACION`, ISO-8601) y **no se puede revocar de forma individual**: no se guardan dispositivos en la base.
+La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del secreto, mensaje = el string del reto ) )`, sin decodificar nada. Errores del dispositivo en lecturas: `400 PARAMETRO_INVALIDO` (campo ausente, valor no numérico, fuera del rango físico del sensor, fecha mal formada), `401` sin token, `403` con un token de persona o de otro dispositivo. Detalle del flujo, el contrato y las decisiones (D74 a D81) en [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md).
 
 ## Endpoints
 
-Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{id}/lecturas`; en todas las demás rutas (también las públicas) ese token responde 403. Públicos (sin token): `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
+Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lecturas`; en todas las demás rutas (también las públicas) ese token responde 403. Públicos (sin token): `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial` (el chip aún no tiene token; la prueba es el secreto), `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
 
 | Módulo | Rutas (corte 2, bloques 1, 3 y 4) |
 |---|---|
@@ -101,12 +113,12 @@ Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{id}/lecturas`;
 | Compartir plantas (dueño) | `POST/GET /api/v1/plantas/{id}/invitaciones` (genera un enlace de un solo uso con caducidad de 7 días; el token se entrega solo en esta respuesta; `{"correo"}` opcional lo envía por correo), `DELETE .../invitaciones/{invitacionId}`, `GET .../invitados`, `DELETE .../invitados/{invitadoId}` (el invitado recibe `ACCESO_PERDIDO`) |
 | Compartir plantas (invitado) | `GET /api/v1/plantas/compartidas`, `DELETE /api/v1/plantas/compartidas/{id}` (renunciar), `POST /api/v1/invitaciones/aceptar {token}`, `POST /api/v1/invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}` (público: el visitante sin cuenta se registra y acepta en un solo paso) |
 | Solicitudes de especie | `POST/GET /api/v1/solicitudes-especie` (pedir y ver las propias); administrador: `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` (con `{"respuesta"}`; aprobar no da de alta la especie, eso es `POST /admin/especies`) |
-| Dispositivos (fase 2) | `POST /api/v1/plantas/{id}/dispositivos {dispositivoId}` (solo el dueño; devuelve el token del dispositivo), `POST /api/v1/dispositivos/{dispositivoId}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`) |
+| Dispositivos (fase 3) | Fábrica (administrador): `POST/GET /api/v1/admin/dispositivos`. Dueño: `POST/GET /api/v1/plantas/{id}/dispositivos {serial}`, `DELETE .../dispositivos/{serial}`. Dispositivo: `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial {respuesta}` (públicas), `POST /api/v1/dispositivos/{serial}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`) |
 | Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO` y `CAMBIO_DE_ESTADO`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
 
-Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta (y avisa a los invitados). Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
+Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta, desvincula sus dispositivos (siguen existiendo, otra planta puede reclamarlos) y avisa a los invitados. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
 
 Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
@@ -201,6 +213,7 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 | Contrato de puertos | `ContratoFuenteDeEspeciesTest` (lectura y escritura) contra el adaptador JPA y un doble en memoria: el puerto es sustituible (LSP) |
 | Adaptadores de salida | adaptadores JPA de especies, usuarios, plantas, accesos, historial, invitaciones, restablecimientos y solicitudes con Flyway real (V1 a V10), BCrypt, JWT, generador de tokens, sembradores, y los notificadores (registro, correo, WebSocket, compuesto, después del commit) |
 | Adaptadores de entrada | `@WebMvcTest` de controladores, seguridad (401/403/rutas públicas), CORS; `SinHtmlTest` con el contenedor real; `FlujoDeCuentasIntegracionTest`, `FlujoDePlantasIntegracionTest`, `FlujoDeCompartirIntegracionTest` (compartir, recuperación y solicitudes con correo capturado) y `VistaEnVivoIntegracionTest` (cliente STOMP real) de punta a punta |
+| Dispositivos (fase 3) | `DispositivoTest` (dominio), `ServicioDispositivosTest` (aplicación), `AdaptadorDispositivoJpaTest`, `AutenticadorHmacSha256Test`, `ReclamoDeDispositivoIntegracionTest` y `AutenticacionDeDispositivoIntegracionTest` (reto + credencial de punta a punta con el HMAC calculado aparte) |
 | ArchUnit | 26 reglas de `ArquitecturaTest` (9 nuevas de la fase 2: el dominio solo depende de dominio y `java.*`, los puertos son interfaces, entrada y salida no se conocen, los adaptadores no dependen de `config` ni de servicios de aplicación). De las 17 anteriores: las 8 del corte 1, 2 del bloque 1 (el dominio no conoce seguridad/cifrado ni WebSocket), 2 del bloque 3 (consultar un diagnóstico no puede producirlo ni avisarlo; las políticas de dominio no llaman puertos) y 5 del bloque 4 (el dominio no conoce el correo; correo y WebSocket solo en adaptadores; la aplicación no sincroniza transacciones; las entidades no guardan tokens en claro; la entrada no depende de la salida) |
 
 `scripts/probar-dominio-sin-infraestructura.sh` copia el repo a un directorio temporal, borra por completo los paquetes `adaptador` y `config` (main y test) y corre solo las pruebas de dominio y aplicación sobre esa copia mutilada. Demuestra —no solo argumenta— que el dominio no necesita adaptadores para compilar ni para pasar sus pruebas.
@@ -222,6 +235,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — diagramas, responsabilidades por capa, justificación SOLID, plan de evolución y decisiones.
 - [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo), 3 (plantas, mediciones, cambio de estado, cascadas) y 4 (compartir plantas, recuperación de contraseña, correo, vista en vivo por WebSocket, solicitudes de especie): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
 - [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
+- [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

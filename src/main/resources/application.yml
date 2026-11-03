@@ -32,6 +32,11 @@
 #                           token vivo muere en como máximo esa hora).
 #   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
 
+# Fase 3: dispositivos. No hay variables nuevas: el serial y el secreto de cada dispositivo los entrega
+# POST /api/v1/admin/dispositivos (solo ADMINISTRADOR) una vez, y el dueño reclama el serial; el chip pide
+# su credencial con un reto HMAC. FITO_JWT_DISPOSITIVO_EXPIRACION (arriba) es lo único configurable:
+# PT1H por defecto porque el chip renueva solo. Ver docs/fase3/IMPLEMENTACION.md.
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
