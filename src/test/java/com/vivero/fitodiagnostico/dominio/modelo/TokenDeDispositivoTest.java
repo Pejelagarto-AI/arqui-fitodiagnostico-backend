@@ -16,7 +16,7 @@ class TokenDeDispositivoTest {
     void aceptaIdentificadoresComoEsp32Guion01() {
         TokenDeDispositivo token = new TokenDeDispositivo("esp32-01", UUID.randomUUID(), "x", EXPIRA);
 
-        assertThat(token.dispositivoId()).isEqualTo("esp32-01");
+        assertThat(token.serial()).isEqualTo("esp32-01");
     }
 
     @Test

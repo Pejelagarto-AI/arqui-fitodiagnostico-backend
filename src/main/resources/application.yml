@@ -28,8 +28,14 @@
 #                           Contraseña de al menos 8 caracteres.
 #   FITO_JWT_EXPIRACION     opcional, duración ISO-8601 del token de usuario (por defecto PT2H).
 #   FITO_JWT_DISPOSITIVO_EXPIRACION   opcional, duración ISO-8601 del token de un dispositivo
-#                           (por defecto P365D: un ESP32 no puede iniciar sesión; no hay revocación individual).
+#                           (por defecto PT1H: el chip renueva solo con su secreto; desvincular impide renovar, así que el
+#                           token vivo muere en como máximo esa hora).
 #   FITO_BCRYPT_COSTE       opcional, costo de BCrypt (por defecto 10).
+
+# Fase 3: dispositivos. No hay variables nuevas: el serial y el secreto de cada dispositivo los entrega
+# POST /api/v1/admin/dispositivos (solo ADMINISTRADOR) una vez, y el dueño reclama el serial; el chip pide
+# su credencial con un reto HMAC. FITO_JWT_DISPOSITIVO_EXPIRACION (arriba) es lo único configurable:
+# PT1H por defecto porque el chip renueva solo. Ver docs/fase3/IMPLEMENTACION.md.
 
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
@@ -47,7 +53,7 @@ fitodiagnostico:
     jwt:
       secreto: ${FITO_JWT_SECRETO}
       expiracion: ${FITO_JWT_EXPIRACION:PT2H}
-      dispositivo-expiracion: ${FITO_JWT_DISPOSITIVO_EXPIRACION:P365D}
+      dispositivo-expiracion: ${FITO_JWT_DISPOSITIVO_EXPIRACION:PT1H}
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   admin:
     correo: ${FITO_ADMIN_CORREO:}

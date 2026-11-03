@@ -1,40 +1,190 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
+import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.Reto;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeDispositivo;
-import com.vivero.fitodiagnostico.dominio.puerto.entrada.VincularDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutenticarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.ReclamarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarDispositivoDeFabricaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.AutenticadorDeDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorTokenDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.GeneradorDeTokens;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Caso de uso: vincular un dispositivo a una planta. La regla de negocio "solo el dueño" es de
- * {@link PoliticaDeAcceso} (a través de {@link AutorizadorDePlantas}, igual que editar o eliminar la
- * planta); firmar el token es del puerto {@link EmisorTokenDispositivoPort}, así que este servicio no
- * sabe qué es un JWT. No se guarda nada: el dispositivo no es una entidad del sistema, es una
- * credencial con caducidad (límite documentado: no hay revocación individual).
+ * Los tres casos de uso del ciclo de vida de un dispositivo (fase 3), uno por actor:
+ * la FÁBRICA da de alta (serial + secreto), el DUEÑO reclama por serial y el DISPOSITIVO se autentica con
+ * un reto. Reemplaza al flujo de la fase 2, donde el dueño recibía un token y lo copiaba al chip.
+ *
+ * <p>La regla "solo el dueño" es de {@link PoliticaDeAcceso} (a través de {@link AutorizadorDePlantas},
+ * igual que editar la planta). Qué tiene que ser cierto para entregar una credencial lo deciden el
+ * dominio ({@link Dispositivo}: reclamo, reto de un solo uso) y el puerto {@link AutenticadorDeDispositivos}
+ * (la comparación de la respuesta); firmar el token es del puerto {@link EmisorTokenDispositivoPort}. Este
+ * servicio solo los orquesta y no sabe qué es un HMAC ni un JWT.
+ *
+ * <p>El rol ADMINISTRADOR de la fábrica lo exige la cadena de seguridad en {@code /api/v1/admin/**}, como
+ * en los demás casos de uso de administración; aquí el administrador llega como un id y no se vuelve a comprobar.
  */
 @Service
-public class ServicioDispositivos implements VincularDispositivoPort {
+public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, ReclamarDispositivoPort,
+        AutenticarDispositivoPort {
+
+    /** Sin 0/O/1/I para que nadie confunda letras con números al teclear el serial del sticker. */
+    private static final String ALFABETO_DEL_SERIAL = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final String ALFABETO_BASE64_URL =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    private static final int LARGO_DEL_SERIAL = 6;
 
     private final AutorizadorDePlantas autorizador;
+    private final RepositorioDispositivos dispositivos;
     private final EmisorTokenDispositivoPort emisor;
+    private final AutenticadorDeDispositivos autenticador;
+    private final GeneradorDeTokens generador;
+    private final Clock reloj;
 
     public ServicioDispositivos(RepositorioPlantas plantas, RepositorioAccesos accesos, PoliticaDeAcceso politica,
-                                EmisorTokenDispositivoPort emisor) {
+                                RepositorioDispositivos dispositivos, EmisorTokenDispositivoPort emisor,
+                                AutenticadorDeDispositivos autenticador, GeneradorDeTokens generador, Clock reloj) {
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
+        this.dispositivos = dispositivos;
         this.emisor = emisor;
+        this.autenticador = autenticador;
+        this.generador = generador;
+        this.reloj = reloj;
+    }
+
+    // ---- fábrica (administrador) ----
+
+    @Override
+    @Transactional
+    public DispositivoDeFabrica registrar(UUID administrador, Optional<String> serialElegido) {
+        String serial = serialElegido.filter(s -> !s.isBlank()).orElseGet(this::serialNuevo);
+        if (dispositivos.porSerial(serial).isPresent()) {
+            throw new DispositivoYaExisteException(serial);
+        }
+        Dispositivo nuevo = Dispositivo.deFabrica(serial, generador.generar(), ahora());
+        dispositivos.guardar(nuevo);
+        return new DispositivoDeFabrica(nuevo.serial(), nuevo.secreto(), nuevo.creadoEn());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public TokenDeDispositivo vincular(UUID solicitante, UUID plantaId, String dispositivoId) {
+    public List<Dispositivo> listar(UUID administrador) {
+        return dispositivos.todos();
+    }
+
+    // ---- dueño ----
+
+    @Override
+    @Transactional
+    public Dispositivo reclamar(UUID solicitante, UUID plantaId, String serial) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
-        return emisor.emitir(dispositivoId, planta.id());
+        Dispositivo dispositivo = dispositivos.porSerial(serial)
+                .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
+        dispositivo.reclamar(planta.id(), ahora());
+        dispositivos.guardar(dispositivo);
+        return dispositivo;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Dispositivo> listar(UUID solicitante, UUID plantaId) {
+        Planta planta = autorizador.paraModificar(solicitante, plantaId);
+        return dispositivos.porPlanta(planta.id());
+    }
+
+    @Override
+    @Transactional
+    public void desvincular(UUID solicitante, UUID plantaId, String serial) {
+        Planta planta = autorizador.paraModificar(solicitante, plantaId);
+        Dispositivo dispositivo = dispositivos.porSerial(serial)
+                .filter(d -> d.plantaId().filter(planta.id()::equals).isPresent())
+                .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
+        dispositivo.desvincular();
+        dispositivos.guardar(dispositivo);
+    }
+
+    // ---- dispositivo ----
+
+    @Override
+    @Transactional
+    public Reto reto(String serial) {
+        Dispositivo dispositivo = dispositivos.porSerial(serial)
+                .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
+        Instant ahora = ahora();
+        Reto reto = dispositivo.asignarReto(retoNuevo(), ahora.plus(Dispositivo.VIGENCIA_DEL_RETO));
+        dispositivos.guardar(dispositivo);
+        return reto;
+    }
+
+    /**
+     * El reto se gasta ANTES de decidir y ese gasto se conserva aunque la decisión sea un rechazo: por eso
+     * las dos excepciones de negocio no deshacen la transacción. Si se deshiciera, quien adivina respuestas
+     * podría reintentar contra el mismo reto indefinidamente (ver D74).
+     */
+    @Override
+    @Transactional(noRollbackFor = {DispositivoSinReclamarException.class, CredencialRechazadaException.class})
+    public TokenDeDispositivo credencial(String serial, String respuesta) {
+        Dispositivo dispositivo = dispositivos.porSerial(serial)
+                .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
+        Instant ahora = ahora();
+        Optional<String> reto = dispositivo.consumirReto(ahora);
+        dispositivos.guardar(dispositivo);
+
+        UUID plantaId = dispositivo.plantaId().orElseThrow(() -> new DispositivoSinReclamarException(serial));
+        boolean valida = reto.isPresent() && autenticador.respuestaValida(dispositivo.secreto(), reto.get(), respuesta);
+        if (!valida) {
+            throw new CredencialRechazadaException(serial);
+        }
+
+        dispositivo.registrarCredencial(ahora);
+        dispositivos.guardar(dispositivo);
+        return emisor.emitir(dispositivo.serial(), plantaId);
+    }
+
+    /**
+     * El instante a microsegundos, que es la precisión de la columna: lo que el servicio devuelve en la
+     * respuesta es idéntico a lo que la base guardó y a lo que mostrará la siguiente lectura.
+     */
+    private Instant ahora() {
+        return reloj.instant().truncatedTo(ChronoUnit.MICROS);
+    }
+
+    // ---- valores aleatorios (reusan el generador de tokens: una sola fuente de azar) ----
+
+    /** {@code fito-} y 6 caracteres del alfabeto sin ambiguos; 64 símbolos de base64url caben exacto en 32 (mod). */
+    private String serialNuevo() {
+        String azar = generador.generar();
+        StringBuilder serial = new StringBuilder("fito-");
+        for (int i = 0; i < LARGO_DEL_SERIAL; i++) {
+            int indice = ALFABETO_BASE64_URL.indexOf(azar.charAt(i)) % ALFABETO_DEL_SERIAL.length();
+            serial.append(ALFABETO_DEL_SERIAL.charAt(indice));
+        }
+        return serial.toString();
+    }
+
+    /**
+     * 32 bytes aleatorios en base64 ESTÁNDAR con relleno (44 caracteres), que es lo que fija el contrato: el
+     * generador entrega base64url sin relleno, que se traduce símbolo a símbolo. El reto es opaco para el chip.
+     */
+    private String retoNuevo() {
+        return generador.generar().replace('-', '+').replace('_', '/') + "=";
     }
 }

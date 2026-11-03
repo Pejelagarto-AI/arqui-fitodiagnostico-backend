@@ -13,9 +13,10 @@ public class MundoEnMemoria {
     public final PlantasEnMemoria plantas = new PlantasEnMemoria(accesos);
     public final DiagnosticosEnMemoria diagnosticos = new DiagnosticosEnMemoria();
     public final InvitacionesEnMemoria invitaciones = new InvitacionesEnMemoria();
+    public final DispositivosEnMemoria dispositivos = new DispositivosEnMemoria();
     public final SolicitudesEnMemoria solicitudes = new SolicitudesEnMemoria();
     public final RestablecimientosEnMemoria restablecimientos = new RestablecimientosEnMemoria();
     public final NotificadorGrabador notificador = new NotificadorGrabador();
     public final CascadaDeEliminacion cascada = new CascadaDeEliminacion(plantas, diagnosticos, accesos,
-            invitaciones, solicitudes, restablecimientos, notificador);
+            invitaciones, dispositivos, solicitudes, restablecimientos, notificador);
 }

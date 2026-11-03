@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico;
 
 import com.jayway.jsonpath.JsonPath;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorTokenDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,9 +31,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Fase 2: emisión del token de dispositivo y la política de alcances de la cadena de seguridad, con el
- * contexto real. Dos preguntas: (1) solo el dueño puede emitir; (2) un token de dispositivo no abre nada
- * que no sea su endpoint, y un token de persona no abre el del dispositivo.
+ * Fase 2: la política de alcances de la cadena de seguridad, con el contexto real: un token de dispositivo no
+ * abre nada que no sea su endpoint, y un token de persona no abre el del dispositivo. (Quién y cómo obtiene
+ * la credencial cambió en la fase 3: ver ReclamoDeDispositivoIntegracionTest y AutenticacionDeDispositivoIntegracionTest.)
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,6 +49,7 @@ class TokenDeDispositivoIntegracionTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JwtDecoder decodificador;
     @Autowired private RepositorioAccesos accesos;
+    @Autowired private EmisorTokenDispositivoPort emisor;
 
     private String dueno;
     private String invitado;
@@ -66,7 +68,9 @@ class TokenDeDispositivoIntegracionTest {
         planta = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
                 "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
         accesos.otorgar(AccesoCompartido.otorgadoAhora(UUID.fromString(planta), UUID.fromString(idInvitado)));
-        tokenDeDispositivo = leer(vincular(dueno, planta, "esp32-01").andExpect(status().isCreated()), "$.token");
+        // El flujo real (reto + credencial) se prueba en AutenticacionDeDispositivoIntegracionTest; aqui solo
+        // importa el alcance del token, asi que se emite directo por el puerto.
+        tokenDeDispositivo = emisor.emitir("esp32-01", UUID.fromString(planta)).valor();
     }
 
     @AfterEach
@@ -101,9 +105,9 @@ class TokenDeDispositivoIntegracionTest {
                 "{\"correo\":\"" + correo + "\",\"contrasena\":\"" + CLAVE + "\"}")).andExpect(status().isOk()), "$.token");
     }
 
-    private ResultActions vincular(String token, String plantaId, String dispositivoId) throws Exception {
+    private ResultActions vincular(String token, String plantaId, String serial) throws Exception {
         return mockMvc.perform(json(con(post("/api/v1/plantas/" + plantaId + "/dispositivos"), token),
-                "{\"dispositivoId\":\"" + dispositivoId + "\"}"));
+                "{\"serial\":\"" + serial + "\"}"));
     }
 
     private void afirmarDenegadoConCuerpoUniforme(ResultActions r) throws Exception {
@@ -112,17 +116,7 @@ class TokenDeDispositivoIntegracionTest {
                 .andExpect(jsonPath("$.mensaje").isNotEmpty());
     }
 
-    // ---- emisión: solo el dueño ----
-
-    @Test
-    void elDuenoRecibeEl201ConElTokenYSuCaducidad() throws Exception {
-        vincular(dueno, planta, "esp32-02")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.dispositivoId").value("esp32-02"))
-                .andExpect(jsonPath("$.plantaId").value(planta))
-                .andExpect(jsonPath("$.token").isNotEmpty())
-                .andExpect(jsonPath("$.expira").isNotEmpty());
-    }
+    // ---- el token ----
 
     @Test
     void elTokenEmitidoEsUnJwtDeDispositivoLimitadoAEsaPlanta() {
@@ -135,23 +129,7 @@ class TokenDeDispositivoIntegracionTest {
     }
 
     @Test
-    void unInvitadoRecibe403UnAjenoRecibe404YSinTokenRecibe401() throws Exception {
-        vincular(invitado, planta, "esp32-03").andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error").value("OPERACION_NO_PERMITIDA"));
-        vincular(ajeno, planta, "esp32-03").andExpect(status().isNotFound());
-        mockMvc.perform(json(post("/api/v1/plantas/" + planta + "/dispositivos"), "{\"dispositivoId\":\"x\"}"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void unIdentificadorInvalidoEs400() throws Exception {
-        vincular(dueno, planta, "con espacios").andExpect(status().isBadRequest());
-        mockMvc.perform(json(con(post("/api/v1/plantas/" + planta + "/dispositivos"), dueno), "{}"))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void unTokenDeDispositivoNoPuedeEmitirOtroToken() throws Exception {
+    void unTokenDeDispositivoNoPuedeReclamarDispositivos() throws Exception {
         afirmarDenegadoConCuerpoUniforme(vincular(tokenDeDispositivo, planta, "otro"));
     }
 

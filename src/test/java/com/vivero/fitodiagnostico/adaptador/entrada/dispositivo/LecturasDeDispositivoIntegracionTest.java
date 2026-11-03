@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.adaptador.entrada.dispositivo;
 
 import com.jayway.jsonpath.JsonPath;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorTokenDispositivoPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class LecturasDeDispositivoIntegracionTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private EmisorTokenDispositivoPort emisor;
 
     private String dueno;
     private String planta;
@@ -91,9 +93,9 @@ class LecturasDeDispositivoIntegracionTest {
                 "{\"apodo\":\"" + apodo + "\",\"especie\":\"" + especie + "\"}")).andExpect(status().isCreated()), "$.id");
     }
 
-    private String emitirToken(String plantaId, String dispositivoId) throws Exception {
-        return leer(mockMvc.perform(json(con(post("/api/v1/plantas/" + plantaId + "/dispositivos"), dueno),
-                "{\"dispositivoId\":\"" + dispositivoId + "\"}")).andExpect(status().isCreated()), "$.token");
+    /** El token se emite directo por el puerto: aqui se prueba el endpoint de lecturas, no la obtencion de la credencial. */
+    private String emitirToken(String plantaId, String serial) {
+        return emisor.emitir(serial, UUID.fromString(plantaId)).valor();
     }
 
     private ResultActions reportar(String token, String cuerpo) throws Exception {

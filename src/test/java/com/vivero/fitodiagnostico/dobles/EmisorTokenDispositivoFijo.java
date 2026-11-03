@@ -16,9 +16,9 @@ public class EmisorTokenDispositivoFijo implements EmisorTokenDispositivoPort {
     private final List<TokenDeDispositivo> emitidos = new ArrayList<>();
 
     @Override
-    public TokenDeDispositivo emitir(String dispositivoId, UUID plantaId) {
-        TokenDeDispositivo token = new TokenDeDispositivo(dispositivoId, plantaId,
-                "token-falso-de-" + dispositivoId, CADUCIDAD);
+    public TokenDeDispositivo emitir(String serial, UUID plantaId) {
+        TokenDeDispositivo token = new TokenDeDispositivo(serial, plantaId,
+                "token-falso-de-" + serial, CADUCIDAD);
         emitidos.add(token);
         return token;
     }

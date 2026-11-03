@@ -2,6 +2,8 @@
 
 Qué se construyó, dónde vive cada pieza y por qué, y qué decisiones se tomaron con la alternativa descartada. Este archivo es el cuaderno de implementación (como `docs/corte2/IMPLEMENTACION.md`); **no es el documento de arquitectura de la entrega**, que escriben los integrantes con su propio diagrama y sus palabras.
 
+> **Nota (fase 3):** el flujo de este documento en que el dueño recibe y copia un token de dispositivo fue reemplazado por el reclamo por serial con reto HMAC (ver [`docs/fase3/IMPLEMENTACION.md`](../fase3/IMPLEMENTACION.md)). `VincularDispositivoPort`, `VinculoDeDispositivosController` y el límite "sin revocación individual" (D70) ya no existen tal cual; el resto de la fase 2 sigue vigente.
+
 Alcance: reorganizar el código en dominio, puertos de entrada y de salida, adaptadores y un único punto de composición; tabla de referencia intercambiable CSV o BD por configuración; token de dispositivo con alcance limitado; adaptador de entrada del ESP32 con su simulador, agregado sin tocar el dominio. Los endpoints del front no cambiaron de ruta.
 
 Commits de la fase (rama `feature/fase2-hexagonal`):

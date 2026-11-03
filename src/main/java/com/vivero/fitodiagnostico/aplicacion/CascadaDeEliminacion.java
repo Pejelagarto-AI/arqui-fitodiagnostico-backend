@@ -5,7 +5,9 @@ import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
+import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDiagnosticos;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioInvitaciones;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioRestablecimientos;
@@ -19,7 +21,7 @@ import java.util.UUID;
 /**
  * La cascada de la RN12 y la D11 en un solo sitio. Eliminar una planta (RF-D5)
  * y eliminar una cuenta (RF-A6, RF-B4) terminan en lo mismo: se borra el
- * historial, se quitan los accesos y las invitaciones pendientes, se borra la
+ * historial, se quitan los accesos y las invitaciones pendientes, se desvinculan los dispositivos, se borra la
  * planta y se avisa a los invitados que la perdieron (RF-G3). Son tres caminos y dos servicios; si la
  * secuencia viviera en cada uno, el próximo camino sería el que se olvida de
  * avisar. Mismo argumento de D18.
@@ -35,25 +37,27 @@ public class CascadaDeEliminacion {
     private final RepositorioDiagnosticos diagnosticos;
     private final RepositorioAccesos accesos;
     private final RepositorioInvitaciones invitaciones;
+    private final RepositorioDispositivos dispositivos;
     private final RepositorioSolicitudes solicitudes;
     private final RepositorioRestablecimientos restablecimientos;
     private final Notificador notificador;
 
     public CascadaDeEliminacion(RepositorioPlantas plantas, RepositorioDiagnosticos diagnosticos,
                                 RepositorioAccesos accesos, RepositorioInvitaciones invitaciones,
-                                RepositorioSolicitudes solicitudes,
+                                RepositorioDispositivos dispositivos, RepositorioSolicitudes solicitudes,
                                 RepositorioRestablecimientos restablecimientos, Notificador notificador) {
         this.plantas = plantas;
         this.diagnosticos = diagnosticos;
         this.accesos = accesos;
         this.invitaciones = invitaciones;
+        this.dispositivos = dispositivos;
         this.solicitudes = solicitudes;
         this.restablecimientos = restablecimientos;
         this.notificador = notificador;
     }
 
     /**
-     * RN12: historial, accesos, invitaciones pendientes y planta; después el aviso ACCESO_PERDIDO
+     * RN12: historial, accesos, invitaciones pendientes, dispositivos desvinculados y planta; después el aviso ACCESO_PERDIDO
      * a los invitados, si había (D56: un enlace de invitación a una planta que ya no existe no
      * debe seguir circulando).
      */
@@ -62,6 +66,10 @@ public class CascadaDeEliminacion {
         diagnosticos.eliminarDe(planta.id());
         accesos.revocarTodosDe(planta.id());
         invitaciones.eliminarDe(planta.id());
+        for (Dispositivo dispositivo : dispositivos.porPlanta(planta.id())) {
+            dispositivo.desvincular();   // el dispositivo sobrevive, otra planta puede reclamarlo
+            dispositivos.guardar(dispositivo);
+        }
         plantas.eliminar(planta.id());
         if (!invitados.isEmpty()) {
             notificador.avisar(new Aviso(invitados, TipoDeAviso.ACCESO_PERDIDO,
