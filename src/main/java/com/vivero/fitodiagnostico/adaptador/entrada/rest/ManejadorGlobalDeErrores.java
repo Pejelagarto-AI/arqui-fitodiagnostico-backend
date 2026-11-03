@@ -6,6 +6,11 @@ import com.vivero.fitodiagnostico.dominio.excepcion.ContrasenaActualIncorrectaEx
 import com.vivero.fitodiagnostico.dominio.excepcion.CorreoYaRegistradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CredencialesInvalidasException;
 import com.vivero.fitodiagnostico.dominio.excepcion.CatalogoSoloLecturaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaReclamadoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
@@ -55,7 +60,7 @@ public class ManejadorGlobalDeErrores {
     /** Orden determinista para reportar el primer campo inválido cuando hay varios (sección 2 del contrato). */
     private static final List<String> ORDEN_CAMPOS = List.of("apodo", "especie", "humedad", "luz", "temperatura",
             "nombre", "correo", "contrasena", "contrasenaActual", "contrasenaNueva", "rangos",
-            "token", "justificacion", "respuesta");
+            "token", "justificacion", "respuesta", "serial");
 
     @ExceptionHandler(EspecieNoEncontradaException.class)
     ResponseEntity<ErrorRespuesta> especieNoEncontrada(EspecieNoEncontradaException e) {
@@ -180,6 +185,40 @@ public class ManejadorGlobalDeErrores {
     @ExceptionHandler(RestablecimientoNoVigenteException.class)
     ResponseEntity<ErrorRespuesta> restablecimientoNoVigente(RestablecimientoNoVigenteException e) {
         return construir(HttpStatus.GONE, "RESTABLECIMIENTO_NO_VIGENTE", e.getMessage(), Map.of());
+    }
+
+    /** Fase 3: el serial no existe (o no está en esa planta). */
+    @ExceptionHandler(DispositivoNoEncontradoException.class)
+    ResponseEntity<ErrorRespuesta> dispositivoNoEncontrado(DispositivoNoEncontradoException e) {
+        return construir(HttpStatus.NOT_FOUND, "DISPOSITIVO_NO_ENCONTRADO", e.getMessage(),
+                Map.of("serial", e.getSerial()));
+    }
+
+    /** Fase 3: el dispositivo ya pertenece a otra planta; hay que desvincularlo antes. */
+    @ExceptionHandler(DispositivoYaReclamadoException.class)
+    ResponseEntity<ErrorRespuesta> dispositivoYaReclamado(DispositivoYaReclamadoException e) {
+        return construir(HttpStatus.CONFLICT, "DISPOSITIVO_YA_RECLAMADO", e.getMessage(),
+                Map.of("serial", e.getSerial()));
+    }
+
+    /** Fase 3: la fábrica no repite seriales. */
+    @ExceptionHandler(DispositivoYaExisteException.class)
+    ResponseEntity<ErrorRespuesta> dispositivoYaExiste(DispositivoYaExisteException e) {
+        return construir(HttpStatus.CONFLICT, "DISPOSITIVO_YA_EXISTE", e.getMessage(),
+                Map.of("serial", e.getSerial()));
+    }
+
+    /** Fase 3: el chip pidió credencial antes de que el dueño lo reclamara; debe esperar y reintentar. */
+    @ExceptionHandler(DispositivoSinReclamarException.class)
+    ResponseEntity<ErrorRespuesta> dispositivoSinReclamar(DispositivoSinReclamarException e) {
+        return construir(HttpStatus.CONFLICT, "DISPOSITIVO_SIN_RECLAMAR", e.getMessage(),
+                Map.of("serial", e.getSerial()));
+    }
+
+    /** Fase 3: sin reto vigente, reto vencido o respuesta que no corresponde; un solo mensaje para los tres. */
+    @ExceptionHandler(CredencialRechazadaException.class)
+    ResponseEntity<ErrorRespuesta> credencialRechazada(CredencialRechazadaException e) {
+        return construir(HttpStatus.UNAUTHORIZED, "CREDENCIAL_RECHAZADA", e.getMessage(), Map.of());
     }
 
     @ExceptionHandler(SolicitudNoEncontradaException.class)

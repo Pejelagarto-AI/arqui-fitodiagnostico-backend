@@ -1,31 +1,50 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dobles.AutenticadorDeDispositivosFalso;
 import com.vivero.fitodiagnostico.dobles.EmisorTokenDispositivoFijo;
+import com.vivero.fitodiagnostico.dobles.GeneradorDeTokensFijo;
 import com.vivero.fitodiagnostico.dobles.Muestras;
 import com.vivero.fitodiagnostico.dobles.MundoEnMemoria;
+import com.vivero.fitodiagnostico.dobles.RelojManual;
+import com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaReclamadoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
+import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.Reto;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeDispositivo;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarDispositivoDeFabricaPort.DispositivoDeFabrica;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Vincular un dispositivo: la regla "solo el dueño" con dobles en memoria, sin JWT ni Spring. */
+/**
+ * Los tres casos de uso de los dispositivos (fábrica, reclamo, autenticación) con dobles en memoria, sin JWT,
+ * sin HMAC y sin Spring: lo que se prueba son las reglas, no la criptografía.
+ */
 class ServicioDispositivosTest {
 
+    private final UUID admin = UUID.randomUUID();
     private final UUID dueno = UUID.randomUUID();
     private final UUID invitado = UUID.randomUUID();
     private final UUID ajeno = UUID.randomUUID();
 
     private MundoEnMemoria mundo;
     private EmisorTokenDispositivoFijo emisor;
+    private RelojManual reloj;
     private ServicioDispositivos servicio;
     private Planta planta;
 
@@ -33,41 +52,278 @@ class ServicioDispositivosTest {
     void preparar() {
         mundo = new MundoEnMemoria();
         emisor = new EmisorTokenDispositivoFijo();
-        servicio = new ServicioDispositivos(mundo.plantas, mundo.accesos, new PoliticaDeAcceso(), emisor);
+        reloj = RelojManual.enUnDiaCualquiera();
+        servicio = new ServicioDispositivos(mundo.plantas, mundo.accesos, new PoliticaDeAcceso(), mundo.dispositivos,
+                emisor, new AutenticadorDeDispositivosFalso(), new GeneradorDeTokensFijo(), reloj);
         planta = Planta.nueva(dueno, "Pepa", Muestras.especie("helecho"));
         mundo.plantas.guardar(planta);
         mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(planta.id(), invitado));
     }
 
-    @Test
-    void elDuenoRecibeUnTokenParaEseDispositivoYESaPlanta() {
-        TokenDeDispositivo token = servicio.vincular(dueno, planta.id(), "esp32-01");
+    private DispositivoDeFabrica deFabrica() {
+        return servicio.registrar(admin, Optional.of("fito-AAAAAA"));
+    }
 
-        assertThat(token.serial()).isEqualTo("esp32-01");
-        assertThat(token.plantaId()).isEqualTo(planta.id());
-        assertThat(token.valor()).isNotBlank();
-        assertThat(emisor.emitidos()).containsExactly(token);
+    private String responder(DispositivoDeFabrica fabrica, Reto reto) {
+        return AutenticadorDeDispositivosFalso.respuestaCorrecta(fabrica.secreto(), reto.valor());
+    }
+
+    // ---- fábrica ----
+
+    @Test
+    void registrarSinSerialGeneraUnoConFormatoSinCaracteresAmbiguosYUnSecreto() {
+        DispositivoDeFabrica f = servicio.registrar(admin, Optional.empty());
+
+        assertThat(f.serial()).matches(Pattern.compile("fito-[A-HJ-NP-Z2-9]{6}"));
+        assertThat(f.secreto()).isNotBlank();
+        assertThat(f.creadoEn()).isEqualTo(reloj.instant());
+        assertThat(mundo.dispositivos.porSerial(f.serial())).isPresent();
     }
 
     @Test
-    void elInvitadoNoPuedeVincularYNoSeEmiteNada() {
-        assertThatThrownBy(() -> servicio.vincular(invitado, planta.id(), "esp32-01"))
-                .isInstanceOf(OperacionNoPermitidaException.class);
-        assertThat(emisor.emitidos()).isEmpty();
+    void registrarConSerialLoRespetaYUnoVacioSeTratacomoAusente() {
+        assertThat(servicio.registrar(admin, Optional.of("esp32-01")).serial()).isEqualTo("esp32-01");
+        assertThat(servicio.registrar(admin, Optional.of("  ")).serial()).startsWith("fito-");
     }
 
     @Test
-    void unAjenoRecibeLaMismaExcepcionQueSiLaPlantaNoExistiera() {
-        assertThatThrownBy(() -> servicio.vincular(ajeno, planta.id(), "esp32-01"))
-                .isInstanceOf(PlantaNoEncontradaException.class);
-        assertThatThrownBy(() -> servicio.vincular(dueno, UUID.randomUUID(), "esp32-01"))
-                .isInstanceOf(PlantaNoEncontradaException.class);
-        assertThat(emisor.emitidos()).isEmpty();
+    void unSerialTomadoEs409YNoSePisaElSecretoDelOriginal() {
+        DispositivoDeFabrica original = deFabrica();
+
+        assertThatThrownBy(() -> servicio.registrar(admin, Optional.of("fito-AAAAAA")))
+                .isInstanceOf(DispositivoYaExisteException.class);
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().secreto()).isEqualTo(original.secreto());
     }
 
     @Test
-    void unIdentificadorMalFormadoSeRechazaSinEmitir() {
-        assertThatThrownBy(() -> servicio.vincular(dueno, planta.id(), "con espacios/raros"))
+    void unSerialMalFormadoSeRechazaSinGuardar() {
+        assertThatThrownBy(() -> servicio.registrar(admin, Optional.of("con espacios/raros")))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThat(mundo.dispositivos.cuantos()).isZero();
+    }
+
+    @Test
+    void elAdministradorListaTodosReclamadosOSin() {
+        deFabrica();
+        servicio.registrar(admin, Optional.of("fito-BBBBBB"));
+        servicio.reclamar(dueno, planta.id(), "fito-BBBBBB");
+
+        assertThat(servicio.listar(admin)).extracting(Dispositivo::serial)
+                .containsExactlyInAnyOrder("fito-AAAAAA", "fito-BBBBBB");
+    }
+
+    // ---- reclamo: solo el dueño ----
+
+    @Test
+    void elDuenoReclamaYElDispositivoQuedaEnSuPlanta() {
+        deFabrica();
+
+        Dispositivo d = servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThat(d.plantaId()).contains(planta.id());
+        assertThat(d.reclamadoEn()).contains(reloj.instant());
+        assertThat(servicio.listar(dueno, planta.id())).extracting(Dispositivo::serial).containsExactly("fito-AAAAAA");
+    }
+
+    @Test
+    void reclamarDeNuevoParaLaMismaPlantaEsIdempotente() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        reloj.avanzar(Duration.ofMinutes(5));
+
+        Dispositivo d = servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThat(d.reclamadoEn()).contains(reloj.instant().minus(Duration.ofMinutes(5)));
+        assertThat(servicio.listar(dueno, planta.id())).hasSize(1);
+    }
+
+    @Test
+    void unSerialQueNoExisteEs404() {
+        assertThatThrownBy(() -> servicio.reclamar(dueno, planta.id(), "fito-NOEXISTE"))
+                .isInstanceOf(DispositivoNoEncontradoException.class);
+    }
+
+    @Test
+    void unDispositivoDeOtraPlantaEs409YNoSeRoba() {
+        deFabrica();
+        Planta otra = Planta.nueva(dueno, "Otra", Muestras.especie("helecho"));
+        mundo.plantas.guardar(otra);
+        servicio.reclamar(dueno, otra.id(), "fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.reclamar(dueno, planta.id(), "fito-AAAAAA"))
+                .isInstanceOf(DispositivoYaReclamadoException.class);
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().plantaId()).contains(otra.id());
+    }
+
+    @Test
+    void elInvitadoNoPuedeReclamarListarNiDesvincularYUnAjenoRecibeLoMismoQueSiNoExistiera() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.reclamar(invitado, planta.id(), "fito-AAAAAA"))
+                .isInstanceOf(OperacionNoPermitidaException.class);
+        assertThatThrownBy(() -> servicio.listar(invitado, planta.id())).isInstanceOf(OperacionNoPermitidaException.class);
+        assertThatThrownBy(() -> servicio.desvincular(invitado, planta.id(), "fito-AAAAAA"))
+                .isInstanceOf(OperacionNoPermitidaException.class);
+        assertThatThrownBy(() -> servicio.reclamar(ajeno, planta.id(), "fito-AAAAAA"))
+                .isInstanceOf(PlantaNoEncontradaException.class);
+        assertThatThrownBy(() -> servicio.listar(ajeno, planta.id())).isInstanceOf(PlantaNoEncontradaException.class);
+        assertThatThrownBy(() -> servicio.desvincular(ajeno, planta.id(), "fito-AAAAAA"))
+                .isInstanceOf(PlantaNoEncontradaException.class);
+    }
+
+    @Test
+    void desvincularLoDejaSinReclamarYUnaPlantaAjenaNoLoDesvincula() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Planta otra = Planta.nueva(dueno, "Otra", Muestras.especie("helecho"));
+        mundo.plantas.guardar(otra);
+
+        assertThatThrownBy(() -> servicio.desvincular(dueno, otra.id(), "fito-AAAAAA"))
+                .isInstanceOf(DispositivoNoEncontradoException.class);
+        servicio.desvincular(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().estaReclamado()).isFalse();
+        assertThat(servicio.listar(dueno, planta.id())).isEmpty();
+    }
+
+    @Test
+    void eliminarLaPlantaDesvinculaSusDispositivosYNoLosBorra() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        mundo.cascada.eliminarPlanta(planta);
+
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().estaReclamado()).isFalse();
+    }
+
+    // ---- reto y credencial ----
+
+    @Test
+    void elRetoSeTraduceABase64EstandarConRellenoYVale60Segundos() {
+        deFabrica();
+
+        Reto reto = servicio.reto("fito-AAAAAA");
+
+        // el generador fijo entrega "token-N": el guion de base64url pasa a "+" y se agrega el relleno
+        assertThat(reto.valor()).doesNotContain("-", "_").endsWith("=");
+        assertThat(reto.expira()).isEqualTo(reloj.instant().plusSeconds(60));
+    }
+
+    @Test
+    void retoDeUnSerialQueNoExisteEs404() {
+        assertThatThrownBy(() -> servicio.reto("fito-NOEXISTE")).isInstanceOf(DispositivoNoEncontradoException.class);
+    }
+
+    @Test
+    void conRetoYRespuestaCorrectaUnDispositivoReclamadoRecibeSuCredencialYQuedaRegistrado() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto reto = servicio.reto("fito-AAAAAA");
+        reloj.avanzar(Duration.ofSeconds(2));
+
+        TokenDeDispositivo token = servicio.credencial("fito-AAAAAA", responder(f, reto));
+
+        assertThat(token.serial()).isEqualTo("fito-AAAAAA");
+        assertThat(token.plantaId()).isEqualTo(planta.id());
+        assertThat(emisor.emitidos()).containsExactly(token);
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().ultimaCredencialEn())
+                .contains(reloj.instant());
+    }
+
+    @Test
+    void sinReclamarEsUn409YElRetoSeConsumeIgual() {
+        DispositivoDeFabrica f = deFabrica();
+        Reto reto = servicio.reto("fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, reto)))
+                .isInstanceOf(DispositivoSinReclamarException.class);
+
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().reto()).isEmpty();
+        assertThat(emisor.emitidos()).isEmpty();
+    }
+
+    @Test
+    void unaRespuestaMalaEs401NoEmiteNadaYConsumeElReto() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto reto = servicio.reto("fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", "respuesta-mala"))
+                .isInstanceOf(CredencialRechazadaException.class);
+
+        // el mismo reto ya no sirve, ni siquiera con la respuesta buena
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, reto)))
+                .isInstanceOf(CredencialRechazadaException.class);
+        assertThat(emisor.emitidos()).isEmpty();
+        assertThat(mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow().ultimaCredencialEn()).isEmpty();
+    }
+
+    @Test
+    void sinHaberPedidoRetoEs401() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, new Reto("inventado", reloj.instant()))))
+                .isInstanceOf(CredencialRechazadaException.class);
+    }
+
+    @Test
+    void unRetoVencidoEs401AunqueLaRespuestaSeaBuena() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto reto = servicio.reto("fito-AAAAAA");
+        reloj.avanzar(Duration.ofSeconds(61));
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, reto)))
+                .isInstanceOf(CredencialRechazadaException.class);
+    }
+
+    @Test
+    void unRetoNoSePuedeReusar() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto reto = servicio.reto("fito-AAAAAA");
+        servicio.credencial("fito-AAAAAA", responder(f, reto));
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, reto)))
+                .isInstanceOf(CredencialRechazadaException.class);
+        assertThat(emisor.emitidos()).hasSize(1);
+    }
+
+    @Test
+    void pedirOtroRetoInvalidaElAnterior() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto primero = servicio.reto("fito-AAAAAA");
+        Reto segundo = servicio.reto("fito-AAAAAA");
+
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, primero)))
+                .isInstanceOf(CredencialRechazadaException.class);
+        // ese intento gasto el reto vigente (el segundo): hay que pedir otro
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, segundo)))
+                .isInstanceOf(CredencialRechazadaException.class);
+    }
+
+    @Test
+    void despuesDeDesvincularNoHayCredencialNuevaYLaVueltaAReclamarLaRestituye() {
+        DispositivoDeFabrica f = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        servicio.credencial("fito-AAAAAA", responder(f, servicio.reto("fito-AAAAAA")));
+        servicio.desvincular(dueno, planta.id(), "fito-AAAAAA");
+
+        Reto reto = servicio.reto("fito-AAAAAA");
+        assertThatThrownBy(() -> servicio.credencial("fito-AAAAAA", responder(f, reto)))
+                .isInstanceOf(DispositivoSinReclamarException.class);
+
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        assertThat(servicio.credencial("fito-AAAAAA", responder(f, servicio.reto("fito-AAAAAA"))).plantaId())
+                .isEqualTo(planta.id());
+    }
+
+    @Test
+    void credencialDeUnSerialQueNoExisteEs404() {
+        assertThatThrownBy(() -> servicio.credencial("fito-NOEXISTE", "x"))
+                .isInstanceOf(DispositivoNoEncontradoException.class);
     }
 }
