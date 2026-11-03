@@ -40,6 +40,9 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  * (alcance {@code lecturas:reportar}) abre únicamente {@code POST /api/v1/dispositivos/{id}/lecturas}
  * y se rechaza con 403 en cualquier otra ruta, públicas incluidas. Al revés, un token de persona
  * tampoco abre el endpoint del dispositivo. Esa distinción es lo único que la cadena sabe del dispositivo.
+ * Excepción de la fase 3: {@code POST /api/v1/dispositivos/{serial}/reto} y {@code /credencial} son públicas
+ * (el chip todavía no tiene token) y abiertas a cualquiera, porque la prueba es el secreto, no la ruta.
+ * {@code /api/v1/admin/dispositivos} cae en {@code /admin/**}: solo ADMINISTRADOR.
  *
  * <p>Decisiones de borde:
  * <ul>
@@ -105,6 +108,11 @@ public class ConfiguracionSeguridad {
                 // la autenticación es el JWT del frame CONNECT (ProtectorDeCanalStomp).
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/error").permitAll()
+                // Fase 3: el chip todavía no tiene token cuando pide su reto y su credencial. Públicas de verdad
+                // (permitAll): lo que protege es el secreto del dispositivo. Si el chip aún conserva un token
+                // vigente y lo manda al renovar, tampoco estorba: esta ruta es suya.
+                .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/reto", "/api/v1/dispositivos/*/credencial")
+                        .permitAll()
                 // Fase 2: el ÚNICO endpoint que acepta un token de dispositivo, y solo uno con su alcance.
                 // Un token de usuario no lo tiene: 403.
                 .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/lecturas")
