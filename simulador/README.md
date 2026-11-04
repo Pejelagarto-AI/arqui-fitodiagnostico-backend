@@ -50,6 +50,33 @@ identidad automatica fito-75CBL9 (NVS simulador/.nvs-auto-fito-75CBL9.json, nuev
   `POST /api/v1/plantas/{id}/dispositivos {"serial": "fito-75CBL9"}`). Si lo hace **antes** de que el simulador prenda,
   recibe `404` con el mensaje `no existe o la matera no ha encendido todavia`: basta prender la matera y reintentar.
 
+## Transporte MQTT (fase 4): `--transporte mqtt`
+
+Por defecto las lecturas viajan por HTTP (`--transporte http`, `FITO_TRANSPORTE`). Con `--transporte mqtt` el chip consigue su
+token por HTTP como siempre (reto y credencial), pero cada lectura se publica en el broker (`--mqtt-url`, `FITO_MQTT_URL`,
+`localhost:1883` o `tcp://host:puerto`). Requiere el broker (`docker/mosquitto`, ver el README del repo) y el backend con
+`FITO_MQTT_HABILITADO=true`.
+
+- **Cliente MQTT 3.1.1 mínimo en la biblioteca estándar** (`simulador/mqtt_minimo.py`, sobre `socket`): CONNECT/CONNACK con
+  `clientId = serial` y `cleanSession=false`, PUBLISH QoS 1 con PUBACK y reintento (DUP), SUBSCRIBE/SUBACK, PINGREQ/PINGRESP
+  por keepalive (30 s), DISCONNECT y lectura de PUBLISH entrantes. Es lo que haría el firmware con una librería de C.
+- Publica en `fito/dispositivos/{serial}/lecturas` con el token **dentro** del payload y se suscribe a
+  `fito/dispositivos/{serial}/respuestas`. Pinta la respuesta como las líneas de HTTP:
+
+```
+[2026-11-04T02:15:43Z] #8 FUERA    fuera de rango en humedad              -> MQTT ok estado=CRITICO id=6e4b8e5b
+[2026-11-04T02:15:47Z] #10 INVALIDA valor no numerico (luz)                -> MQTT error PARAMETRO_INVALIDO: el campo 'luz' no tiene un formato válido.
+```
+
+- **`CREDENCIAL_RECHAZADA`** (token vencido o revocado) se trata como el 401 de HTTP: descarta el token, pide otro (reto +
+  credencial) y reenvía esa lectura.
+- **Backend caído, broker vivo:** el broker confirma la publicación (PUBACK) pero no llega respuesta; tras 3 s el simulador
+  imprime `MQTT publicada, respuesta pendiente (el broker la guarda)` y sigue. Al volver el backend, el broker entrega lo
+  acumulado y las respuestas llegan como `(respuesta tardia)`; en el historial cada lectura conserva su `tomadaEn` original.
+- **Broker caído o sin red:** si el broker no acepta la conexión o no confirma, actúa la cola sin red de la fase 3 (NVS,
+  reenvío en orden al volver), igual que con HTTP. `--simular-caida` también aplica.
+- Las respuestas no traen correlativo: se emparejan con las lecturas por orden (D84). Un `ERROR_INTERNO` tardío no se reintenta.
+
 ## Fabrica manual y como se autentica (fase 3)
 
 1. `POST /dispositivos/{serial}/reto` devuelve un reto aleatorio (32 bytes en base64, vale 60 s, un solo uso).

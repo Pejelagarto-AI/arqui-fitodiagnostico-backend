@@ -108,6 +108,26 @@ docker run -d --rm --name fito-mosquitto -p 1883:1883 \
 docker stop fito-mosquitto      # al terminar
 ```
 
+### Lecturas por MQTT (fase 4)
+
+El dispositivo puede mandar sus lecturas por MQTT en vez de HTTP; los dos canales conviven y llaman al mismo caso de uso.
+El reto y la credencial siguen por HTTP; el token viaja dentro de cada mensaje (el broker es anónimo, D83).
+
+| Tópico | Publica | Payload |
+|---|---|---|
+| `fito/dispositivos/{serial}/lecturas` | el chip (QoS 1) | `{token, marcaDeTiempo, humedad, luz, temperatura}` |
+| `fito/dispositivos/{serial}/respuestas` | el backend (QoS 1) | `{ok:true, id, estado, registradaEn}` o `{ok:false, error, mensaje, detalle}` |
+
+```bash
+# backend con MQTT (apagado por defecto; sin broker arranca igual por HTTP)
+FITO_MQTT_HABILITADO=true FITO_MQTT_URL=tcp://localhost:1883 java -jar target/*.jar   # mas las variables de siempre
+# simulador por MQTT (solo biblioteca estandar)
+python3 simulador/simulador_esp32.py --serial auto --clave-flota "$FITO_CLAVE_FLOTA" --transporte mqtt --intervalo 2
+```
+
+Si el backend cae, el broker guarda lo publicado (QoS 1 y sesión persistente `fito-backend`) y lo entrega al volver, con la
+`marcaDeTiempo` original. El adaptador no tocó dominio ni aplicación: ver `docs/fase4/IMPLEMENTACION.md`.
+
 ## Endpoints
 
 Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lecturas`; en todas las demás rutas (también las públicas) ese token responde 403. Públicos (sin token): `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial` (el chip aún no tiene token; la prueba es el secreto), `POST /api/v1/dispositivos/registro` (solo si hay `FITO_CLAVE_FLOTA`; la prueba es la firma de flota), `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
