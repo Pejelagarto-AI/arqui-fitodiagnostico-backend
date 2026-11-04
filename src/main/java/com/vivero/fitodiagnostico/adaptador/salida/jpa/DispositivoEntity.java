@@ -1,14 +1,17 @@
 package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 
 import jakarta.persistence.Column;
+import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeRegistro;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
 import java.util.UUID;
 
-/** Fila de {@code dispositivo} (V12). No sale de este paquete (RA-04). */
+/** Fila de {@code dispositivo} (V12 y V13). No sale de este paquete (RA-04). */
 @Entity
 @Table(name = "dispositivo")
 public class DispositivoEntity {
@@ -38,10 +41,14 @@ public class DispositivoEntity {
     @Column(name = "creado_en", nullable = false)
     private Instant creadoEn;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "registrado_por", nullable = false)
+    private OrigenDeRegistro registradoPor;
+
     protected DispositivoEntity() { }   // requerido por JPA
 
     DispositivoEntity(String serial, String secreto, UUID plantaId, Instant reclamadoEn, Instant ultimaCredencialEn,
-                      String reto, Instant retoExpira, Instant creadoEn) {
+                      String reto, Instant retoExpira, Instant creadoEn, OrigenDeRegistro registradoPor) {
         this.serial = serial;
         this.secreto = secreto;
         this.plantaId = plantaId;
@@ -50,6 +57,7 @@ public class DispositivoEntity {
         this.reto = reto;
         this.retoExpira = retoExpira;
         this.creadoEn = creadoEn;
+        this.registradoPor = registradoPor;
     }
 
     String getSerial() { return serial; }
@@ -67,4 +75,6 @@ public class DispositivoEntity {
     Instant getRetoExpira() { return retoExpira; }
 
     Instant getCreadoEn() { return creadoEn; }
+
+    OrigenDeRegistro getRegistradoPor() { return registradoPor; }
 }

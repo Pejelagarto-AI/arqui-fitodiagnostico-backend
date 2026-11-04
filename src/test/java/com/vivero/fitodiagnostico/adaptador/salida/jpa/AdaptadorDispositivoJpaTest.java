@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 
 import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
+import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeRegistro;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,19 @@ class AdaptadorDispositivoJpaTest extends BaseDePersistenciaDePlantas {
         assertThat(leido.reto()).isEqualTo(d.reto());
         assertThat(leido.creadoEn()).isEqualTo(t);
         assertThat(dispositivos.porSerial("no-existe")).isEmpty();
+    }
+
+    @Test
+    void elOrigenDelRegistroSePersisteYLosDeFabricaSonAdmin() {
+        Dispositivo deAdmin = deFabrica(ahora());
+        Dispositivo deFlota = Dispositivo.autorregistrado(serial(), "f".repeat(40), ahora());
+
+        dispositivos.guardar(deAdmin);
+        dispositivos.guardar(deFlota);
+        sincronizar();
+
+        assertThat(dispositivos.porSerial(deAdmin.serial()).orElseThrow().registradoPor()).isEqualTo(OrigenDeRegistro.ADMIN);
+        assertThat(dispositivos.porSerial(deFlota.serial()).orElseThrow().registradoPor()).isEqualTo(OrigenDeRegistro.FLOTA);
     }
 
     @Test
