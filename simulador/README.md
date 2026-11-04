@@ -1,11 +1,56 @@
 # Simulador del ESP32
 
-Script independiente (Python 3, solo biblioteca estandar) que hace de la matera: arranca con el **serial** y el
-**secreto** de fabrica, consigue solo su credencial (reto HMAC) y envia lecturas periodicas a
-`POST /api/v1/dispositivos/{serial}/lecturas`. No hace falta hardware, y nadie copia ningun token. Incluye
-`fabrica.py`, que da de alta el dispositivo y pinta su sticker.
+Script independiente (Python 3, solo biblioteca estandar) que hace de la matera: consigue solo su credencial (reto
+HMAC) y envia lecturas periodicas a `POST /api/v1/dispositivos/{serial}/lecturas`. No hace falta hardware, y nadie
+copia ningun token. Tiene dos modos de nacer:
 
-## Como se autentica (fase 3)
+| Modo | Cuando usarlo | Como |
+|---|---|---|
+| **Fabrica automatica** (`--serial auto`) | el flujo normal y el de la demo: la matera se registra sola la primera vez que prende | solo necesita la clave de flota; el backend debe arrancar con `FITO_CLAVE_FLOTA` |
+| **Fabrica manual** (`fabrica.py`) | el backend no tiene clave de flota, o se quiere un serial elegido a mano | un administrador da de alta el dispositivo y se pasan `--serial` y `--secreto` del sticker |
+
+## Fabrica automatica (fase 3b): `--serial auto`
+
+El firmware de todas las materas trae grabada la **clave de flota**. La primera vez que prende, el chip:
+
+1. inventa una "MAC" (6 bytes aleatorios) y deriva de ella su serial `fito-XXXXXX` (alfabeto sin 0/O/1/I);
+2. genera su secreto (32 bytes aleatorios en base64url);
+3. guarda MAC, serial y secreto en la NVS (`simulador/.nvs-auto-<serial>.json`, o la ruta de `--nvs`);
+4. se registra con `POST /api/v1/dispositivos/registro {serial, secreto, firma}`, donde
+   `firma = base64(HMAC-SHA256(clave de flota, serial + "\n" + secreto))`. `201` si es nuevo, `200` si ya existia con
+   ese secreto (idempotente); en ambos marca `registrado: true` en la NVS;
+5. pinta el **sticker** (serial y el enlace `<front>/#/vincular?serial=...` que llevaria el QR) y sigue como siempre:
+   reto, `409` mientras espera el reclamo, credencial, lecturas, cola sin red.
+
+```bash
+FITO_CLAVE_FLOTA=<la misma del servidor> python3 simulador/simulador_esp32.py --serial auto --intervalo 2
+```
+
+```
+identidad automatica fito-75CBL9 (NVS simulador/.nvs-auto-fito-75CBL9.json, nueva, sin registrar)
+[2026-11-04T01:49:18Z] registro HTTP 201: fito-75CBL9 SIN_RECLAMAR
++-------------------------------------------------------------+
+| STICKER DE LA MATERA                                        |
+| serial  fito-75CBL9                                         |
+| enlace  http://localhost:5500/#/vincular?serial=fito-75CBL9 |
++-------------------------------------------------------------+
+[2026-11-04T01:49:18Z] esperando reclamo del serial fito-75CBL9... (reintento en 3 s)
+[2026-11-04T01:49:31Z] credencial obtenida para la planta ef592324 (vence 2026-11-04T02:49:30.998998882Z)
+[2026-11-04T01:49:31Z] #1 NORMAL   dentro del optimo                      -> HTTP 201 estado=SALUDABLE id=4b8084cd
+```
+
+- **Reiniciar** conserva la identidad: lee la NVS, no se vuelve a registrar y reutiliza el token si sigue vigente.
+  Sin `--nvs`, reutiliza la unica `simulador/.nvs-auto-*.json` que exista; si hay varias exige `--nvs` para saber cual.
+- **Borrar la NVS** es "restaurar de fabrica": el chip inventa otra identidad y se registra como una matera nueva.
+- **Clave de flota equivocada**: termina con `la clave de flota no coincide con la del servidor`. Si el backend no tiene
+  `FITO_CLAVE_FLOTA`, la ruta no existe y termina avisando que la fabrica automatica esta apagada.
+- Opciones nuevas: `--clave-flota` (`FITO_CLAVE_FLOTA`, obligatoria con `auto`) y `--front-url` (`FITO_FRONT_URL`,
+  `http://localhost:5500`) para el enlace del sticker.
+- El dueno reclama el serial que pinto el sticker (en el front, o
+  `POST /api/v1/plantas/{id}/dispositivos {"serial": "fito-75CBL9"}`). Si lo hace **antes** de que el simulador prenda,
+  recibe `404` con el mensaje `no existe o la matera no ha encendido todavia`: basta prender la matera y reintentar.
+
+## Fabrica manual y como se autentica (fase 3)
 
 1. `POST /dispositivos/{serial}/reto` devuelve un reto aleatorio (32 bytes en base64, vale 60 s, un solo uso).
 2. `POST /dispositivos/{serial}/credencial` con `{respuesta}`, donde
@@ -22,7 +67,7 @@ La **NVS** es un JSON (`simulador/.nvs-<serial>.json` por defecto, en `.gitignor
 simulador se reinicia y el token sigue vigente, lo reutiliza sin pedir otro. Borrar el archivo es "restaurar de
 fabrica".
 
-## Como se usa
+## Como se usa (fabrica manual)
 
 1. Levantar la API (ver el README de la raiz), crear un usuario y una planta (desde el front o con la API).
 2. **Fabrica**: dar de alta un dispositivo como administrador. Imprime el sticker y el comando exacto:
@@ -123,9 +168,11 @@ plausibles; el chip real mide y ya.
 | Argumento | Variable de entorno | Por defecto |
 |---|---|---|
 | `--url` | `FITO_URL` | `http://localhost:8080` |
-| `--serial` | `FITO_SERIAL` | obligatorio (el del sticker) |
-| `--secreto` | `FITO_SECRETO` | obligatorio (el del sticker) |
-| `--nvs` | `FITO_NVS` | `simulador/.nvs-<serial>.json` |
+| `--serial` | `FITO_SERIAL` | obligatorio (el del sticker), o `auto` para la fabrica automatica |
+| `--secreto` | `FITO_SECRETO` | obligatorio (el del sticker); no se usa con `--serial auto` |
+| `--clave-flota` | `FITO_CLAVE_FLOTA` | obligatoria con `--serial auto` |
+| `--front-url` | `FITO_FRONT_URL` | `http://localhost:5500` (enlace del sticker) |
+| `--nvs` | `FITO_NVS` | `simulador/.nvs-<serial>.json` (`.nvs-auto-<serial>.json` con `auto`) |
 | `--espera-reclamo` | `FITO_ESPERA_RECLAMO` | `5` segundos entre reintentos mientras nadie lo reclama |
 | `--intervalo` | `FITO_INTERVALO` | `5` segundos |
 | `--especie` | `FITO_ESPECIE` | `potos` (`sansevieria`, `potos`, `suculenta`, `helecho`, `lavanda`) |
