@@ -49,6 +49,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
+		<!-- Fase 4: lecturas del dispositivo por MQTT (adaptador de entrada, adaptador.entrada.mqtt). Trae Paho y
+		     Spring Integration. Solo lo nombran el adaptador y config; ArchUnit vigila que dominio y aplicacion no. -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-mqtt</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-core</artifactId>

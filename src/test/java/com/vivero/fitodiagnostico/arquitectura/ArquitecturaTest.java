@@ -228,4 +228,21 @@ class ArquitecturaTest {
         classes().that().implement(resideInAPackage("..dominio.puerto.salida.."))
             .and().areNotInterfaces()
             .should().resideInAPackage("..adaptador.salida..");
+
+    // Fase 4 (la prueba de cambio): el adaptador MQTT es una isla dentro de la entrada. No usa el controlador del
+    // dispositivo, ni REST, ni el WebSocket: su DTO es propio (D73) y habla solo con el puerto.
+    @ArchTest
+    static final ArchRule el_adaptador_mqtt_no_depende_de_otros_adaptadores_de_entrada =
+        noClasses().that().resideInAPackage("..adaptador.entrada.mqtt..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                "..adaptador.entrada.rest..", "..adaptador.entrada.dispositivo..",
+                "..adaptador.entrada.websocket..", "..adaptador.salida..");
+
+    // Fase 4: MQTT (Paho y Spring Integration) solo se nombra en adaptadores y en la composicion; ni el dominio ni la
+    // aplicacion saben que existe. Es lo que hace cierto que agregar el canal no toca el hexagono.
+    @ArchTest
+    static final ArchRule mqtt_solo_en_adaptadores_y_config =
+        noClasses().that().resideOutsideOfPackage("..adaptador..").and().resideOutsideOfPackage("com.vivero.fitodiagnostico.config..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.eclipse.paho..", "org.springframework.integration..");
 }
