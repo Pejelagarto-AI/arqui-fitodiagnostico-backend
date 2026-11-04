@@ -30,6 +30,13 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
   --intervalo     FITO_INTERVALO           segundos entre lecturas (5)
   --especie       FITO_ESPECIE             especie de la planta    (potos)
   --lecturas      FITO_LECTURAS            cuantas enviar, 0 = sin fin (0)
+  --max-pendientes FITO_MAX_PENDIENTES     tope de la cola sin red en la NVS (500)
+  --espera-red    FITO_ESPERA_RED          segundos entre pruebas de red mientras no hay (10)
+  --simular-caida FITO_SIMULAR_CAIDA       a los N s del arranque finge que no hay red (sin simular)
+  --duracion-caida FITO_DURACION_CAIDA     cuantos segundos dura la caida simulada (20)
+
+Sin red (fase 3): si un POST falla por red o por 5xx, la lectura se guarda en la NVS (clave "pendientes") con su
+marcaDeTiempo original y se entrega en orden cuando vuelve la red, antes de seguir en vivo (ver D82).
 
 Ejemplo (el serial y el secreto los imprime simulador/fabrica.py):
   FITO_SERIAL=fito-7K2M9Q FITO_SECRETO=... python3 simulador/simulador_esp32.py --intervalo 2
@@ -66,6 +73,10 @@ CAMPOS = ("humedad", "luz", "temperatura")
 
 ESPERA_RECLAMO_S = 5                       # cada cuanto reintenta mientras nadie lo reclama
 MARGEN_DE_RENOVACION = timedelta(minutes=2)  # renueva cuando faltan menos de 2 minutos
+ESPERA_RED_S = 10                          # cada cuanto prueba si volvio la red
+MAX_PENDIENTES = 500                       # como una memoria flash chica
+DURACION_CAIDA_S = 20
+SIN_RED = object()                         # lo que devuelve Credencial.asegurar(esperar_red=False) sin red
 INTENTOS_CON_RESPUESTA_RECHAZADA = 3       # 401 seguidos antes de rendirse (casi seguro el secreto esta mal)
 
 
@@ -128,9 +139,37 @@ def cuerpo_invalido(lectura, azar):
     return tipo + " (" + campo + ")", json.dumps(cuerpo)
 
 
+class CaidaSimulada:
+    """Finge que no hay red entre inicio_s y inicio_s + duracion_s segundos despues de crearse (reloj monotonico)."""
+
+    def __init__(self, inicio_s, duracion_s, reloj=time.monotonic):
+        self.reloj, self.inicio_s, self.duracion_s = reloj, inicio_s, duracion_s
+        self.t0 = reloj()
+        self.anunciada = False
+
+    def activa(self):
+        t = self.reloj() - self.t0
+        return self.inicio_s <= t < self.inicio_s + self.duracion_s
+
+    def anunciar(self):
+        """Imprime cuando entra y cuando sale de la caida."""
+        activa = self.activa()
+        if activa and not self.anunciada:
+            print("[%s] --- CAIDA SIMULADA: entra, sin red por %g s ---" % (ahora_iso(), self.duracion_s), flush=True)
+            self.anunciada = True
+        elif not activa and self.anunciada and self.reloj() - self.t0 >= self.inicio_s + self.duracion_s:
+            print("[%s] --- CAIDA SIMULADA: termina, la red vuelve ---" % ahora_iso(), flush=True)
+            self.anunciada = None   # ya salio, no se repite
+
+
+CAIDA = None   # CaidaSimulada o None: si esta activa, enviar() falla como si no hubiera red
+
+
 def enviar(url, token, cuerpo_texto):
     """POST del cuerpo ya serializado; devuelve (codigo_http, texto_de_respuesta) sin lanzar por 4xx/5xx.
     Sin token no manda Authorization: asi pide el chip su reto y su credencial."""
+    if CAIDA is not None and CAIDA.activa():
+        raise urllib.error.URLError("caida simulada")
     cabeceras = {"Content-Type": "application/json"}
     if token:
         cabeceras["Authorization"] = "Bearer " + token
@@ -167,10 +206,35 @@ def leer_nvs(ruta, serial):
     return datos
 
 
-def escribir_nvs(ruta, serial, token, expira):
-    datos = {"serial": serial, "token": token, "expira": expira}
-    with open(ruta, "w", encoding="utf-8") as archivo:
+def _volcar(ruta, datos):
+    """Escritura atomica (temporal + rename): un corte a medias no deja la NVS rota."""
+    temporal = ruta + ".tmp"
+    with open(temporal, "w", encoding="utf-8") as archivo:
         json.dump(datos, archivo)
+    os.replace(temporal, ruta)
+
+
+def escribir_nvs(ruta, serial, token, expira):
+    """Guarda el token sin tocar la cola de pendientes."""
+    datos = {"serial": serial, "token": token, "expira": expira,
+             "pendientes": leer_nvs(ruta, serial).get("pendientes", [])}
+    _volcar(ruta, datos)
+
+
+def leer_pendientes(ruta, serial):
+    """La cola guardada, ordenada por marcaDeTiempo (orden estable)."""
+    lista = leer_nvs(ruta, serial).get("pendientes", [])
+    if not isinstance(lista, list):
+        return []
+    return sorted((p for p in lista if isinstance(p, dict)), key=lambda p: str(p.get("marcaDeTiempo", "")))
+
+
+def guardar_pendientes(ruta, serial, pendientes):
+    """Guarda la cola sin tocar el token."""
+    datos = leer_nvs(ruta, serial)
+    datos["serial"] = serial
+    datos["pendientes"] = list(pendientes)
+    _volcar(ruta, datos)
 
 
 def borrar_nvs(ruta):
@@ -241,12 +305,13 @@ class Credencial:
     def descartar(self):
         """Un 401 en una lectura: el token ya no sirve. Se olvida (tambien de la NVS) y se vuelve al reto."""
         self.token, self.expira = None, None
-        borrar_nvs(self.ruta_nvs)
+        escribir_nvs(self.ruta_nvs, self.serial, None, None)   # la cola de pendientes se conserva
 
-    def asegurar(self):
+    def asegurar(self, esperar_red=True):
         """Devuelve un token vigente; si no hay, lo consigue (y espera el reclamo todo lo que haga falta).
         Devuelve None si el servidor rechaza al dispositivo de forma que esperar no arregla (serial inexistente
-        o secreto equivocado), tras avisar por que."""
+        o secreto equivocado), tras avisar por que. Con esperar_red=False, si no hay red devuelve SIN_RED en vez de
+        reintentar sin fin (asi el chip sigue midiendo y encolando)."""
         if self.vigente():
             return self.token
         rechazos = 0
@@ -254,6 +319,8 @@ class Credencial:
             try:
                 codigo, datos = pedir_credencial(self.base, self.serial, self.secreto)
             except (urllib.error.URLError, OSError) as error:
+                if not esperar_red:
+                    return SIN_RED
                 print("[%s] sin respuesta del servidor al pedir credencial: %s (reintento en %g s)"
                       % (ahora_iso(), error, self.espera), flush=True)
                 self.dormir(self.espera)
@@ -298,6 +365,14 @@ def construir_parser():
     p.add_argument("--especie", default=env("FITO_ESPECIE", "potos"), choices=sorted(ESPECIES))
     p.add_argument("--lecturas", type=int, default=int(env("FITO_LECTURAS", "0")),
                    help="cuantas lecturas enviar; 0 = hasta Ctrl+C")
+    p.add_argument("--max-pendientes", type=int, default=int(env("FITO_MAX_PENDIENTES", str(MAX_PENDIENTES))),
+                   help="tope de lecturas guardadas sin red; al llenarse se descarta la mas vieja")
+    p.add_argument("--espera-red", type=float, default=float(env("FITO_ESPERA_RED", str(ESPERA_RED_S))),
+                   help="segundos entre pruebas de red mientras no hay")
+    p.add_argument("--simular-caida", type=float, default=float(env("FITO_SIMULAR_CAIDA", "-1")),
+                   help="a los N segundos del arranque finge que no hay red (sin tumbar el backend)")
+    p.add_argument("--duracion-caida", type=float, default=float(env("FITO_DURACION_CAIDA", str(DURACION_CAIDA_S))),
+                   help="cuantos segundos dura la caida simulada")
     p.add_argument("--prob-fuera-de-rango", type=float, default=0.15,
                    help="probabilidad de una lectura valida pero fuera del optimo (0 a 1)")
     p.add_argument("--prob-invalida", type=float, default=0.10,
@@ -306,7 +381,85 @@ def construir_parser():
     return p
 
 
+class Cola:
+    """La cola de lecturas sin entregar: en memoria y, cuando hace falta, en la NVS (clave "pendientes")."""
+
+    def __init__(self, ruta, serial, tope):
+        self.ruta, self.serial, self.tope = ruta, serial, tope
+        self.items = leer_pendientes(ruta, serial)
+        for it in self.items:
+            it["tarde"] = True
+        self.persistida = bool(self.items)
+
+    def empujar(self, item):
+        """Agrega al final (las marcas crecen, asi que sigue ordenada). Si se pasa del tope, descarta la mas vieja."""
+        self.items.append(item)
+        while len(self.items) > self.tope:
+            viejo = self.items.pop(0)
+            print("[%s] NVS llena (%d): se descarta la lectura mas vieja (#%s, tomada %s)"
+                  % (ahora_iso(), self.tope, viejo.get("n", "?"), viejo.get("marcaDeTiempo", "?")), flush=True)
+
+    def persistir(self):
+        if self.items or self.persistida:
+            guardar_pendientes(self.ruta, self.serial, [limpio(i) for i in self.items])
+            self.persistida = bool(self.items)
+
+
+def limpio(item):
+    return {k: v for k, v in item.items() if k != "tarde"}
+
+
+def cuerpo_de(item):
+    return item["crudo"] if "crudo" in item else json.dumps(
+        {"marcaDeTiempo": item["marcaDeTiempo"], "humedad": item["humedad"], "luz": item["luz"],
+         "temperatura": item["temperatura"]})
+
+
+def vaciar(cola, credencial, url, viejas, titulo):
+    """Envia la cola en orden. Devuelve True si quedo vacia, False si se corto (sin red o 5xx: se reintenta mas
+    tarde), o None si no hay forma de autenticarse (error fatal ya avisado). `viejas` = cuantas lecturas anteriores
+    a la recien medida hay; si son mas de cero se anuncia `titulo` con la primera respuesta del servidor."""
+    anunciado = viejas == 0
+    rechazos = 0
+    while cola.items:
+        if not credencial.vigente():
+            cola.persistir()   # puede quedarse esperando el reclamo: que la cola ya este a salvo
+        token = credencial.asegurar(esperar_red=False)
+        if token is SIN_RED:
+            return False
+        if token is None:
+            return None
+        item = cola.items[0]
+        try:
+            codigo, texto = enviar(url, token, cuerpo_de(item))
+        except (urllib.error.URLError, OSError):
+            return False
+        if codigo >= 500:
+            return False
+        if not anunciado:
+            print("[%s] %s: enviando %d pendientes..." % (ahora_iso(), titulo, viejas), flush=True)
+            anunciado = True
+        salida = "HTTP %d %s" % (codigo, resumen(codigo, texto))
+        if codigo == 401:
+            credencial.descartar()
+            rechazos += 1
+            print("[%s] #%s %s -> %s (token descartado, se pedira otro)"
+                  % (ahora_iso(), item.get("n", "?"), item.get("tipo", ""), salida), flush=True)
+            cola.persistir()
+            if rechazos >= INTENTOS_CON_RESPUESTA_RECHAZADA:
+                return False
+            continue
+        rechazos = 0
+        cola.items.pop(0)
+        cola.persistir()
+        extra = " (pendiente, tomada %s)" % item["marcaDeTiempo"] if item.get("tarde") else ""
+        print("[%s] #%s %-8s %-38s -> %s%s" % (ahora_iso(), item.get("n", "?"), item.get("tipo", ""),
+              item.get("detalle", ""), salida, extra), flush=True)
+    return True
+
+
 def main(argv=None):
+    global CAIDA
     args = construir_parser().parse_args(argv)
     if not args.serial or not args.secreto:
         print("faltan el serial y el secreto de fabrica: use --serial y --secreto (o FITO_SERIAL y FITO_SECRETO); "
@@ -315,6 +468,9 @@ def main(argv=None):
     if args.intervalo < 0:
         print("--intervalo no puede ser negativo", file=sys.stderr)
         return 2
+    if args.max_pendientes < 1:
+        print("--max-pendientes debe ser al menos 1", file=sys.stderr)
+        return 2
 
     azar = random.Random(args.semilla)
     sensor = Sensor(args.especie, azar)
@@ -322,42 +478,74 @@ def main(argv=None):
     url = base + "/api/v1/dispositivos/" + args.serial + "/lecturas"
     ruta_nvs = args.nvs or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".nvs-%s.json" % args.serial)
     credencial = Credencial(base, args.serial, args.secreto, ruta_nvs, espera=args.espera_reclamo)
+    cola = Cola(ruta_nvs, args.serial, args.max_pendientes)
+    if args.simular_caida >= 0:
+        CAIDA = CaidaSimulada(args.simular_caida, args.duracion_caida)
     print("simulador %s -> %s (especie %s, cada %.1f s, NVS %s)"
           % (args.serial, url, args.especie, args.intervalo, ruta_nvs), flush=True)
 
+    sin_red = False
+    proxima_prueba = 0.0     # reloj monotonico: cuando toca volver a probar la red
     enviadas = 0
     try:
-        while args.lecturas == 0 or enviadas < args.lecturas:
-            token = credencial.asegurar()   # renueva sola si falta menos de 2 minutos o si no hay token
-            if token is None:
+        if cola.items:
+            print("[%s] la NVS tiene %d pendientes de una ejecucion anterior: se envian primero"
+                  % (ahora_iso(), len(cola.items)), flush=True)
+            if CAIDA:
+                CAIDA.anunciar()
+            ok = vaciar(cola, credencial, url, len(cola.items), "pendientes de la ejecucion anterior")
+            if ok is None:
                 return 1
+            sin_red = ok is False
+            if sin_red:
+                proxima_prueba = time.monotonic() + args.espera_red
+                print("[%s] sin red: %d pendientes siguen en NVS" % (ahora_iso(), len(cola.items)), flush=True)
 
+        while args.lecturas == 0 or enviadas < args.lecturas:
+            if CAIDA:
+                CAIDA.anunciar()
             sorteo = azar.random()
             if sorteo < args.prob_invalida:
                 tipo = "INVALIDA"
                 detalle, cuerpo = cuerpo_invalido(sensor.normal(), azar)
+                item = {"marcaDeTiempo": ahora_iso(), "crudo": cuerpo}
             elif sorteo < args.prob_invalida + args.prob_fuera_de_rango:
                 lectura, campo = sensor.fuera_de_rango()
                 tipo, detalle = "FUERA", "fuera de rango en " + campo
-                cuerpo = json.dumps(dict(lectura, marcaDeTiempo=ahora_iso()))
+                item = dict(lectura, marcaDeTiempo=ahora_iso())
             else:
                 tipo, detalle = "NORMAL", "dentro del optimo"
-                cuerpo = json.dumps(dict(sensor.normal(), marcaDeTiempo=ahora_iso()))
-
-            try:
-                codigo, texto = enviar(url, token, cuerpo)
-                salida = "HTTP %d %s" % (codigo, resumen(codigo, texto))
-                if codigo == 401:
-                    credencial.descartar()   # el token ya no sirve: la proxima vuelta pide reto y credencial
-                    salida += " (token descartado, se pedira otro)"
-            except (urllib.error.URLError, OSError) as error:
-                salida = "sin respuesta del servidor: %s" % error
+                item = dict(sensor.normal(), marcaDeTiempo=ahora_iso())
             enviadas += 1
-            print("[%s] #%d %-8s %-38s -> %s" % (ahora_iso(), enviadas, tipo, detalle, salida), flush=True)
+            item.update(n=enviadas, tipo=tipo, detalle=detalle)
+            viejas = len(cola.items)
+            cola.empujar(item)
+
+            if not sin_red or time.monotonic() >= proxima_prueba:
+                ok = vaciar(cola, credencial, url, viejas, "red de vuelta")
+                if ok is None:
+                    return 1
+                if ok:
+                    sin_red = False
+                else:
+                    sin_red = True
+                    proxima_prueba = time.monotonic() + args.espera_red
+                    cola.persistir()
+            if any(i is item for i in cola.items):
+                item["tarde"] = True
+                cola.persistir()
+                print("[%s] sin red: lectura #%d guardada en NVS (%d pendientes)"
+                      % (ahora_iso(), enviadas, len(cola.items)), flush=True)
             if args.lecturas == 0 or enviadas < args.lecturas:
                 time.sleep(args.intervalo)
+        if cola.items:
+            print("[%s] termino con %d pendientes en NVS (se envian en la proxima ejecucion)"
+                  % (ahora_iso(), len(cola.items)), flush=True)
     except KeyboardInterrupt:
         print("\ninterrumpido por el usuario")
+    finally:
+        if cola.items:
+            cola.persistir()
     return 0
 
 
