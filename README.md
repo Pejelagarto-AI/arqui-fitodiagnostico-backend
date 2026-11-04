@@ -100,6 +100,14 @@ curl -X DELETE $B/plantas/$PLANTA_ID/dispositivos/fito-7K2M9Q -H "Authorization:
 
 La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del secreto, mensaje = el string del reto ) )`, sin decodificar nada. Errores del dispositivo en lecturas: `400 PARAMETRO_INVALIDO` (campo ausente, valor no numérico, fuera del rango físico del sensor, fecha mal formada), `401` sin token, `403` con un token de persona o de otro dispositivo. Detalle del flujo, el contrato y las decisiones (D74 a D81) en [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md).
 
+### Broker MQTT para desarrollo (fase 4)
+
+```bash
+docker run -d --rm --name fito-mosquitto -p 1883:1883 \
+  -v "$PWD/docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf" eclipse-mosquitto:2
+docker stop fito-mosquitto      # al terminar
+```
+
 ## Endpoints
 
 Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lecturas`; en todas las demás rutas (también las públicas) ese token responde 403. Públicos (sin token): `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial` (el chip aún no tiene token; la prueba es el secreto), `POST /api/v1/dispositivos/registro` (solo si hay `FITO_CLAVE_FLOTA`; la prueba es la firma de flota), `POST /api/v1/diagnosticos`, `GET /api/v1/especies`, `POST /api/v1/auth/registro`, `POST /api/v1/auth/sesion`, `POST /api/v1/auth/recuperacion`, `POST /api/v1/auth/restablecimiento`, `POST /api/v1/invitaciones/aceptar-con-registro` y el handshake `/ws` (que se autentica en el primer frame STOMP). El resto exige `Authorization: Bearer <token>`; `/api/v1/admin/**` exige además el rol `ADMINISTRADOR`. Los 401 y 403 también son JSON con el cuerpo uniforme de errores.
