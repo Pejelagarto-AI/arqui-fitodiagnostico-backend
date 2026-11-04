@@ -9,6 +9,15 @@ public class AutenticadorDeDispositivosFalso implements AutenticadorDeDispositiv
         return "ok:" + secreto + ":" + reto;
     }
 
+    public static String firmaDeFlota(String serial, String secreto) {
+        return "flota:" + serial + ":" + secreto;
+    }
+
+    @Override
+    public boolean firmaDeFlotaValida(String serial, String secreto, String firma) {
+        return firmaDeFlota(serial, secreto).equals(firma);
+    }
+
     @Override
     public boolean respuestaValida(String secreto, String reto, String respuesta) {
         return respuestaCorrecta(secreto, reto).equals(respuesta);

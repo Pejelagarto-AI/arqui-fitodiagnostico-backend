@@ -42,6 +42,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  * tampoco abre el endpoint del dispositivo. Esa distinción es lo único que la cadena sabe del dispositivo.
  * Excepción de la fase 3: {@code POST /api/v1/dispositivos/{serial}/reto} y {@code /credencial} son públicas
  * (el chip todavía no tiene token) y abiertas a cualquiera, porque la prueba es el secreto, no la ruta.
+ * Fase 3b: {@code POST /api/v1/dispositivos/registro} (auto-registro con clave de flota) también es pública.
  * {@code /api/v1/admin/dispositivos} cae en {@code /admin/**}: solo ADMINISTRADOR.
  *
  * <p>Decisiones de borde:
@@ -113,6 +114,9 @@ public class ConfiguracionSeguridad {
                 // vigente y lo manda al renovar, tampoco estorba: esta ruta es suya.
                 .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/reto", "/api/v1/dispositivos/*/credencial")
                         .permitAll()
+                // Fase 3b: el auto-registro con clave de flota. Pública siempre, exista o no el controlador: sin
+                // FITO_CLAVE_FLOTA la ruta no está registrada y debe dar el 404 uniforme, no un 401 que delate nada.
+                .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/registro").permitAll()
                 // Fase 2: el ÚNICO endpoint que acepta un token de dispositivo, y solo uno con su alcance.
                 // Un token de usuario no lo tiene: 403.
                 .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/lecturas")

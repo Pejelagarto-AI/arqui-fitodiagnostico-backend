@@ -13,6 +13,12 @@ Autenticacion (fase 3):
   El token se renueva solo cuando faltan menos de 2 minutos para que expire, o al primer 401 de una lectura.
   Si el dueno desvincula el dispositivo, la siguiente renovacion da 409 y el simulador vuelve a esperar.
 
+Fabrica automatica (fase 3b): con --serial auto el chip NO trae nada de fabrica salvo la CLAVE DE FLOTA. La primera
+vez que prende inventa una "MAC", deriva de ella su serial (fito-XXXXXX), genera su secreto, los guarda en la NVS y
+se registra solo con POST /api/v1/dispositivos/registro firmando con la clave de flota. Pinta su sticker por consola
+(serial y URL de vinculacion), espera que el dueno lo reclame y sigue como siempre. Al reiniciar conserva su
+identidad; borrar la NVS es "restaurar de fabrica": nace otra matera.
+
 Genera lecturas realistas alrededor del rango optimo de una especie (con una deriva lenta, como un
 sustrato que se seca), de vez en cuando una lectura fuera del rango optimo
 (la planta pasa a EN_RIESGO o CRITICO) y de vez en cuando datos invalidos
@@ -23,10 +29,13 @@ se cae. Cada respuesta se registra en la salida.
 Configuracion (argumento de linea de comandos, o variable de entorno):
 
   --url           FITO_URL                 base de la API          (http://localhost:8080)
-  --serial        FITO_SERIAL              serial de fabrica       (obligatorio)
-  --secreto       FITO_SECRETO             secreto de fabrica      (obligatorio)
+  --serial        FITO_SERIAL              serial de fabrica, o "auto" (obligatorio)
+  --secreto       FITO_SECRETO             secreto de fabrica      (obligatorio salvo con --serial auto)
+  --clave-flota   FITO_CLAVE_FLOTA         clave de flota del firmware (obligatoria con --serial auto)
+  --front-url     FITO_FRONT_URL           base del front para el sticker (http://localhost:5500)
   --nvs           FITO_NVS                 JSON que hace de memoria no volatil
-                                                                   (simulador/.nvs-<serial>.json)
+                                                                   (simulador/.nvs-<serial>.json,
+                                                                    simulador/.nvs-auto-<serial>.json con auto)
   --intervalo     FITO_INTERVALO           segundos entre lecturas (5)
   --especie       FITO_ESPECIE             especie de la planta    (potos)
   --lecturas      FITO_LECTURAS            cuantas enviar, 0 = sin fin (0)
@@ -38,18 +47,21 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
 Sin red (fase 3): si un POST falla por red o por 5xx, la lectura se guarda en la NVS (clave "pendientes") con su
 marcaDeTiempo original y se entrega en orden cuando vuelve la red, antes de seguir en vivo (ver D82).
 
-Ejemplo (el serial y el secreto los imprime simulador/fabrica.py):
-  FITO_SERIAL=fito-7K2M9Q FITO_SECRETO=... python3 simulador/simulador_esp32.py --intervalo 2
+Ejemplos:
+  FITO_CLAVE_FLOTA=... python3 simulador/simulador_esp32.py --serial auto --intervalo 2     (fabrica automatica)
+  FITO_SERIAL=fito-7K2M9Q FITO_SECRETO=... python3 simulador/simulador_esp32.py             (el par lo imprime fabrica.py)
 """
 
 import argparse
 import base64
+import glob
 import hashlib
 import hmac
 import json
 import os
 import random
 import re
+import secrets
 import sys
 import time
 import urllib.error
@@ -77,6 +89,8 @@ ESPERA_RED_S = 10                          # cada cuanto prueba si volvio la red
 MAX_PENDIENTES = 500                       # como una memoria flash chica
 DURACION_CAIDA_S = 20
 SIN_RED = object()                         # lo que devuelve Credencial.asegurar(esperar_red=False) sin red
+ALFABETO_DEL_SERIAL = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # sin 0/O/1/I, 32 simbolos (divide 256: sin sesgo)
+SERIAL_AUTO = "auto"
 INTENTOS_CON_RESPUESTA_RECHAZADA = 3       # 401 seguidos antes de rendirse (casi seguro el secreto esta mal)
 
 
@@ -215,9 +229,10 @@ def _volcar(ruta, datos):
 
 
 def escribir_nvs(ruta, serial, token, expira):
-    """Guarda el token sin tocar la cola de pendientes."""
-    datos = {"serial": serial, "token": token, "expira": expira,
-             "pendientes": leer_nvs(ruta, serial).get("pendientes", [])}
+    """Guarda el token sin tocar el resto de la NVS (cola de pendientes, identidad de fabrica automatica)."""
+    datos = leer_nvs(ruta, serial)
+    datos.update(serial=serial, token=token, expira=expira)
+    datos.setdefault("pendientes", [])
     _volcar(ruta, datos)
 
 
@@ -252,6 +267,105 @@ def instante(texto):
     base, fraccion, zona = m.groups()
     micros = (fraccion or "0")[:6].ljust(6, "0")
     return datetime.fromisoformat("%s.%s%s" % (base, micros, "+00:00" if zona == "Z" else zona))
+
+
+# ---- fabrica automatica: identidad propia y registro con la clave de flota ----
+
+def serial_desde_mac(mac):
+    """fito- + 6 caracteres del alfabeto sin ambiguos, derivados de la MAC (como lo hara el firmware)."""
+    resumen = hashlib.sha256(mac).digest()
+    return "fito-" + "".join(ALFABETO_DEL_SERIAL[b % len(ALFABETO_DEL_SERIAL)] for b in resumen[:6])
+
+
+def identidad_nueva():
+    """Lo que el chip se inventa la primera vez que prende: una MAC de 6 bytes, su serial y un secreto de 32 bytes
+    (RNG del sistema, el equivalente al de hardware del ESP32) en base64url."""
+    mac = secrets.token_bytes(6)
+    return {"mac": mac.hex(":"), "serial": serial_desde_mac(mac),
+            "secreto": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii").rstrip("="),
+            "registrado": False}
+
+
+def firma_de_flota(clave, serial, secreto):
+    """base64( HMAC-SHA256( clave de flota, serial + "\\n" + secreto ) ): lo que firma el firmware."""
+    firma = hmac.new(clave.encode("utf-8"), (serial + "\n" + secreto).encode("utf-8"), hashlib.sha256).digest()
+    return base64.b64encode(firma).decode("ascii")
+
+
+def nvs_automatica(ruta_explicita):
+    """Devuelve (ruta, identidad) de la NVS de este chip. Con ruta explicita usa esa. Sin ella, reutiliza la unica
+    simulador/.nvs-auto-*.json que exista (el chip no cambia de identidad al reiniciarse) y si no hay ninguna crea
+    una identidad nueva en .nvs-auto-<serial>.json. Devuelve (None, None) si hay varias y no se dijo cual."""
+    def leer(ruta):
+        try:
+            with open(ruta, encoding="utf-8") as archivo:
+                datos = json.load(archivo)
+        except (OSError, ValueError):
+            return None
+        return datos if isinstance(datos, dict) and datos.get("serial") and datos.get("secreto") else None
+
+    carpeta = os.path.dirname(os.path.abspath(__file__))
+    if ruta_explicita:
+        candidatas = [ruta_explicita]
+    else:
+        candidatas = sorted(glob.glob(os.path.join(carpeta, ".nvs-auto-*.json")))
+        if len(candidatas) > 1:
+            return None, None
+    for ruta in candidatas:
+        datos = leer(ruta)
+        if datos:
+            return ruta, datos
+    nueva = identidad_nueva()
+    ruta = ruta_explicita or os.path.join(carpeta, ".nvs-auto-%s.json" % nueva["serial"])
+    _volcar(ruta, dict(nueva, pendientes=[]))
+    return ruta, nueva
+
+
+def pintar_sticker(serial, front_url):
+    """El sticker que se imprime al flashear: el serial y la URL que el QR llevaria."""
+    enlace = "%s/#/vincular?serial=%s" % (front_url.rstrip("/"), serial)
+    lineas = ["STICKER DE LA MATERA", "serial  " + serial, "enlace  " + enlace]
+    ancho = max(len(l) for l in lineas)
+    print("+" + "-" * (ancho + 2) + "+", flush=True)
+    for l in lineas:
+        print("| " + l.ljust(ancho) + " |", flush=True)
+    print("+" + "-" * (ancho + 2) + "+", flush=True)
+
+
+def registrarse(base, serial, secreto, clave_flota, ruta_nvs, front_url, espera, dormir=time.sleep):
+    """Primer arranque: POST /dispositivos/registro firmado con la clave de flota. 201 o 200 (idempotente) marcan
+    "registrado" en la NVS y pintan el sticker. Devuelve True si quedo registrado; False si hay que terminar
+    (clave de flota que no coincide, fabrica automatica apagada, serial tomado por otro secreto). Sin red reintenta."""
+    cuerpo = json.dumps({"serial": serial, "secreto": secreto, "firma": firma_de_flota(clave_flota, serial, secreto)})
+    while True:
+        try:
+            codigo, texto = enviar(base + "/api/v1/dispositivos/registro", None, cuerpo)
+        except (urllib.error.URLError, OSError) as error:
+            print("[%s] sin respuesta del servidor al registrarse: %s (reintento en %g s)"
+                  % (ahora_iso(), error, espera), flush=True)
+            dormir(espera)
+            continue
+        datos = cargar_json(texto)
+        if codigo in (200, 201):
+            datos_nvs = leer_nvs(ruta_nvs, serial)
+            datos_nvs["registrado"] = True
+            _volcar(ruta_nvs, datos_nvs)
+            print("[%s] registro HTTP %d: %s %s" % (ahora_iso(), codigo, datos.get("serial", serial),
+                  datos.get("estado", "")), flush=True)
+            pintar_sticker(serial, front_url)
+            return True
+        if codigo == 401:
+            print("la clave de flota no coincide con la del servidor (FIRMA_DE_FLOTA_INVALIDA): revise --clave-flota",
+                  file=sys.stderr)
+        elif codigo == 404:
+            print("el servidor no tiene la fabrica automatica: arranquelo con FITO_CLAVE_FLOTA", file=sys.stderr)
+        elif codigo == 409:
+            print("el serial %s ya existe en el servidor con otro secreto: borre la NVS para nacer como otra matera"
+                  % serial, file=sys.stderr)
+        else:
+            print("el servidor respondio HTTP %d %s: %s" % (codigo, datos.get("error", "?"), datos.get("mensaje", "")),
+                  file=sys.stderr)
+        return False
 
 
 # ---- autenticacion por reto HMAC ----
@@ -355,10 +469,16 @@ def construir_parser():
     env = os.environ.get
     p = argparse.ArgumentParser(description="Simulador del ESP32 de la matera.")
     p.add_argument("--url", default=env("FITO_URL", "http://localhost:8080"))
-    p.add_argument("--serial", default=env("FITO_SERIAL"), help="serial de fabrica (el del sticker)")
+    p.add_argument("--serial", default=env("FITO_SERIAL"),
+                   help='serial de fabrica (el del sticker), o "auto": el chip inventa su identidad y se registra solo')
     p.add_argument("--secreto", default=env("FITO_SECRETO"), help="secreto de fabrica (el del sticker)")
+    p.add_argument("--clave-flota", default=env("FITO_CLAVE_FLOTA"),
+                   help="clave de flota grabada en el firmware (obligatoria con --serial auto)")
+    p.add_argument("--front-url", default=env("FITO_FRONT_URL", "http://localhost:5500"),
+                   help="base del front para el enlace del sticker")
     p.add_argument("--nvs", default=env("FITO_NVS"),
-                   help="JSON que hace de memoria no volatil (por defecto simulador/.nvs-<serial>.json)")
+                   help="JSON que hace de memoria no volatil (por defecto simulador/.nvs-<serial>.json, "
+                        "o .nvs-auto-<serial>.json con --serial auto)")
     p.add_argument("--espera-reclamo", type=float, default=float(env("FITO_ESPERA_RECLAMO", str(ESPERA_RECLAMO_S))),
                    help="segundos entre reintentos mientras nadie lo reclama")
     p.add_argument("--intervalo", type=float, default=float(env("FITO_INTERVALO", "5")))
@@ -461,7 +581,11 @@ def vaciar(cola, credencial, url, viejas, titulo):
 def main(argv=None):
     global CAIDA
     args = construir_parser().parse_args(argv)
-    if not args.serial or not args.secreto:
+    automatico = args.serial == SERIAL_AUTO
+    if automatico and not args.clave_flota:
+        print("--serial auto necesita la clave de flota: use --clave-flota (o FITO_CLAVE_FLOTA)", file=sys.stderr)
+        return 2
+    if not automatico and (not args.serial or not args.secreto):
         print("faltan el serial y el secreto de fabrica: use --serial y --secreto (o FITO_SERIAL y FITO_SECRETO); "
               "los imprime simulador/fabrica.py", file=sys.stderr)
         return 2
@@ -472,11 +596,31 @@ def main(argv=None):
         print("--max-pendientes debe ser al menos 1", file=sys.stderr)
         return 2
 
+    ruta_auto = None
+    if automatico:
+        ruta_auto, identidad = nvs_automatica(args.nvs)
+        if identidad is None:
+            print("hay varias NVS automaticas (simulador/.nvs-auto-*.json): diga cual es este chip con --nvs",
+                  file=sys.stderr)
+            return 2
+        args.serial, args.secreto = identidad["serial"], identidad["secreto"]
+        print("identidad automatica %s (NVS %s, %s)" % (args.serial, ruta_auto,
+              "ya registrada" if identidad.get("registrado") else "nueva, sin registrar"), flush=True)
+
     azar = random.Random(args.semilla)
     sensor = Sensor(args.especie, azar)
     base = args.url.rstrip("/")
     url = base + "/api/v1/dispositivos/" + args.serial + "/lecturas"
-    ruta_nvs = args.nvs or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".nvs-%s.json" % args.serial)
+    ruta_nvs = ruta_auto or args.nvs or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                     ".nvs-%s.json" % args.serial)
+    if automatico and not leer_nvs(ruta_nvs, args.serial).get("registrado"):
+        try:
+            if not registrarse(base, args.serial, args.secreto, args.clave_flota, ruta_nvs, args.front_url,
+                               args.espera_reclamo):
+                return 1
+        except KeyboardInterrupt:
+            print("\ninterrumpido por el usuario")
+            return 0
     credencial = Credencial(base, args.serial, args.secreto, ruta_nvs, espera=args.espera_reclamo)
     cola = Cola(ruta_nvs, args.serial, args.max_pendientes)
     if args.simular_caida >= 0:

@@ -25,7 +25,7 @@ public class AdaptadorDispositivoJpa implements RepositorioDispositivos {
     public void guardar(Dispositivo d) {
         jpa.saveAndFlush(new DispositivoEntity(d.serial(), d.secreto(), d.plantaId().orElse(null),
                 d.reclamadoEn().orElse(null), d.ultimaCredencialEn().orElse(null),
-                d.reto().map(Reto::valor).orElse(null), d.reto().map(Reto::expira).orElse(null), d.creadoEn()));
+                d.reto().map(Reto::valor).orElse(null), d.reto().map(Reto::expira).orElse(null), d.creadoEn(), d.registradoPor()));
     }
 
     @Override
@@ -50,6 +50,6 @@ public class AdaptadorDispositivoJpa implements RepositorioDispositivos {
     private static Dispositivo aDominio(DispositivoEntity e) {
         Reto reto = e.getReto() == null ? null : new Reto(e.getReto(), e.getRetoExpira());
         return new Dispositivo(e.getSerial(), e.getSecreto(), e.getPlantaId(), e.getReclamadoEn(),
-                e.getUltimaCredencialEn(), reto, e.getCreadoEn());
+                e.getUltimaCredencialEn(), reto, e.getCreadoEn(), e.getRegistradoPor());
     }
 }

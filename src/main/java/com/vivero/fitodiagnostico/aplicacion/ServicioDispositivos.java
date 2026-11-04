@@ -4,11 +4,13 @@ import com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarException;
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
+import com.vivero.fitodiagnostico.dominio.excepcion.FirmaDeFlotaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Reto;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeDispositivo;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutenticarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutorregistrarDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.ReclamarDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarDispositivoDeFabricaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.AutenticadorDeDispositivos;
@@ -29,9 +31,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Los tres casos de uso del ciclo de vida de un dispositivo (fase 3), uno por actor:
+ * Los casos de uso del ciclo de vida de un dispositivo (fase 3), uno por actor:
  * la FÁBRICA da de alta (serial + secreto), el DUEÑO reclama por serial y el DISPOSITIVO se autentica con
- * un reto. Reemplaza al flujo de la fase 2, donde el dueño recibía un token y lo copiaba al chip.
+ * un reto. Fase 3b: el DISPOSITIVO también puede darse de alta solo, firmando con la clave de flota. Reemplaza al flujo de la fase 2, donde el dueño recibía un token y lo copiaba al chip.
  *
  * <p>La regla "solo el dueño" es de {@link PoliticaDeAcceso} (a través de {@link AutorizadorDePlantas},
  * igual que editar la planta). Qué tiene que ser cierto para entregar una credencial lo deciden el
@@ -44,7 +46,10 @@ import java.util.UUID;
  */
 @Service
 public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, ReclamarDispositivoPort,
-        AutenticarDispositivoPort {
+        AutenticarDispositivoPort, AutorregistrarDispositivoPort {
+
+    /** Lo que ve el usuario si escanea el sticker antes de que la matera haya prendido por primera vez. */
+    static final String MENSAJE_RECLAMO_SIN_REGISTRO = "no existe o la matera no ha encendido todavía";
 
     /** Sin 0/O/1/I para que nadie confunda letras con números al teclear el serial del sticker. */
     private static final String ALFABETO_DEL_SERIAL = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -90,6 +95,32 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
         return dispositivos.todos();
     }
 
+    // ---- auto-registro (el propio dispositivo) ----
+
+    /**
+     * Regla: solo se autorregistra lo que firma la flota. La firma se verifica ANTES de mirar si el serial
+     * existe, así quien no conoce la clave no puede averiguar qué seriales hay (siempre 401). Un serial que ya
+     * existe con el mismo secreto es el chip reiniciado: se responde lo que hay sin tocar nada (idempotente).
+     * Con otro secreto es un intento de pisar una matera real: 409.
+     */
+    @Override
+    @Transactional
+    public Resultado registrar(String serial, String secreto, String firma) {
+        if (!autenticador.firmaDeFlotaValida(serial, secreto, firma)) {
+            throw new FirmaDeFlotaInvalidaException();
+        }
+        Optional<Dispositivo> existente = dispositivos.porSerial(serial);
+        if (existente.isPresent()) {
+            if (!existente.get().tieneElSecreto(secreto)) {
+                throw new DispositivoYaExisteException(serial);
+            }
+            return new Resultado(existente.get(), false);
+        }
+        Dispositivo nuevo = Dispositivo.autorregistrado(serial, secreto, ahora());
+        dispositivos.guardar(nuevo);
+        return new Resultado(nuevo, true);
+    }
+
     // ---- dueño ----
 
     @Override
@@ -97,7 +128,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
     public Dispositivo reclamar(UUID solicitante, UUID plantaId, String serial) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
         Dispositivo dispositivo = dispositivos.porSerial(serial)
-                .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
+                .orElseThrow(() -> new DispositivoNoEncontradoException(MENSAJE_RECLAMO_SIN_REGISTRO, serial));
         dispositivo.reclamar(planta.id(), ahora());
         dispositivos.guardar(dispositivo);
         return dispositivo;
