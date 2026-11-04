@@ -64,6 +64,48 @@ simulador fito-7K2M9Q -> http://localhost:8080/api/v1/dispositivos/fito-7K2M9Q/l
 [2026-11-03T21:50:21Z] #3 INVALIDA valor fisicamente imposible (luz)      -> HTTP 400 PARAMETRO_INVALIDO: luz -50.0 lux fuera del rango fisico del sensor
 ```
 
+## Sin red
+
+Como el chip real, el simulador no pierde lecturas cuando se cae la red: las guarda en la NVS y las entrega despues.
+
+- Si el POST falla por red (conexion rechazada, timeout) o por `5xx`, la lectura se **encola** en la NVS (clave
+  `pendientes`, ordenada por `marcaDeTiempo`) con su marca original y se sigue midiendo a su ritmo. Cada lectura
+  nueva tambien se encola mientras no haya red.
+- Cada `--espera-red` segundos (10) prueba si volvio. Al volver **vacia la cola en orden**, una a una, y despues
+  sigue en vivo. Un `400` de la cola se descarta como en vivo (no es falta de red); `404` y `403` tampoco se reencolan.
+- Si el token vencio sin red, el primer envio da `401`, renueva con reto + credencial y sigue vaciando. Si el dueno
+  desvinculo mientras tanto (`409` al renovar), la cola queda en la NVS y vuelve a esperar el reclamo.
+- Al arrancar, los pendientes de una ejecucion anterior se envian primero.
+- Tope `--max-pendientes` (500): al llenarse descarta la mas vieja y avisa.
+- El servidor guarda cada lectura con su `tomadaEn` original y un `registradoEn` de cuando llego, asi el vigente sigue
+  siendo la ultima en llegar (D67, D82).
+
+Para la demo sin tocar el backend, `--simular-caida 10 --duracion-caida 20` finge que no hay red entre los segundos 10
+y 30 desde el arranque:
+
+```bash
+python3 simulador/simulador_esp32.py --simular-caida 10 --duracion-caida 20 --intervalo 2 --espera-red 6
+```
+
+```
+[2026-11-03T22:55:22Z] --- CAIDA SIMULADA: entra, sin red por 20 s ---
+[2026-11-03T22:55:22Z] sin red: lectura #6 guardada en NVS (1 pendientes)
+[2026-11-03T22:55:24Z] sin red: lectura #7 guardada en NVS (2 pendientes)
+[2026-11-03T22:55:42Z] --- CAIDA SIMULADA: termina, la red vuelve ---
+[2026-11-03T22:55:44Z] sin red: lectura #17 guardada en NVS (12 pendientes)
+[2026-11-03T22:55:46Z] red de vuelta: enviando 12 pendientes...
+[2026-11-03T22:55:46Z] #6 NORMAL   dentro del optimo                      -> HTTP 201 estado=SALUDABLE id=d34e48f7 (pendiente, tomada 2026-11-03T22:55:22Z)
+[2026-11-03T22:55:46Z] #7 NORMAL   dentro del optimo                      -> HTTP 201 estado=SALUDABLE id=2f9c9d4d (pendiente, tomada 2026-11-03T22:55:24Z)
+[2026-11-03T22:55:46Z] #17 NORMAL   dentro del optimo                      -> HTTP 201 estado=SALUDABLE id=5c26c5df (pendiente, tomada 2026-11-03T22:55:44Z)
+[2026-11-03T22:55:46Z] #18 INVALIDA valor no numerico (luz)                -> HTTP 400 PARAMETRO_INVALIDO: el campo 'luz' no tiene un formato válido.
+[2026-11-03T22:55:48Z] #19 NORMAL   dentro del optimo                      -> HTTP 201 estado=SALUDABLE id=ad2e7104
+```
+
+Salida real recortada: durante la caida encola, al volver anuncia `red de vuelta: enviando 12 pendientes...` y las
+entrega en orden con `(pendiente, tomada ...)`; la `#16` era invalida a proposito y recibe su `400`. Para probarlo con el
+backend caido de verdad, apuntar a un puerto vacio (`--url http://localhost:8099`), matar el simulador y arrancarlo
+contra el backend real: la NVS conserva la cola y se envia primero.
+
 ## Que genera
 
 | Tipo | Probabilidad (por defecto) | Que es | Respuesta esperada |
@@ -88,6 +130,10 @@ plausibles; el chip real mide y ya.
 | `--intervalo` | `FITO_INTERVALO` | `5` segundos |
 | `--especie` | `FITO_ESPECIE` | `potos` (`sansevieria`, `potos`, `suculenta`, `helecho`, `lavanda`) |
 | `--lecturas` | `FITO_LECTURAS` | `0` = hasta Ctrl+C |
+| `--max-pendientes` | `FITO_MAX_PENDIENTES` | `500` lecturas guardadas sin red |
+| `--espera-red` | `FITO_ESPERA_RED` | `10` segundos entre pruebas de red |
+| `--simular-caida` | `FITO_SIMULAR_CAIDA` | sin simular; N = segundos desde el arranque |
+| `--duracion-caida` | `FITO_DURACION_CAIDA` | `20` segundos |
 | `--prob-fuera-de-rango` | | `0.15` |
 | `--prob-invalida` | | `0.10` |
 | `--semilla` | | al azar |
