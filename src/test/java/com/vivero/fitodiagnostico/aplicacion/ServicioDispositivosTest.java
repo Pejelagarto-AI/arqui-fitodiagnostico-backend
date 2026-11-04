@@ -11,10 +11,12 @@ import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoExcep
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarException;
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaReclamadoException;
+import com.vivero.fitodiagnostico.dominio.excepcion.FirmaDeFlotaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import com.vivero.fitodiagnostico.dominio.modelo.Dispositivo;
+import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeRegistro;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Reto;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeDispositivo;
@@ -325,5 +327,85 @@ class ServicioDispositivosTest {
     void credencialDeUnSerialQueNoExisteEs404() {
         assertThatThrownBy(() -> servicio.credencial("fito-NOEXISTE", "x"))
                 .isInstanceOf(DispositivoNoEncontradoException.class);
+    }
+
+    // ---- auto-registro con clave de flota (fase 3b) ----
+
+    private static final String SECRETO_DEL_CHIP = "c".repeat(43);
+
+    private static String firma(String serial, String secreto) {
+        return AutenticadorDeDispositivosFalso.firmaDeFlota(serial, secreto);
+    }
+
+    @Test
+    void unRegistroConFirmaValidaCreaUnDispositivoDeLaFlotaSinReclamar() {
+        var r = servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, firma("fito-CHIP01", SECRETO_DEL_CHIP));
+
+        assertThat(r.creado()).isTrue();
+        assertThat(r.dispositivo().registradoPor()).isEqualTo(OrigenDeRegistro.FLOTA);
+        assertThat(r.dispositivo().estaReclamado()).isFalse();
+        assertThat(mundo.dispositivos.porSerial("fito-CHIP01")).isPresent();
+    }
+
+    @Test
+    void registrarDeNuevoConElMismoSecretoEsIdempotenteYNoToca() {
+        servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, firma("fito-CHIP01", SECRETO_DEL_CHIP));
+        servicio.reclamar(dueno, planta.id(), "fito-CHIP01");
+
+        var otra = servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, firma("fito-CHIP01", SECRETO_DEL_CHIP));
+
+        assertThat(otra.creado()).isFalse();
+        assertThat(otra.dispositivo().plantaId()).contains(planta.id());   // el reclamo sigue intacto
+    }
+
+    @Test
+    void elMismoSerialConOtroSecretoEs409AunqueLaFirmaSeaValida() {
+        servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, firma("fito-CHIP01", SECRETO_DEL_CHIP));
+        String otro = "d".repeat(43);
+
+        assertThatThrownBy(() -> servicio.registrar("fito-CHIP01", otro, firma("fito-CHIP01", otro)))
+                .isInstanceOf(DispositivoYaExisteException.class);
+        assertThat(mundo.dispositivos.porSerial("fito-CHIP01").orElseThrow().tieneElSecreto(SECRETO_DEL_CHIP)).isTrue();
+    }
+
+    @Test
+    void unaFirmaMalaEs401SinMirarSiElSerialExiste() {
+        assertThatThrownBy(() -> servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, "firma-falsa"))
+                .isInstanceOf(FirmaDeFlotaInvalidaException.class);
+        deFabrica();   // fito-AAAAAA existe
+        assertThatThrownBy(() -> servicio.registrar("fito-AAAAAA", SECRETO_DEL_CHIP, "firma-falsa"))
+                .isInstanceOf(FirmaDeFlotaInvalidaException.class);
+        assertThat(mundo.dispositivos.porSerial("fito-CHIP01")).isEmpty();
+    }
+
+    @Test
+    void unSecretoCortoOUnSerialMalformadoSonArgumentoInvalidoPeroSoloConFirmaValida() {
+        assertThatThrownBy(() -> servicio.registrar("fito-CHIP01", "corto", firma("fito-CHIP01", "corto")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> servicio.registrar("con espacios", SECRETO_DEL_CHIP, firma("con espacios", SECRETO_DEL_CHIP)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void despuesDelRegistroElChipPideCredencialYEsperaElReclamo() {
+        servicio.registrar("fito-CHIP01", SECRETO_DEL_CHIP, firma("fito-CHIP01", SECRETO_DEL_CHIP));
+
+        Reto reto = servicio.reto("fito-CHIP01");
+        assertThatThrownBy(() -> servicio.credencial("fito-CHIP01",
+                AutenticadorDeDispositivosFalso.respuestaCorrecta(SECRETO_DEL_CHIP, reto.valor())))
+                .isInstanceOf(DispositivoSinReclamarException.class);
+
+        servicio.reclamar(dueno, planta.id(), "fito-CHIP01");
+        Reto otro = servicio.reto("fito-CHIP01");
+        assertThat(servicio.credencial("fito-CHIP01",
+                AutenticadorDeDispositivosFalso.respuestaCorrecta(SECRETO_DEL_CHIP, otro.valor())).plantaId())
+                .isEqualTo(planta.id());
+    }
+
+    @Test
+    void reclamarUnSerialSinRegistroDiceQueLaMateraNoHaEncendido() {
+        assertThatThrownBy(() -> servicio.reclamar(dueno, planta.id(), "fito-NOHAY1"))
+                .isInstanceOf(DispositivoNoEncontradoException.class)
+                .hasMessageContaining("la matera no ha encendido todavía");
     }
 }

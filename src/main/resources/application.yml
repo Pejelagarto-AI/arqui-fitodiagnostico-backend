@@ -37,6 +37,15 @@
 # su credencial con un reto HMAC. FITO_JWT_DISPOSITIVO_EXPIRACION (arriba) es lo único configurable:
 # PT1H por defecto porque el chip renueva solo. Ver docs/fase3/IMPLEMENTACION.md.
 
+# Fase 3b: la fábrica automática (auto-registro con clave de flota). OPCIONAL.
+#   FITO_CLAVE_FLOTA        clave compartida que todas las materas traen grabada en el firmware. Con ella el
+#                           chip se da de alta solo la primera vez que prende (POST /api/v1/dispositivos/registro),
+#                           firmando serial + secreto con HMAC. Vacía (por defecto) = la ruta no existe y
+#                           responde 404: solo queda la fábrica manual del administrador. Si se define, mínimo 32
+#                           caracteres o la aplicación no arranca.
+#                           Ej.: export FITO_CLAVE_FLOTA="$(openssl rand -base64 48)"
+#                           Una fuga permite registrar materas falsas, no suplantar las existentes (D86).
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
@@ -55,6 +64,8 @@ fitodiagnostico:
       expiracion: ${FITO_JWT_EXPIRACION:PT2H}
       dispositivo-expiracion: ${FITO_JWT_DISPOSITIVO_EXPIRACION:PT1H}
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
+  flota:
+    clave: ${FITO_CLAVE_FLOTA:}
   admin:
     correo: ${FITO_ADMIN_CORREO:}
     contrasena: ${FITO_ADMIN_CONTRASENA:}

@@ -12,6 +12,7 @@ import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoSinReclamarExcept
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaReclamadoException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieInactivaException;
+import com.vivero.fitodiagnostico.dominio.excepcion.FirmaDeFlotaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.EspecieYaExisteException;
 import com.vivero.fitodiagnostico.dominio.excepcion.InvitacionNoEncontradaException;
@@ -206,6 +207,12 @@ public class ManejadorGlobalDeErrores {
     ResponseEntity<ErrorRespuesta> dispositivoYaExiste(DispositivoYaExisteException e) {
         return construir(HttpStatus.CONFLICT, "DISPOSITIVO_YA_EXISTE", e.getMessage(),
                 Map.of("serial", e.getSerial()));
+    }
+
+    /** Fase 3b: el auto-registro no lleva la firma de la flota. */
+    @ExceptionHandler(FirmaDeFlotaInvalidaException.class)
+    ResponseEntity<ErrorRespuesta> firmaDeFlotaInvalida(FirmaDeFlotaInvalidaException e) {
+        return construir(HttpStatus.UNAUTHORIZED, "FIRMA_DE_FLOTA_INVALIDA", e.getMessage(), Map.of());
     }
 
     /** Fase 3: el chip pidió credencial antes de que el dueño lo reclamara; debe esperar y reintentar. */
