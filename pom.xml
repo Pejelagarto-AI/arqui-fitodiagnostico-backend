@@ -49,6 +49,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
+		<!-- Fase 4: lecturas del dispositivo por MQTT (adaptador de entrada, adaptador.entrada.mqtt). Trae Paho y
+		     Spring Integration. Solo lo nombran el adaptador y config; ArchUnit vigila que dominio y aplicacion no. -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-mqtt</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-core</artifactId>
@@ -80,6 +86,13 @@
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Fase 4: broker MQTT embebido SOLO para la prueba de integracion (sin Docker ni Testcontainers). -->
+		<dependency>
+			<groupId>io.moquette</groupId>
+			<artifactId>moquette-broker</artifactId>
+			<version>0.17</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

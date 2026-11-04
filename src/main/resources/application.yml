@@ -46,6 +46,14 @@
 #                           Ej.: export FITO_CLAVE_FLOTA="$(openssl rand -base64 48)"
 #                           Una fuga permite registrar materas falsas, no suplantar las existentes (D86).
 
+# Fase 4: lecturas por MQTT (OPCIONAL, apagado por defecto: sin broker la aplicacion arranca igual por HTTP).
+#   FITO_MQTT_HABILITADO    "true" para suscribirse a fito/dispositivos/+/lecturas (por defecto false).
+#   FITO_MQTT_URL           broker (por defecto tcp://localhost:1883, el Mosquitto de docker/mosquitto).
+#   FITO_MQTT_CLIENT_ID     clientId del suscriptor (por defecto fito-backend); fijo a proposito: el broker
+#                           guarda por clientId la sesion persistente y los mensajes QoS 1 pendientes (D85).
+#                           La conexion que publica las respuestas usa <clientId>-respuestas.
+#                           Broker anonimo + JWT en el payload: ver D83 en docs/fase4/IMPLEMENTACION.md.
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
@@ -66,6 +74,10 @@ fitodiagnostico:
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   flota:
     clave: ${FITO_CLAVE_FLOTA:}
+  mqtt:
+    habilitado: ${FITO_MQTT_HABILITADO:false}
+    url: ${FITO_MQTT_URL:tcp://localhost:1883}
+    client-id: ${FITO_MQTT_CLIENT_ID:fito-backend}
   admin:
     correo: ${FITO_ADMIN_CORREO:}
     contrasena: ${FITO_ADMIN_CONTRASENA:}

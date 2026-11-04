@@ -43,6 +43,13 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
   --espera-red    FITO_ESPERA_RED          segundos entre pruebas de red mientras no hay (10)
   --simular-caida FITO_SIMULAR_CAIDA       a los N s del arranque finge que no hay red (sin simular)
   --duracion-caida FITO_DURACION_CAIDA     cuantos segundos dura la caida simulada (20)
+  --transporte    FITO_TRANSPORTE          http | mqtt: por donde viajan las LECTURAS (http)
+  --mqtt-url      FITO_MQTT_URL            broker MQTT, host:puerto o tcp://host:puerto (localhost:1883)
+
+Transporte MQTT (fase 4): con --transporte mqtt el reto y la credencial siguen por HTTP (el chip consigue su token igual),
+pero cada lectura se publica en fito/dispositivos/{serial}/lecturas (QoS 1, clientId = serial, cleanSession=false) con
+el token DENTRO del payload, y la respuesta llega por fito/dispositivos/{serial}/respuestas. Si el broker no responde,
+la cola sin red actua igual que con HTTP. Ver simulador/README.md y docs/fase4/IMPLEMENTACION.md.
 
 Sin red (fase 3): si un POST falla por red o por 5xx, la lectura se guarda en la NVS (clave "pendientes") con su
 marcaDeTiempo original y se entrega en orden cuando vuelve la red, antes de seguir en vivo (ver D82).
@@ -66,7 +73,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from datetime import datetime, timedelta, timezone
+
+import mqtt_minimo   # cliente MQTT 3.1.1 minimo de este mismo directorio (fase 4)
 
 # Rangos optimos del Anexo B (src/main/resources/referencia/especies.csv):
 # especie -> (humedad_min, humedad_max, luz_min, luz_max, temp_min, temp_max)
@@ -193,6 +203,133 @@ def enviar(url, token, cuerpo_texto):
             return respuesta.status, respuesta.read().decode("utf-8")
     except urllib.error.HTTPError as error:
         return error.code, error.read().decode("utf-8", errors="replace")
+
+
+TRANSPORTE = None   # TransporteMqtt o None (HTTP): por donde viajan las lecturas
+ESPERA_RESPUESTA_S = 3.0   # cuanto espera la respuesta de una lectura publicada antes de seguir (el backend puede estar caido)
+
+
+class TransporteMqtt:
+    """Lecturas por MQTT. despachar() imita a enviar(): devuelve (codigo, texto) con el codigo equivalente en HTTP
+    (ok -> 201, CREDENCIAL_RECHAZADA -> 401, ERROR_INTERNO -> 500, otro error -> 400) para reusar la logica de la cola;
+    202 = publicada y confirmada por el broker pero sin respuesta todavia (backend caido: el broker la guarda).
+    Las respuestas no traen correlativo, asi que se emparejan en orden con lo publicado."""
+
+    def __init__(self, url, serial, keepalive=30):
+        destino = url.split("://", 1)[-1]
+        host, _, puerto = destino.partition(":")
+        self.url, self.serial = "tcp://%s:%s" % (host or "localhost", puerto or "1883"), serial
+        self.topico_lecturas = "fito/dispositivos/%s/lecturas" % serial
+        self.topico_respuestas = "fito/dispositivos/%s/respuestas" % serial
+        self.cliente = mqtt_minimo.ClienteMqtt(host or "localhost", int(puerto or 1883), serial, keepalive=keepalive,
+                                               clean_session=False)
+        self.esperando = deque()   # lecturas publicadas cuya respuesta aun no llega, en orden
+
+    def asegurar(self):
+        if self.cliente.conectado():
+            return
+        self.cliente.conectar()
+        self.cliente.suscribir(self.topico_respuestas, 1)
+        print("[%s] MQTT conectado a %s como %s (sesion %s), suscrito a %s"
+              % (ahora_iso(), self.url, self.serial, "recuperada" if self.cliente.sesion_previa else "nueva",
+                 self.topico_respuestas), flush=True)
+
+    def payload(self, token, item):
+        crudo = cuerpo_de(item)
+        try:
+            datos = json.loads(crudo)
+        except ValueError:
+            return crudo   # JSON roto a proposito: el backend debe responder PARAMETRO_INVALIDO
+        if isinstance(datos, dict):
+            datos["token"] = token
+            return json.dumps(datos)
+        return crudo
+
+    def despachar(self, token, item):
+        if CAIDA is not None and CAIDA.activa():
+            raise urllib.error.URLError("caida simulada")
+        try:
+            self.asegurar()
+            self.cliente.publicar(self.topico_lecturas, self.payload(token, item), qos=1)
+            espera = ESPERA_RESPUESTA_S if not self.esperando else 0.3
+            self.esperando.append(item)
+            limite = time.monotonic() + espera
+            while True:
+                entrante = self.cliente.tomar_entrante(max(limite - time.monotonic(), 0.0))
+                if entrante is None:
+                    return 202, ""
+                dueno = self.esperando.popleft() if self.esperando else None
+                texto = entrante[1].decode("utf-8", errors="replace")
+                if dueno is item:
+                    return codigo_equivalente(texto), texto
+                self.imprimir_tardia(dueno, texto)
+        except (mqtt_minimo.ErrorMqtt, OSError):
+            self.cliente.cerrar()
+            if self.esperando and self.esperando[-1] is item:
+                self.esperando.pop()   # no llego a publicarse: no se espera respuesta
+            raise
+
+    def imprimir_tardia(self, item, texto):
+        if item is None:
+            cabecera = "respuesta de una sesion anterior"
+        else:
+            cabecera = "#%s %-8s %-38s" % (item.get("n", "?"), item.get("tipo", ""), item.get("detalle", ""))
+        print("[%s] %s -> %s (respuesta tardia)" % (ahora_iso(), cabecera, self.describir(codigo_equivalente(texto), texto)),
+              flush=True)
+
+    def atender(self, segundos):
+        """Duerme `segundos` atendiendo el socket (keepalive y respuestas que lleguen despues). Sin conexion, solo duerme."""
+        if not self.cliente.conectado():
+            time.sleep(segundos)
+            return
+        try:
+            for _, cuerpo in self.cliente.esperar(segundos):
+                self.imprimir_tardia(self.esperando.popleft() if self.esperando else None,
+                                     cuerpo.decode("utf-8", errors="replace"))
+        except (mqtt_minimo.ErrorMqtt, OSError) as error:
+            print("[%s] MQTT: %s" % (ahora_iso(), error), flush=True)
+            self.cliente.cerrar()
+
+    def describir(self, codigo, texto):
+        if codigo == 202:
+            return "MQTT publicada, respuesta pendiente (el broker la guarda)"
+        datos = cargar_json(texto)
+        if datos.get("ok"):
+            return "MQTT ok estado=%s id=%s" % (datos.get("estado", "?"), str(datos.get("id", "?"))[:8])
+        return "MQTT error %s: %s" % (datos.get("error", "?"), datos.get("mensaje", texto[:80]))
+
+    def cerrar(self):
+        if self.esperando and self.cliente.conectado():
+            self.atender(ESPERA_RESPUESTA_S)
+        self.cliente.desconectar()
+
+
+def codigo_equivalente(texto):
+    datos = cargar_json(texto)
+    if datos.get("ok"):
+        return 201
+    return {"CREDENCIAL_RECHAZADA": 401, "ERROR_INTERNO": 500}.get(datos.get("error"), 400)
+
+
+def despachar(url, token, item):
+    """Entrega una lectura por el transporte elegido y devuelve (codigo, texto)."""
+    if TRANSPORTE is not None:
+        return TRANSPORTE.despachar(token, item)
+    return enviar(url, token, cuerpo_de(item))
+
+
+def describir(codigo, texto):
+    """El fragmento de la linea de salida: HTTP 201 estado=... o MQTT ok estado=..."""
+    if TRANSPORTE is not None:
+        return TRANSPORTE.describir(codigo, texto)
+    return "HTTP %d %s" % (codigo, resumen(codigo, texto))
+
+
+def dormir_atendiendo(segundos):
+    if TRANSPORTE is not None:
+        TRANSPORTE.atender(segundos)
+    else:
+        time.sleep(segundos)
 
 
 def resumen(codigo, texto):
@@ -493,6 +630,10 @@ def construir_parser():
                    help="a los N segundos del arranque finge que no hay red (sin tumbar el backend)")
     p.add_argument("--duracion-caida", type=float, default=float(env("FITO_DURACION_CAIDA", str(DURACION_CAIDA_S))),
                    help="cuantos segundos dura la caida simulada")
+    p.add_argument("--transporte", choices=("http", "mqtt"), default=env("FITO_TRANSPORTE", "http"),
+                   help="por donde viajan las lecturas (el reto y la credencial siempre van por HTTP)")
+    p.add_argument("--mqtt-url", default=env("FITO_MQTT_URL", "localhost:1883"),
+                   help="broker MQTT, host:puerto o tcp://host:puerto")
     p.add_argument("--prob-fuera-de-rango", type=float, default=0.15,
                    help="probabilidad de una lectura valida pero fuera del optimo (0 a 1)")
     p.add_argument("--prob-invalida", type=float, default=0.10,
@@ -551,7 +692,7 @@ def vaciar(cola, credencial, url, viejas, titulo):
             return None
         item = cola.items[0]
         try:
-            codigo, texto = enviar(url, token, cuerpo_de(item))
+            codigo, texto = despachar(url, token, item)
         except (urllib.error.URLError, OSError):
             return False
         if codigo >= 500:
@@ -559,7 +700,7 @@ def vaciar(cola, credencial, url, viejas, titulo):
         if not anunciado:
             print("[%s] %s: enviando %d pendientes..." % (ahora_iso(), titulo, viejas), flush=True)
             anunciado = True
-        salida = "HTTP %d %s" % (codigo, resumen(codigo, texto))
+        salida = describir(codigo, texto)
         if codigo == 401:
             credencial.descartar()
             rechazos += 1
@@ -579,7 +720,7 @@ def vaciar(cola, credencial, url, viejas, titulo):
 
 
 def main(argv=None):
-    global CAIDA
+    global CAIDA, TRANSPORTE
     args = construir_parser().parse_args(argv)
     automatico = args.serial == SERIAL_AUTO
     if automatico and not args.clave_flota:
@@ -622,11 +763,14 @@ def main(argv=None):
             print("\ninterrumpido por el usuario")
             return 0
     credencial = Credencial(base, args.serial, args.secreto, ruta_nvs, espera=args.espera_reclamo)
+    if args.transporte == "mqtt":
+        TRANSPORTE = TransporteMqtt(args.mqtt_url, args.serial)
     cola = Cola(ruta_nvs, args.serial, args.max_pendientes)
     if args.simular_caida >= 0:
         CAIDA = CaidaSimulada(args.simular_caida, args.duracion_caida)
+    destino = ("MQTT %s %s" % (TRANSPORTE.url, TRANSPORTE.topico_lecturas)) if TRANSPORTE else url
     print("simulador %s -> %s (especie %s, cada %.1f s, NVS %s)"
-          % (args.serial, url, args.especie, args.intervalo, ruta_nvs), flush=True)
+          % (args.serial, destino, args.especie, args.intervalo, ruta_nvs), flush=True)
 
     sin_red = False
     proxima_prueba = 0.0     # reloj monotonico: cuando toca volver a probar la red
@@ -681,7 +825,7 @@ def main(argv=None):
                 print("[%s] sin red: lectura #%d guardada en NVS (%d pendientes)"
                       % (ahora_iso(), enviadas, len(cola.items)), flush=True)
             if args.lecturas == 0 or enviadas < args.lecturas:
-                time.sleep(args.intervalo)
+                dormir_atendiendo(args.intervalo)
         if cola.items:
             print("[%s] termino con %d pendientes en NVS (se envian en la proxima ejecucion)"
                   % (ahora_iso(), len(cola.items)), flush=True)
@@ -690,6 +834,8 @@ def main(argv=None):
     finally:
         if cola.items:
             cola.persistir()
+        if TRANSPORTE is not None:
+            TRANSPORTE.cerrar()
     return 0
 
 
