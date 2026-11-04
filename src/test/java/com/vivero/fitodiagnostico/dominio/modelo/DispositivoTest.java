@@ -57,6 +57,52 @@ class DispositivoTest {
         assertThat(deFabrica().toString()).doesNotContain("secreto-opaco");
     }
 
+    // ---- auto-registro (fase 3b) ----
+
+    private static final String SECRETO_LARGO = "s".repeat(32);
+
+    @Test
+    void autorregistrado_nace_sin_planta_y_marcado_como_de_la_flota() {
+        Dispositivo d = Dispositivo.autorregistrado("fito-7K2M9Q", SECRETO_LARGO, T0);
+
+        assertThat(d.registradoPor()).isEqualTo(OrigenDeRegistro.FLOTA);
+        assertThat(d.estaReclamado()).isFalse();
+        assertThat(d.reto()).isEmpty();
+        assertThat(d.creadoEn()).isEqualTo(T0);
+        assertThat(d.tieneElSecreto(SECRETO_LARGO)).isTrue();
+    }
+
+    @Test
+    void de_fabrica_y_reconstruido_sin_origen_son_del_administrador() {
+        assertThat(deFabrica().registradoPor()).isEqualTo(OrigenDeRegistro.ADMIN);
+        assertThat(new Dispositivo("fito-1", "s", null, null, null, null, T0).registradoPor())
+                .isEqualTo(OrigenDeRegistro.ADMIN);
+    }
+
+    @Test
+    void autorregistrado_exige_secreto_de_32_caracteres_y_serial_con_formato() {
+        assertThatThrownBy(() -> Dispositivo.autorregistrado("fito-1", "s".repeat(31), T0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Dispositivo.autorregistrado("fito-1", null, T0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Dispositivo.autorregistrado("con espacios", SECRETO_LARGO, T0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void tieneElSecreto_distingue_secretos_y_tolera_nulo() {
+        Dispositivo d = Dispositivo.autorregistrado("fito-1", SECRETO_LARGO, T0);
+
+        assertThat(d.tieneElSecreto(SECRETO_LARGO + "x")).isFalse();
+        assertThat(d.tieneElSecreto(null)).isFalse();
+    }
+
+    @Test
+    void el_origen_es_obligatorio_al_reconstruir() {
+        assertThatThrownBy(() -> new Dispositivo("fito-1", "s", null, null, null, null, T0, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     // ---- reclamo ----
 
     @Test

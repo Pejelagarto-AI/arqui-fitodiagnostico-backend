@@ -2,6 +2,8 @@ package com.vivero.fitodiagnostico.dominio.modelo;
 
 import com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaReclamadoException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -28,14 +30,24 @@ public class Dispositivo {
     private final String serial;
     private final String secreto;
     private final Instant creadoEn;
+    private final OrigenDeRegistro registradoPor;
     private UUID plantaId;
     private Instant reclamadoEn;
     private Instant ultimaCredencialEn;
     private Reto reto;
 
-    /** Reconstruye un dispositivo ya guardado (lo usa el adaptador de persistencia). */
+    /** Mínimo de caracteres del secreto de un dispositivo que se autorregistra. */
+    public static final int LARGO_MINIMO_DEL_SECRETO_AUTORREGISTRADO = 32;
+
+    /** Reconstruye un dispositivo ya guardado dado de alta por un administrador. */
     public Dispositivo(String serial, String secreto, UUID plantaId, Instant reclamadoEn,
                        Instant ultimaCredencialEn, Reto reto, Instant creadoEn) {
+        this(serial, secreto, plantaId, reclamadoEn, ultimaCredencialEn, reto, creadoEn, OrigenDeRegistro.ADMIN);
+    }
+
+    /** Reconstruye un dispositivo ya guardado (lo usa el adaptador de persistencia). */
+    public Dispositivo(String serial, String secreto, UUID plantaId, Instant reclamadoEn,
+                       Instant ultimaCredencialEn, Reto reto, Instant creadoEn, OrigenDeRegistro registradoPor) {
         if (serial == null || !TokenDeDispositivo.FORMATO_DEL_ID.matcher(serial).matches()) {
             throw new IllegalArgumentException(
                     "el serial debe tener de 1 a 64 letras, números, punto, guion o guion bajo");
@@ -45,6 +57,9 @@ public class Dispositivo {
         }
         if (creadoEn == null) {
             throw new IllegalArgumentException("el dispositivo requiere fecha de creación");
+        }
+        if (registradoPor == null) {
+            throw new IllegalArgumentException("el dispositivo requiere saber quién lo registró");
         }
         if ((plantaId == null) != (reclamadoEn == null)) {
             throw new IllegalArgumentException("planta y fecha de reclamo van juntas: o ambas o ninguna");
@@ -56,11 +71,31 @@ public class Dispositivo {
         this.ultimaCredencialEn = ultimaCredencialEn;
         this.reto = reto;
         this.creadoEn = creadoEn;
+        this.registradoPor = registradoPor;
     }
 
     /** Un dispositivo recién salido de fábrica: sin planta, sin reto, sin credencial. */
     public static Dispositivo deFabrica(String serial, String secreto, Instant ahora) {
         return new Dispositivo(serial, secreto, null, null, null, null, ahora);
+    }
+
+    /**
+     * Un dispositivo que se dio de alta solo, con la firma de la flota ya verificada por quien lo llama. Exige un
+     * secreto de al menos {@value #LARGO_MINIMO_DEL_SECRETO_AUTORREGISTRADO} caracteres: lo genera el chip y no
+     * hay un administrador que lo haya elegido bien.
+     */
+    public static Dispositivo autorregistrado(String serial, String secreto, Instant ahora) {
+        if (secreto == null || secreto.length() < LARGO_MINIMO_DEL_SECRETO_AUTORREGISTRADO) {
+            throw new IllegalArgumentException("el secreto debe tener al menos "
+                    + LARGO_MINIMO_DEL_SECRETO_AUTORREGISTRADO + " caracteres");
+        }
+        return new Dispositivo(serial, secreto, null, null, null, null, ahora, OrigenDeRegistro.FLOTA);
+    }
+
+    /** ¿Este secreto es el del dispositivo? Comparación en tiempo constante. */
+    public boolean tieneElSecreto(String candidato) {
+        return candidato != null && MessageDigest.isEqual(secreto.getBytes(StandardCharsets.UTF_8),
+                candidato.getBytes(StandardCharsets.UTF_8));
     }
 
     // ---- reclamo ----
@@ -141,6 +176,8 @@ public class Dispositivo {
     public Optional<Reto> reto() { return Optional.ofNullable(reto); }
 
     public Instant creadoEn() { return creadoEn; }
+
+    public OrigenDeRegistro registradoPor() { return registradoPor; }
 
     @Override
     public String toString() {
