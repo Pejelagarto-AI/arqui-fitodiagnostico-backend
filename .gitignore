@@ -4,3 +4,4 @@ target/
 simulador/.nvs-*.json
 .nvs-*.json
 simulador/__pycache__/
+.env.demo
