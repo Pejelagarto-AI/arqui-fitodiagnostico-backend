@@ -79,7 +79,8 @@ def pantalla_reclamo(codigo="YUBUD6", puntos=1):
     o.texto(68, 12, codigo[:3], 2)
     o.texto(68, 30, codigo[3:], 2)
     for i in range(3):
-        o.d.rectangle((70 + i * 8, 56, 71 + i * 8 + (1 if i == puntos % 3 else 0), 57 + (1 if i == puntos % 3 else 0)), fill=1)
+        d = 3 if i == puntos % 3 else 2
+        o.d.rectangle((70 + i * 8, 58 - d // 2, 70 + i * 8 + d - 1, 58 - d // 2 + d - 1), fill=1)
     return o
 
 def pantalla_exito(i):
@@ -87,12 +88,11 @@ def pantalla_exito(i):
     o.sprite(f"exito_{i}", 32, 0)
     return o
 
-def pantalla_vinculada_final():
+def pantalla_vinculada_final(codigo="YUBUD6"):
     o = Oled()
     o.sprite("exito_7", 2, 0)
-    o.texto(70, 20, "Vinculada", 1)
-    o.texto(70, 34, "Enviando", 1)
-    o.texto(70, 44, "lecturas...", 1)
+    o.texto(70, 22, "Vinculada")
+    o.texto(70, 36, codigo)
     return o
 
 def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="24.5", codigo="YUBUD6"):
@@ -100,14 +100,15 @@ def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="2
     o.sprite(sprite, 0, 0)
     filas = [("icono_gota", hum, "%"), ("icono_sol", luz, "lx"), ("icono_termometro", temp, "C")]
     for i, (ic, v, u) in enumerate(filas):
-        y = 1 + i * 16
+        y = i * 15
         o.sprite(ic, 50, y + 3)
         o.texto(61, y, v, 2)
-        o.texto(61 + 12 * len(v) + 1, y + 7, u, 1)
-    o.d.line((50, 50, 127, 50), fill=1)
-    o.texto(50, 55, estado, 1)
+        if len(v) < 5:
+            o.texto(61 + 12 * len(v) + 1, y + 7, u, 1)
+    o.texto(50, 47, codigo)
+    o.texto(50, 56, estado)
     if punto:
-        o.d.ellipse((120, 54, 126, 60), fill=1)
+        o.d.ellipse((120, 56, 126, 62), fill=1)
     return o
 
 def pantalla_portal():
