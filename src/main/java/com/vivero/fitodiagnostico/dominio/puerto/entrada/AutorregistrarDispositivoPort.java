@@ -16,5 +16,10 @@ public interface AutorregistrarDispositivoPort {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.DispositivoYaExisteException si el serial existe con otro secreto
      * @throws IllegalArgumentException si el serial no cumple el formato o el secreto es demasiado corto
      */
-    Resultado registrar(String serial, String secreto, String firma);
+    default Resultado registrar(String serial, String secreto, String firma) {
+        return registrar(serial, secreto, firma, null);
+    }
+
+    /** Igual, anotando desde qué dirección habló el dispositivo (null si no se conoce). */
+    Resultado registrar(String serial, String secreto, String firma, String ip);
 }
