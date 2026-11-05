@@ -63,6 +63,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
     private static final int LARGO_DEL_SERIAL = 6;
 
     private final AutorizadorDePlantas autorizador;
+    private final RepositorioPlantas plantas;
     private final RepositorioDispositivos dispositivos;
     private final EmisorTokenDispositivoPort emisor;
     private final AutenticadorDeDispositivos autenticador;
@@ -73,6 +74,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
                                 RepositorioDispositivos dispositivos, EmisorTokenDispositivoPort emisor,
                                 AutenticadorDeDispositivos autenticador, GeneradorDeTokens generador, Clock reloj) {
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
+        this.plantas = plantas;
         this.dispositivos = dispositivos;
         this.emisor = emisor;
         this.autenticador = autenticador;
@@ -164,7 +166,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
 
     @Override
     @Transactional(readOnly = true)
-    public void exigirVinculo(String serial, UUID plantaId) {
+    public VinculoVigente exigirVinculo(String serial, UUID plantaId) {
         boolean vinculado = dispositivos.porSerial(serial)
                 .flatMap(Dispositivo::plantaId)
                 .filter(plantaId::equals)
@@ -172,6 +174,9 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
         if (!vinculado) {
             throw new CredencialRechazadaException(serial);
         }
+        // Una planta eliminada ya desvinculó sus dispositivos; si aun así no está, el vínculo no es vigente.
+        Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new CredencialRechazadaException(serial));
+        return new VinculoVigente(plantaId, planta.apodo());
     }
 
     // ---- descubrimiento ----
@@ -214,7 +219,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
      */
     @Override
     @Transactional(noRollbackFor = {DispositivoSinReclamarException.class, CredencialRechazadaException.class})
-    public TokenDeDispositivo credencial(String serial, String respuesta, String ip) {
+    public CredencialEmitida credencial(String serial, String respuesta, String ip) {
         Dispositivo dispositivo = dispositivos.porSerial(serial)
                 .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
         Instant ahora = ahora();
@@ -230,7 +235,8 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
 
         dispositivo.registrarCredencial(ahora);
         dispositivos.guardar(dispositivo);
-        return emisor.emitir(dispositivo.serial(), plantaId);
+        String apodo = plantas.buscar(plantaId).map(Planta::apodo).orElseThrow(() -> new CredencialRechazadaException(serial));
+        return new CredencialEmitida(emisor.emitir(dispositivo.serial(), plantaId), apodo);
     }
 
     /**

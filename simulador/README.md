@@ -86,7 +86,7 @@ token por HTTP como siempre (reto y credencial), pero cada lectura se publica en
    - `200 {token, plantaId, expira}`: guarda el token en la "NVS" y empieza a reportar.
    - `409 DISPOSITIVO_SIN_RECLAMAR`: nadie lo reclamo todavia. Imprime
      `esperando reclamo del serial fito-XXXXXX... (reintento en 5 s)` y reintenta.
-3. El token dura una hora. Se renueva solo (reto + credencial otra vez) cuando faltan menos de 2 minutos para que
+3. Desvincular o traspasar la matera corta sus lecturas al instante: el siguiente POST da 401 y el simulador renueva (409 si quedó sin dueño). El token dura una hora. Se renueva solo (reto + credencial otra vez) cuando faltan menos de 2 minutos para que
    expire, o apenas una lectura da `401`. Si el dueno desvinculo el dispositivo, la renovacion da `409` y el
    simulador vuelve a esperar el reclamo.
 

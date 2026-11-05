@@ -10,10 +10,13 @@ import java.util.UUID;
  */
 public interface VerificarVinculoPort {
 
+    /** El vínculo que sigue vigente: la planta y el nombre con que su dueño la llama (lo muestra la pantalla de la matera). */
+    record VinculoVigente(UUID plantaId, String apodo) { }
+
     /**
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException si el dispositivo no
      *         existe, está sin reclamar o está reclamado por otra planta. El chip la ve como 401: renueva su
      *         credencial y recibe el 409 de «sin reclamar» o un token de la planta nueva.
      */
-    void exigirVinculo(String serial, UUID plantaId);
+    VinculoVigente exigirVinculo(String serial, UUID plantaId);
 }

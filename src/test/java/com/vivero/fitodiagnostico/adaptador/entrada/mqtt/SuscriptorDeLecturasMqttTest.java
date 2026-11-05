@@ -48,6 +48,7 @@ class SuscriptorDeLecturasMqttTest {
     private boolean vinculado = true;
     private final VerificarVinculoPort vinculo = (serial, planta) -> {
         if (!vinculado) throw new com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException(serial);
+        return new VerificarVinculoPort.VinculoVigente(planta, "Poti");
     };
     private SuscriptorDeLecturasMqtt suscriptor;
     private ObjectMapper json;
@@ -105,6 +106,7 @@ class SuscriptorDeLecturasMqttTest {
         assertThat(r.estado()).isEqualTo("SALUDABLE");
         assertThat(r.id()).isNotBlank();
         assertThat(r.registradaEn()).isNotBlank();
+        assertThat(r.apodo()).isEqualTo("Poti");
         assertThat(llamadas).hasSize(1);
         Llamada l = llamadas.get(0);
         assertThat(l.plantaId()).isEqualTo(PLANTA);
@@ -120,7 +122,7 @@ class SuscriptorDeLecturasMqttTest {
         String texto = json.writeValueAsString(procesar(lectura("bueno", "55", "700", "22")));
 
         assertThat(json.readTree(texto).fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("ok", "id", "estado", "registradaEn");
+                .containsExactlyInAnyOrder("ok", "id", "estado", "registradaEn", "apodo");
     }
 
     // ---- autenticacion: nada de esto llega al puerto ----
@@ -254,7 +256,7 @@ class SuscriptorDeLecturasMqttTest {
         SuscriptorDeLecturasMqtt fragil = new SuscriptorDeLecturasMqtt(
                 token -> jwt(Map.of("tipo", "dispositivo", "scope", "lecturas:reportar", "sub", SERIAL, "planta", PLANTA.toString())),
                 (p, m, o, t) -> DiagnosticoDePlanta.deUnaEvaluacion(p, o, t, Muestras.diagnosticoCon(EstadoGlobal.SALUDABLE)),
-                (s, p) -> { },
+                (s, p) -> new VerificarVinculoPort.VinculoVigente(p, "Poti"),
                 json, m -> {
                     if (primera[0]) { primera[0] = false; throw new IllegalStateException("broker caido"); }
                     recibidos.add(m);

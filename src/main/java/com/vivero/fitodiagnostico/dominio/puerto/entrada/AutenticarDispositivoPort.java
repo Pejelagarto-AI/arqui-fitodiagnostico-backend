@@ -30,9 +30,12 @@ public interface AutenticarDispositivoPort {
      *         o la respuesta no corresponde
      */
     default TokenDeDispositivo credencial(String serial, String respuesta) {
-        return credencial(serial, respuesta, null);
+        return credencial(serial, respuesta, null).token();
     }
 
+    /** La credencial y el apodo de la planta a la que sirve (la pantalla de la matera muestra el nombre, no el código). */
+    record CredencialEmitida(TokenDeDispositivo token, String apodo) { }
+
     /** Igual, anotando el contacto y la dirección desde la que habló el dispositivo (null si no se conoce). */
-    TokenDeDispositivo credencial(String serial, String respuesta, String ip);
+    CredencialEmitida credencial(String serial, String respuesta, String ip);
 }

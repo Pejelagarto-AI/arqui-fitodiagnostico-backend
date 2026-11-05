@@ -132,7 +132,7 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
                 return rechazar("OPERACION_NO_PERMITIDA", "el token pertenece a otro dispositivo.", serial, Map.of());
             }
             UUID plantaId = UUID.fromString(jwt.getClaimAsString(CLAIM_PLANTA));
-            vinculo.exigirVinculo(serial, plantaId);   // D96: el token puede sobrevivir a la desvinculación
+            VerificarVinculoPort.VinculoVigente vigente = vinculo.exigirVinculo(serial, plantaId);   // D96: el token puede sobrevivir a la desvinculación
 
             LecturaMqtt lectura = json.treeToValue(raiz, LecturaMqtt.class);
             Optional<String> ausente = campoAusente(lectura);
@@ -148,7 +148,7 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
                     lectura.marcaDeTiempo());
             log.info("lectura MQTT de {} registrada: {}", serial, registro.diagnostico().estado());
             return RespuestaMqtt.exito(registro.id().toString(), registro.diagnostico().estado().name(),
-                    registro.registradoEn().toString());
+                    registro.registradoEn().toString(), vigente.apodo());
         } catch (JsonMappingException e) {
             String campo = e.getPath().isEmpty() ? null : e.getPath().get(0).getFieldName();
             return campo == null

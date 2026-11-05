@@ -152,6 +152,7 @@ class LecturasMqttIntegracionTest {
         assertThat(r.get("estado").asText()).isEqualTo("SALUDABLE");
         assertThat(r.get("id").asText()).isNotBlank();
         assertThat(r.get("registradaEn").asText()).isNotBlank();
+        assertThat(r.get("apodo").asText()).isEqualTo("Pepa");
 
         Map<String, Object> fila = jdbc.queryForMap(
                 "select origen, tomada_en from diagnostico_planta where planta_id = ?", UUID.fromString(planta));

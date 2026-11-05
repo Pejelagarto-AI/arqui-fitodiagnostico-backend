@@ -4,6 +4,7 @@ import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaExceptio
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort.VinculoVigente;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,10 +65,10 @@ public class LecturasDeDispositivoController {
         }
         UUID plantaId = UUID.fromString(token.getClaimAsString(CLAIM_PLANTA));
         // El token puede seguir vigente tras desvincular o traspasar la matera: se exige el vínculo actual (D96).
-        vinculo.exigirVinculo(dispositivoId, plantaId);
+        VinculoVigente vigente = vinculo.exigirVinculo(dispositivoId, plantaId);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(RespuestaLectura.desde(
                 lecturas.registrar(plantaId, solicitud.aMedicion(), OrigenDeMedicion.DISPOSITIVO,
-                        solicitud.marcaDeTiempo())));
+                        solicitud.marcaDeTiempo()), vigente.apodo()));
     }
 }

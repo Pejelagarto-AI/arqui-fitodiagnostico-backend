@@ -580,7 +580,7 @@ class Credencial:
                 self.token, self.expira = datos["token"], instante(datos["expira"])
                 escribir_nvs(self.ruta_nvs, self.serial, self.token, datos["expira"])
                 print("[%s] credencial obtenida para la planta %s (vence %s)"
-                      % (ahora_iso(), datos.get("plantaId", "?")[:8], datos["expira"]), flush=True)
+                      % (ahora_iso(), datos.get("apodo") or datos.get("plantaId", "?")[:8], datos["expira"]), flush=True)
                 return self.token
             if codigo == 409:
                 self.token, self.expira = None, None

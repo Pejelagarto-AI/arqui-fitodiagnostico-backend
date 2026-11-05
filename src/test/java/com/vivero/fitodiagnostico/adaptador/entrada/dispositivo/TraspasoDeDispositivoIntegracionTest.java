@@ -135,6 +135,20 @@ class TraspasoDeDispositivoIntegracionTest {
     }
 
     @Test
+    void laCredencialYLaLecturaTraenElApodoDeLaPlantaYUnCambioDeNombreLlegaEnLaSiguienteLectura() throws Exception {
+        reclamar(duenoA, plantaA);
+        ResultActions credencial = pedirCredencial().andExpect(status().isOk()).andExpect(jsonPath("$.apodo").value("Pepa"));
+        String token = leer(credencial, "$.token");
+        lectura(token).andExpect(status().isCreated()).andExpect(jsonPath("$.apodo").value("Pepa"));
+
+        mockMvc.perform(json(con(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .put("/api/v1/plantas/" + plantaA), duenoA), "{\"apodo\":\"Poti\",\"especie\":\"potos\"}"))
+                .andExpect(status().isOk());
+
+        lectura(token).andExpect(status().isCreated()).andExpect(jsonPath("$.apodo").value("Poti"));
+    }
+
+    @Test
     void trasDesvincularLaLecturaConElTokenVigenteEs401CredencialRechazada() throws Exception {
         reclamar(duenoA, plantaA);
         String token = tokenDelChip();
