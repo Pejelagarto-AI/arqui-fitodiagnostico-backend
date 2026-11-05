@@ -30,6 +30,18 @@ def arte(nombre):
     im.putdata([1 if c == "#" else 0 for f in filas for c in f])
     return im
 
+def ventana_nombre(o, x, y, ancho, nombre, t):
+    """Espejo de nombreEnVentana(): fijo si cabe, marquesina con pausa de 1 s en los extremos si no."""
+    w = len(nombre) * 6 - 1
+    off = 0
+    if w > ancho:
+        recorrido = (w - ancho) * 1000 // 24
+        fase = t % (recorrido + 2000)
+        off = 0 if fase < 1000 else (fase - 1000) * 24 // 1000 if fase < 1000 + recorrido else w - ancho
+    tmp = Oled()
+    tmp.texto(-off, 0, nombre)
+    o.im.paste(tmp.im.crop((0, 0, ancho, 8)), (x, y))
+
 class Oled:
     def __init__(self):
         self.im = Image.new("1", (128, 64), 0)
@@ -119,7 +131,7 @@ def redondear(v):
     return int(math.floor(abs(v) + 0.5)) * (1 if v >= 0 else -1)
 
 class Lecturas:
-    def __init__(self, carnivora, nivel_en, mordiscos=(), codigo="YUBUD6", hum="65", luz="1200", temp="24.5"):
+    def __init__(self, carnivora, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5"):
         self.carn, self.nivel_en, self.mordiscos = carnivora, nivel_en, list(mordiscos)
         self.codigo, self.hum, self.luz, self.temp = codigo, hum, luz, temp
         self.cara_nivel = -1
@@ -233,7 +245,7 @@ class Lecturas:
             o.texto(61, y, v, 2)
             if len(v) < 5:
                 o.texto(61 + 12 * len(v) + 1, y + 7, u)
-        o.texto(50, 47, self.codigo)
+        ventana_nombre(o, 50, 47, 78, self.codigo, t)
         o.texto(50, 56, etiqueta)
         return o
 
@@ -255,7 +267,7 @@ def anillo_visto(o, xo, p):
         for (x, y) in ((xo + 6, 56), (xo + 58, 6)):
             o.d.line((x - 3, y, x + 3, y), fill=1); o.d.line((x, y - 3, x, y + 3), fill=1)
 
-def cuadro_exito(t, codigo="YUBUD6"):
+def cuadro_exito(t, codigo="Poti"):
     o = Oled()
     T_ANILLO, T_VISTO = 750, 1000
     T_FIN_VISTO = T_VISTO + 450
@@ -269,18 +281,18 @@ def cuadro_exito(t, codigo="YUBUD6"):
         p = 1 - (1 - p) ** 2
         anillo_visto(o, xo, p)
         if t >= T_FIN_DESLIZ:
-            o.texto(70, 22, "Vinculada"); o.texto(70, 36, codigo)
+            o.texto(70, 22, "Vinculada"); ventana_nombre(o, 70, 36, 58, codigo, t - T_FIN_DESLIZ)
     return o
 
 def gif(nombre, cuadro_fn, duracion_ms, paso=50):
     cuadros = [cuadro_fn(t).im.convert("L").resize((512, 256), Image.NEAREST) for t in range(0, duracion_ms, paso)]
     cuadros[0].save(os.path.join(SALIDA, nombre + ".gif"), save_all=True, append_images=cuadros[1:], duration=paso, loop=0, optimize=False)
 
-def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="24.5", codigo="YUBUD6"):
+def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="24.5", codigo="Poti", t=None):
     nivel = {"SALUDABLE": 0, "EN RIESGO": 1, "CRITICO": 2}[estado]
     mord = sprite == "carni_cerrada"
     sim = Lecturas(sprite.startswith("carni"), lambda t: nivel, [100000] if mord else [], codigo, hum, luz, temp)
-    o = sim.cuadro(100000 + 200 if mord else 2500)
+    o = sim.cuadro(t if t else 100000 + 200 if mord else 2500)
     if punto:
         o.d.ellipse((120, 56, 126, 62), fill=1)
     return o
@@ -291,7 +303,8 @@ def main():
         pantalla_exito(i).guardar(f"02_exito_{i}")
     cuadro_exito(1000 + 450 + 100).guardar("02_exito_visto")
     cuadro_exito(3400).guardar("03_vinculada_final")
-    pantalla_lecturas("planta_saludable_0", "SALUDABLE", True).guardar("04_lecturas_saludable")
+    pantalla_lecturas("planta_saludable_0", "SALUDABLE", True, codigo="Poti").guardar("04_lecturas_saludable")
+    pantalla_lecturas("carni_abierta_0", "SALUDABLE", luz="9500", codigo="Lola la carnivora", t=3000).guardar("12_lecturas_nombre_largo")
     pantalla_lecturas("planta_riesgo_0", "EN RIESGO", hum="22").guardar("05_lecturas_riesgo")
     pantalla_lecturas("planta_critico_0", "CRITICO", hum="9").guardar("06_lecturas_critico")
     pantalla_lecturas("carni_abierta_0", "SALUDABLE", luz="9500").guardar("07_carni_abierta")
@@ -299,7 +312,7 @@ def main():
     pantalla_lecturas("carni_riesgo_0", "EN RIESGO", luz="9500").guardar("09_carni_riesgo")
     pantalla_lecturas("carni_critico_0", "CRITICO", luz="9500").guardar("10_carni_critico")
     pantalla_portal().guardar("11_portal")
-    gif("anim_saludable", Lecturas(False, lambda t: 0).cuadro, 6000)
+    gif("anim_saludable", Lecturas(False, lambda t: 0, codigo="Lola la carnivora").cuadro, 6000)
     gif("anim_riesgo", Lecturas(False, lambda t: 1, hum="22").cuadro, 6000)
     gif("anim_critico", Lecturas(False, lambda t: 2, hum="9").cuadro, 6000)
     gif("anim_transicion", Lecturas(False, lambda t: 0 if t < 2000 else 1 if t < 4000 else 2).cuadro, 6000)

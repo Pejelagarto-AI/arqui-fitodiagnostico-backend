@@ -60,14 +60,20 @@ String enlaceDelQr() {
     return "http://" + red::servidor() + ":" + String(FITO_PUERTO_FRONT) + "/#/v/" + identidad::codigo();
 }
 
+// Lo que se muestra de la planta: su apodo, o el codigo si el servidor nunca lo dio.
+String nombreAMostrar() {
+    String a = identidad::apodo();
+    return a.length() ? a : String(identidad::codigo());
+}
+
 void pintarOperando() {
-    if (!hayUltima) { pantalla::vinculada(identidad::codigo()); return; }
-    pantalla::lecturas(identidad::codigo(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
+    if (!hayUltima) { pantalla::vinculada(nombreAMostrar().c_str()); return; }
+    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
 }
 
 void empezarExito() {
     exitoActivo = true;
-    pantalla::empezarExito(millis(), identidad::codigo());
+    pantalla::empezarExito(millis(), nombreAMostrar().c_str());
 }
 
 void redibujar() {

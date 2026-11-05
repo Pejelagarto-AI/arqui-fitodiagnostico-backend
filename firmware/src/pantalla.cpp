@@ -31,6 +31,48 @@ void texto(int x, int y, const char *t, int tam = 1) { oled.setTextSize(tam); ol
 void bitmap(int x, int y, const uint8_t *b, int w, int h) { oled.drawBitmap(x, y, b, w, h, SSD1306_WHITE); }
 
 // Icono 8x8 de sprites.h ampliado `k` veces (para los avisos de pantalla completa).
+// UTF-8 a ASCII para la fuente CP437: acentos y enie pasan a su letra base, lo demas fuera de ASCII imprimible se omite.
+void aAscii(const char *utf8, char *salida, size_t n) {
+    size_t k = 0;
+    for (const uint8_t *c = (const uint8_t *)utf8; *c && k + 1 < n; c++) {
+        if (*c >= 0x20 && *c < 0x7F) { salida[k++] = (char)*c; continue; }
+        if (*c == 0xC3 && c[1]) {
+            c++;
+            char r = 0;
+            switch (*c) {
+            case 0xA1: case 0x81: r = *c == 0xA1 ? 'a' : 'A'; break;
+            case 0xA9: case 0x89: r = *c == 0xA9 ? 'e' : 'E'; break;
+            case 0xAD: case 0x8D: r = *c == 0xAD ? 'i' : 'I'; break;
+            case 0xB3: case 0x93: r = *c == 0xB3 ? 'o' : 'O'; break;
+            case 0xBA: case 0x9A: r = *c == 0xBA ? 'u' : 'U'; break;
+            case 0xBC: case 0x9C: r = *c == 0xBC ? 'u' : 'U'; break;
+            case 0xB1: case 0x91: r = *c == 0xB1 ? 'n' : 'N'; break;
+            }
+            if (r) salida[k++] = r;
+        }                                                  // cualquier otro byte >= 0x80 o de control se omite
+    }
+    salida[k] = 0;
+    while (k && salida[k - 1] == ' ') salida[--k] = 0;
+}
+
+// Nombre en una ventana de `ancho` px: si cabe, fijo; si no, marquesina (pausa de 1 s al inicio y al final).
+GFXcanvas1 *ventanas[2] = {nullptr, nullptr};
+void nombreEnVentana(int idx, int x, int y, int ancho, const char *nombre, uint32_t t) {
+    if (!ventanas[idx]) ventanas[idx] = new GFXcanvas1(ancho, 8);
+    GFXcanvas1 &cv = *ventanas[idx];
+    const int w = strlen(nombre) * 6 - 1;
+    int off = 0;
+    if (w > ancho) {
+        const uint32_t recorrido = (uint32_t)(w - ancho) * 1000 / 24;               // 24 px por segundo
+        const uint32_t fase = t % (recorrido + 2000);
+        off = fase < 1000 ? 0 : fase < 1000 + recorrido ? (int)((fase - 1000) * 24 / 1000) : w - ancho;
+    }
+    cv.fillScreen(0);
+    cv.setTextColor(1); cv.setTextSize(1); cv.setCursor(-off, 0);
+    cv.print(nombre);
+    oled.drawBitmap(x, y, cv.getBuffer(), ancho, 8, SSD1306_WHITE);
+}
+
 void iconoGrande(int x, int y, const uint8_t *b, int k) {
     for (int fy = 0; fy < 8; fy++) {
         uint8_t fila = pgm_read_byte(b + fy);
@@ -179,7 +221,7 @@ void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float
 
 // ---- estado de la pantalla de lecturas (para repintar sin que main reenvie todo) ----
 Lectura lLect = {};
-char lCodigo[8] = "";
+char lNombre[64] = "";
 char lEstado[16] = "";
 bool lPunto = false;
 bool lCarnivora = false;
@@ -243,7 +285,7 @@ void pintarLecturas(uint32_t ahora) {
         const int largo = strlen(v);
         if (largo < 5) texto(61 + 12 * largo + 1, y + 7, filas[i].unidad);
     }
-    texto(50, 47, lCodigo);
+    nombreEnVentana(0, 50, 47, 78, lNombre, ahora);
     texto(50, 56, lEstado);
     if (lPunto) oled.fillCircle(123, 59, 3, SSD1306_WHITE);
     listo();
@@ -251,7 +293,7 @@ void pintarLecturas(uint32_t ahora) {
 
 // ---- animacion de exito ----
 uint32_t exitoDesde = 0;
-char exitoCodigo[8] = "";
+char exitoNombre[64] = "";
 uint32_t exitoUltimo = 0;
 bool exitoPintado = false;
 constexpr uint32_t EXITO_MS_CUADRO = 125;                    // 8 cuadros por segundo para el arte
@@ -440,7 +482,7 @@ void animarEspera(uint32_t ahoraMs) {
 void empezarExito(uint32_t ahoraMs, const char *codigo) {
     exitoDesde = ahoraMs;
     exitoPintado = false;
-    strlcpy(exitoCodigo, codigo, sizeof exitoCodigo);
+    aAscii(codigo, exitoNombre, sizeof exitoNombre);
 }
 
 bool animarExito(uint32_t ahoraMs) {
@@ -460,7 +502,7 @@ bool animarExito(uint32_t ahoraMs) {
         float p = t <= T_VISTO ? 0.0f : t >= T_FIN_VISTO ? 1.0f : (float)(t - T_VISTO) / (T_FIN_VISTO - T_VISTO);
         p = 1.0f - (1.0f - p) * (1.0f - p);                                       // arranca rapido y frena
         anilloYVisto(xo, p);
-        if (t >= T_FIN_DESLIZ) { texto(70, 22, "Vinculada"); texto(70, 36, exitoCodigo); }
+        if (t >= T_FIN_DESLIZ) { texto(70, 22, "Vinculada"); nombreEnVentana(1, 70, 36, 58, exitoNombre, t - T_FIN_DESLIZ); }
     }
     listo();
     return true;
@@ -470,8 +512,10 @@ void vinculada(const char *codigo) {
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     anilloYVisto(2, 1.0f);
+    char n[64];
+    aAscii(codigo, n, sizeof n);
     texto(70, 22, "Vinculada");
-    texto(70, 36, codigo);
+    nombreEnVentana(1, 70, 36, 58, n, 0);
     listo();
 }
 
@@ -479,7 +523,7 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     lLect = l;
     lPunto = punto;
-    strlcpy(lCodigo, codigo, sizeof lCodigo);
+    aAscii(codigo, lNombre, sizeof lNombre);
     lCarnivora = especie && (contieneSinMayusculas(especie, "atrapamoscas") || contieneSinMayusculas(especie, "carniv"));
     lNivel = 0;
     const char *etiqueta = "-";

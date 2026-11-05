@@ -52,7 +52,7 @@ Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y comp
 
 ## Qué muestra la OLED
 
-En pantalla solo se ve el **código** de 6 caracteres (`YUBUD6`), nunca el prefijo `fito-` del serial. Sin tildes ni eñes (fuente CP437).
+El **código** de 6 caracteres (`YUBUD6`) solo aparece en la pantalla de reclamo; en lecturas y vinculada se muestra el **apodo** de la planta (campo `apodo` de la respuesta 200 de la credencial y de cada 201; se guarda en NVS junto al token, se borra con él y, si nunca llegó, se muestra el código). Se pasa de UTF-8 a ASCII (á é í ó ú ü ñ a su letra base, lo demás fuera de ASCII se omite) y, si pasa de 13 caracteres, corre como marquesina con pausa de 1 s en los extremos. Nunca se ve el prefijo `fito-` del serial. Sin tildes ni eñes (fuente CP437).
 
 | Estado | Pantalla |
 |---|---|

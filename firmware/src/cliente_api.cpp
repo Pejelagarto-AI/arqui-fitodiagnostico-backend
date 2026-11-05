@@ -38,6 +38,15 @@ int post(const String &ruta, const String &cuerpo, const char *token, String &re
     return codigo;
 }
 
+// "apodo" de primer nivel (200 de la credencial y 201 de las lecturas). Si falta o viene vacio se conserva el ultimo
+// conocido (el de NVS); solo se escribe en la flash cuando cambia.
+void tomarApodo(JsonDocument &r) {
+    const char *nuevo = r["apodo"] | "";
+    if (!nuevo[0]) return;
+    String actual = identidad::apodo();
+    if (actual != nuevo) { identidad::guardarApodo(nuevo); registrar("apodo de la planta: %s", nuevo); }
+}
+
 String mensajeDeError(const String &cuerpo, String *codigoError = nullptr) {
     JsonDocument d;
     if (deserializeJson(d, cuerpo)) return cuerpo.substring(0, 80);
@@ -96,6 +105,7 @@ int pedirCredencial(String &token, time_t &expira) {
         JsonDocument t;
         if (deserializeJson(t, resp) || !t["token"].is<const char *>()) { registrar("credencial ilegible"); return 500; }
         token = (const char *)t["token"];
+        tomarApodo(t);
         const char *vence = t["expira"] | "";
         if (!reloj::parsearIso(vence, &expira)) expira = time(nullptr) + 3600;
         registrar("credencial obtenida para la planta %.8s (vence %s)", (const char *)(t["plantaId"] | "?"), vence);
@@ -123,6 +133,7 @@ int enviarLectura(const String &token, const Lectura &l, String &estado) {
         JsonDocument r;
         if (!deserializeJson(r, resp)) {
             estado = (const char *)(r["diagnostico"]["estado"] | "");
+            tomarApodo(r);
             const char *esp = r["diagnostico"]["especie"] | "";
             if (esp[0] && especieActual != esp) { especieActual = esp; registrar("especie de la planta: %s", esp); }
             Rangos nuevos = {};
