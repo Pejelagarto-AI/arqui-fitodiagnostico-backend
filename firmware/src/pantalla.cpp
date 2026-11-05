@@ -20,16 +20,37 @@ void listo() { if (lista) oled.display(); }
 }
 
 namespace pantalla {
+// Busca la OLED en las dos direcciones habituales con el par de pines dado. 0 = no responde.
+static uint8_t buscarOled(int sda, int scl) {
+    Wire.end();
+    Wire.begin(sda, scl);
+    for (uint8_t direccion : {0x3C, 0x3D}) {
+        Wire.beginTransmission(direccion);
+        if (Wire.endTransmission() == 0) return direccion;
+    }
+    return 0;
+}
+
 bool iniciar() {
-    Wire.begin(config::PIN_SDA, config::PIN_SCL);
-    bool hay3c = false, hay3d = false;
-    Wire.beginTransmission(0x3C); hay3c = Wire.endTransmission() == 0;
-    Wire.beginTransmission(0x3D); hay3d = Wire.endTransmission() == 0;
-    registrar("escaneo I2C: 0x3C %s, 0x3D %s", hay3c ? "responde" : "no", hay3d ? "responde" : "no");
-    uint8_t direccion = hay3c ? 0x3C : (hay3d ? 0x3D : 0);
+    uint8_t direccion = buscarOled(config::PIN_SDA, config::PIN_SCL);
+    registrar("escaneo I2C (SDA=GPIO%d, SCL=GPIO%d): %s", config::PIN_SDA, config::PIN_SCL,
+              direccion == 0x3C ? "0x3C responde" : direccion == 0x3D ? "0x3D responde" : "0x3C no, 0x3D no");
     if (!direccion) {
-        registrar("la OLED no responde: revise cableado (SDA=GPIO%d, SCL=GPIO%d, VCC=3V3). Sigo sin pantalla.",
-                  config::PIN_SDA, config::PIN_SCL);
+        // Error de cableado mas comun: SDA y SCL cruzados. Si asi responde, se sigue con los pines invertidos.
+        direccion = buscarOled(config::PIN_SCL, config::PIN_SDA);
+        if (direccion) registrar("la OLED responde con SDA y SCL invertidos (SDA=GPIO%d, SCL=GPIO%d): sigo asi",
+                                 config::PIN_SCL, config::PIN_SDA);
+    }
+    if (!direccion) {
+        Wire.end();
+        Wire.begin(config::PIN_SDA, config::PIN_SCL);
+        int vistos = 0;
+        for (uint8_t d = 0x08; d < 0x78; d++) {
+            Wire.beginTransmission(d);
+            if (Wire.endTransmission() == 0) { registrar("  hay un dispositivo I2C en 0x%02X (no es una OLED SSD1306 conocida)", d); vistos++; }
+        }
+        registrar("la OLED no responde%s: revise cableado (SDA=GPIO%d, SCL=GPIO%d, VCC=3V3, GND). Sigo sin pantalla.",
+                  vistos ? "" : " y el bus I2C esta vacio", config::PIN_SDA, config::PIN_SCL);
         return false;
     }
     lista = oled.begin(SSD1306_SWITCHCAPVCC, direccion);
@@ -38,6 +59,7 @@ bool iniciar() {
 }
 
 void arranque(const char *serial) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.setTextSize(2); oled.println("Fito");
     oled.setTextSize(1); oled.println("Fitodiagnostico");
@@ -48,12 +70,14 @@ void arranque(const char *serial) {
 }
 
 void mensaje(const char *l1, const char *l2, const char *l3, const char *l4) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.println(l1); oled.println(l2); oled.println(l3); oled.println(l4);
     listo();
 }
 
 void portal(const char *redWifi) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.println("Conectate al");
     oled.println("Wi-Fi:");
@@ -65,6 +89,7 @@ void portal(const char *redWifi) {
 }
 
 void qr(const String &enlace, const char *codigo, uint8_t puntos) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     const size_t largo = enlace.length();
     const uint8_t ecc = largo <= CAPACIDAD_QR_M ? ECC_MEDIUM : ECC_LOW;
@@ -106,6 +131,7 @@ void qr(const String &enlace, const char *codigo, uint8_t puntos) {
 }
 
 void vinculada() {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.setTextSize(2); oled.println("Vinculada");
     oled.setTextSize(1); oled.println();
@@ -117,6 +143,7 @@ void vinculada() {
 }
 
 void lecturas(const char *serial, const Lectura &l, const char *estado, bool punto) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.println(serial);
     oled.printf("Humedad %5.1f %%\n", l.humedad);
@@ -129,6 +156,7 @@ void lecturas(const char *serial, const Lectura &l, const char *estado, bool pun
 }
 
 void sinRed(size_t guardadas) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.setTextSize(2); oled.println("Sin red");
     oled.setTextSize(1); oled.println();
@@ -138,6 +166,7 @@ void sinRed(size_t guardadas) {
 }
 
 void error(const char *l1, const char *l2, const char *l3) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.println("ERROR"); oled.println();
     oled.println(l1); oled.println(l2); oled.println(l3);
@@ -145,6 +174,7 @@ void error(const char *l1, const char *l2, const char *l3) {
 }
 
 void reinicio(int segundos) {
+    if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
     oled.println("Borrando Wi-Fi...");
     oled.println("Suelta para cancelar");

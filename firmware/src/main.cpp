@@ -184,7 +184,8 @@ bool renovarCredencial() {
     }
     token = ""; tokenExpira = 0;
     identidad::borrarToken();
-    if (codigo == 409) { entrar(Fase::Reclamo); redibujar(); }
+    // Ya en Reclamo no se vuelve a entrar: entrar() reinicia el temporizador y el reintento saldria sin espera.
+    if (codigo == 409) { if (fase != Fase::Reclamo) { entrar(Fase::Reclamo); redibujar(); } }
     else if (codigo == 404) { registrar("el servidor no conoce el serial: se vuelve a registrar"); identidad::marcarRegistrado(false); entrar(Fase::Registro); }
     else if (codigo == 401) {
         if (++rechazosDeCredencial >= 3) fatal("Secreto rechazado", "borre la flash o", "reinicie el backend");
@@ -224,6 +225,7 @@ void faseReclamo() {
         pantalla::vinculada();
         return;
     }
+    proximoIntento = millis() + config::ESPERA_RECLAMO_MS;   // tambien aqui: renovarCredencial() pudo cambiar de fase
     if (fase == Fase::Reclamo) pantalla::qr(enlaceDelQr(), identidad::codigo(), puntosReclamo);
 }
 
