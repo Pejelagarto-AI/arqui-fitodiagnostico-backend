@@ -20,7 +20,9 @@ void guardarServidor(const String &servidor);
 String token();
 time_t tokenExpira();                 // epoch, 0 si no hay
 void guardarToken(const String &token, time_t expira);
-void borrarToken();
+void borrarToken();                   // tambien borra el apodo: desvinculada, ya no hay nombre que mostrar
+String apodo();                       // nombre de la planta (UTF-8), "" si nunca hubo
+void guardarApodo(const String &apodo);
 
 void olvidarRedYToken();              // lo que hace el boton: Wi-Fi, servidor, token y registro de red; NO la identidad
 }

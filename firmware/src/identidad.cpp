@@ -63,7 +63,10 @@ void guardarToken(const String &t, time_t expira) {
     nvs.putString("token", t);
     nvs.putULong("expira", (uint32_t)expira);
 }
+String apodo() { return nvs.getString("apodo", ""); }
+void guardarApodo(const String &a) { nvs.putString("apodo", a); }
 void borrarToken() {
+    nvs.remove("apodo");
     nvs.remove("token");
     nvs.remove("expira");
 }

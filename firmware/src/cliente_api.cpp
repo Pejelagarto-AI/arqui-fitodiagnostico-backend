@@ -10,6 +10,8 @@
 
 namespace {
 String base;
+String especieActual;
+api::Rangos rangosActuales = {};
 
 // POST con cuerpo ya serializado. Si aun no hay hora, toma la de la cabecera Date de la respuesta (D91).
 int post(const String &ruta, const String &cuerpo, const char *token, String &respuesta) {
@@ -36,6 +38,15 @@ int post(const String &ruta, const String &cuerpo, const char *token, String &re
     return codigo;
 }
 
+// "apodo" de primer nivel (200 de la credencial y 201 de las lecturas). Si falta o viene vacio se conserva el ultimo
+// conocido (el de NVS); solo se escribe en la flash cuando cambia.
+void tomarApodo(JsonDocument &r) {
+    const char *nuevo = r["apodo"] | "";
+    if (!nuevo[0]) return;
+    String actual = identidad::apodo();
+    if (actual != nuevo) { identidad::guardarApodo(nuevo); registrar("apodo de la planta: %s", nuevo); }
+}
+
 String mensajeDeError(const String &cuerpo, String *codigoError = nullptr) {
     JsonDocument d;
     if (deserializeJson(d, cuerpo)) return cuerpo.substring(0, 80);
@@ -45,6 +56,9 @@ String mensajeDeError(const String &cuerpo, String *codigoError = nullptr) {
 }
 
 namespace api {
+const String &especie() { return especieActual; }
+const Rangos &rangos() { return rangosActuales; }
+
 void iniciar(const String &servidor) {
     base = "http://" + servidor + ":" + String(FITO_PUERTO_API) + "/api/v1";
     registrar("API en %s", base.c_str());
@@ -91,6 +105,7 @@ int pedirCredencial(String &token, time_t &expira) {
         JsonDocument t;
         if (deserializeJson(t, resp) || !t["token"].is<const char *>()) { registrar("credencial ilegible"); return 500; }
         token = (const char *)t["token"];
+        tomarApodo(t);
         const char *vence = t["expira"] | "";
         if (!reloj::parsearIso(vence, &expira)) expira = time(nullptr) + 3600;
         registrar("credencial obtenida para la planta %.8s (vence %s)", (const char *)(t["plantaId"] | "?"), vence);
@@ -116,7 +131,24 @@ int enviarLectura(const String &token, const Lectura &l, String &estado) {
     estado = "";
     if (codigo == 201) {
         JsonDocument r;
-        if (!deserializeJson(r, resp)) estado = (const char *)(r["diagnostico"]["estado"] | "");
+        if (!deserializeJson(r, resp)) {
+            estado = (const char *)(r["diagnostico"]["estado"] | "");
+            tomarApodo(r);
+            const char *esp = r["diagnostico"]["especie"] | "";
+            if (esp[0] && especieActual != esp) { especieActual = esp; registrar("especie de la planta: %s", esp); }
+            Rangos nuevos = {};
+            int cuantos = 0;
+            for (JsonObject p : r["diagnostico"]["parametros"].as<JsonArray>()) {
+                const char *nombre = p["nombre"] | "";
+                int i = !strcmp(nombre, "humedad") ? 0 : !strcmp(nombre, "luz") ? 1 : !strcmp(nombre, "temperatura") ? 2 : -1;
+                JsonArray rango = p["rangoOptimo"].as<JsonArray>();
+                if (i < 0 || rango.size() != 2) continue;
+                nuevos.minimo[i] = rango[0].as<float>();
+                nuevos.maximo[i] = rango[1].as<float>();
+                cuantos++;
+            }
+            if (cuantos == 3) { nuevos.hay = true; rangosActuales = nuevos; }
+        }
     } else if (codigo != SIN_RED) {
         registrar("lectura HTTP %d %s", codigo, mensajeDeError(resp).c_str());
     }

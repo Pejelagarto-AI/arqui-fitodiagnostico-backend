@@ -37,7 +37,7 @@ bool sinRedMostrada = false;
 bool sinHoraAvisada = false;
 int rechazosDeCredencial = 0;
 uint8_t puntosReclamo = 0;
-uint32_t hastaVinculada = 0;
+bool exitoActivo = false;
 int segundosBoton = -1;
 char fatal1[24], fatal2[24], fatal3[24];
 Lectura ultima = {};
@@ -60,9 +60,20 @@ String enlaceDelQr() {
     return "http://" + red::servidor() + ":" + String(FITO_PUERTO_FRONT) + "/#/v/" + identidad::codigo();
 }
 
+// Lo que se muestra de la planta: su apodo, o el codigo si el servidor nunca lo dio.
+String nombreAMostrar() {
+    String a = identidad::apodo();
+    return a.length() ? a : String(identidad::codigo());
+}
+
 void pintarOperando() {
-    if (!hayUltima) { pantalla::vinculada(); return; }
-    pantalla::lecturas(identidad::serial(), ultima, ultimoEstado.c_str(), punto);
+    if (!hayUltima) { pantalla::vinculada(nombreAMostrar().c_str()); return; }
+    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
+}
+
+void empezarExito() {
+    exitoActivo = true;
+    pantalla::empezarExito(millis(), nombreAMostrar().c_str());
 }
 
 void redibujar() {
@@ -200,13 +211,12 @@ void faseCredencial() {
     if (guardado.length() && reloj::hayHora() && expira - time(nullptr) > (time_t)config::MARGEN_RENOVACION_S) {
         token = guardado; tokenExpira = expira;
         registrar("token guardado en NVS, vigente");
-        entrar(Fase::Operando); hastaVinculada = millis() + 1500; pantalla::vinculada();
+        entrar(Fase::Operando); empezarExito();
         return;
     }
     if (renovarCredencial()) {
         entrar(Fase::Operando);
-        hastaVinculada = millis() + 2500;
-        pantalla::vinculada();
+        empezarExito();
         proximaLectura = millis() + 2500;
     } else if (fase == Fase::Credencial) {
         proximoIntento = millis() + config::ESPERA_REINTENTO_MS;
@@ -215,14 +225,14 @@ void faseCredencial() {
 }
 
 void faseReclamo() {
+    pantalla::animarEspera(millis());
     if (millis() < proximoIntento) return;
     proximoIntento = millis() + config::ESPERA_RECLAMO_MS;
     puntosReclamo++;
     if (renovarCredencial()) {
         entrar(Fase::Operando);
-        hastaVinculada = millis() + 2500;
+        empezarExito();
         proximaLectura = millis() + 2500;
-        pantalla::vinculada();
         return;
     }
     proximoIntento = millis() + config::ESPERA_RECLAMO_MS;   // tambien aqui: renovarCredencial() pudo cambiar de fase
@@ -263,6 +273,8 @@ void vaciarCola() {
         if (codigo == 201) {
             registrar("#%u -> HTTP 201 estado=%s (tomada %s)", (unsigned)l.n, estado.c_str(), marca);
             ultimoEstado = estado;
+            if (api::rangos().hay) sensoresSimulados.adoptarRangos(api::rangos().minimo, api::rangos().maximo);
+            pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;
             cola::sacar();
             enviados++;
@@ -282,8 +294,12 @@ void vaciarCola() {
 
 void faseOperando() {
     uint32_t ahora = millis();
-    if (hastaVinculada && ahora < hastaVinculada) return;       // deja ver el visto
-    if (hastaVinculada) { hastaVinculada = 0; if (hayUltima) pintarOperando(); }
+    if (exitoActivo) {                                           // animacion de exito, sin bloquear
+        if (pantalla::animarExito(ahora)) return;
+        exitoActivo = false;
+        if (hayUltima) pintarOperando();
+    }
+    pantalla::animarLecturas(ahora);
     if (punto && ahora > apagarPunto) { punto = false; if (red::conectada() && hayUltima) pintarOperando(); }
 
     if (!red::conectada()) {
@@ -321,6 +337,7 @@ void setup() {
 void loop() {
     atenderBoton();
     if (segundosBoton == -1) {
+        if (pantalla::reintentarSiFalta(millis())) redibujar();   // OLED con contacto intermitente: reaparece y se repinta
         switch (fase) {
         case Fase::Arranque: entrar(Fase::Red); break;
         case Fase::Red: faseRed(); break;

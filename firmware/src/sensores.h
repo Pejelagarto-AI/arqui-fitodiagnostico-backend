@@ -25,9 +25,13 @@ class SensoresSimulados : public Sensores {
 public:
     SensoresSimulados();
     void leer(Lectura &l, const char *&descripcion) override;
+    // Rangos optimos de la especie (los que devuelve el servidor): 0 humedad, 1 luz, 2 temperatura. Recentra la caminata.
+    void adoptarRangos(const float minimo[3], const float maximo[3]);
 
 private:
     float actual_[3];
+    float lo_[3];
+    float hi_[3];
     float normal(int i);
 };
 
