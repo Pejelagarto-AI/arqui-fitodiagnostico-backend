@@ -70,6 +70,8 @@ El QR de reclamo codifica `http://<servidor>:<puerto front>/#/v/<6 caracteres>`;
 
 **La planta.** Las lecturas muestran una planta común en matera (erguida, caída o marchita con una hoja en el suelo según el estado del servidor, dos cuadros que alternan cada ~600 ms) o, si la especie que devolvió el servidor contiene "atrapamoscas" o "carniv", una atrapamoscas de caricatura (abierta, a medio cerrar y cerrada, triste en riesgo y crítico). La carnívora da un mordisco cada 6 a 10 s y cada vez que llega una respuesta 201 del servidor. La especie y los rangos óptimos salen de `diagnostico.especie` y `diagnostico.parametros[].rangoOptimo` de la respuesta de `POST /dispositivos/{serial}/lecturas`: los sensores simulados se centran en el medio de cada rango (cualquier especie queda saludable) y el 12 % de las lecturas sale fuera de rango para que el estado cambie en la demo. Hasta la primera respuesta se usan los rangos del poto.
 
+**Cara y fluidez.** La cara se dibuja por código sobre el sprite (no hay un sprite por expresión): saludable = ojos redondos y sonrisa; en riesgo = ojos entrecerrados, cejas preocupadas y boca ondulada; crítico = ojos caídos, cejas inclinadas, boca hacia abajo y una lágrima ocasional. Parpadea cada 3 a 5 s y al cambiar de estado la expresión se interpola en 400 ms. La planta se balancea con un seno suave que dobla el sprite (más arriba, más desplazamiento; la marchita casi no se mueve) y la pantalla de lecturas se repinta a 20 cuadros por segundo con un temporizador no bloqueante. El I2C va a 400 kHz y al arrancar se registra "OLED: N ms por cuadro" para saber el techo real. El mordisco de la carnívora tiene 5 pasos con un pequeño rebote; la animación de éxito traza el anillo y el visto progresivamente. Durante una petición HTTP la animación se detiene un momento.
+
 **OLED con contacto intermitente.** Cada 2 s el firmware busca la pantalla si falta (probando también SDA y SCL cruzados) y, si ya estaba lista, comprueba que siga respondiendo. Al reaparecer la reinicializa, escribe "OLED lista en 0x3C (detectada en caliente)" por serie y repinta la pantalla de la fase actual. Nada de esto bloquea el bucle más que unos milisegundos.
 
 ### Regenerar los sprites
@@ -79,7 +81,7 @@ El arte vive como texto en `sprites/arte/*.txt` (`#` encendido, `.` apagado); `s
 ```bash
 python3 firmware/sprites/dibujar.py       # (opcional) vuelve a trazar plantas y animación en arte/*.txt; los iconos 8x8 son a mano
 python3 firmware/sprites/generar.py       # arte/*.txt -> src/sprites.h + PNG x4 en sprites/previa/
-python3 firmware/sprites/previsualizar.py /ruta/salida   # pantallas completas de 128x64 en PNG x4 (necesita haber compilado una vez)
+python3 firmware/sprites/previsualizar.py /ruta/salida   # pantallas completas en PNG x4 y un GIF animado por estado (necesita haber compilado una vez)
 ```
 
 Retocar un cuadro a mano: editar el `.txt` (mismo ancho en todas las filas) y correr `generar.py`, sin `dibujar.py`, que sobrescribe las plantas.

@@ -95,22 +95,6 @@ def pantalla_vinculada_final(codigo="YUBUD6"):
     o.texto(70, 36, codigo)
     return o
 
-def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="24.5", codigo="YUBUD6"):
-    o = Oled()
-    o.sprite(sprite, 0, 0)
-    filas = [("icono_gota", hum, "%"), ("icono_sol", luz, "lx"), ("icono_termometro", temp, "C")]
-    for i, (ic, v, u) in enumerate(filas):
-        y = i * 15
-        o.sprite(ic, 50, y + 3)
-        o.texto(61, y, v, 2)
-        if len(v) < 5:
-            o.texto(61 + 12 * len(v) + 1, y + 7, u, 1)
-    o.texto(50, 47, codigo)
-    o.texto(50, 56, estado)
-    if punto:
-        o.d.ellipse((120, 56, 126, 62), fill=1)
-    return o
-
 def pantalla_portal():
     o = Oled()
     o.qr(0, 0, 62, qr_ejemplo(2), margen=2)
@@ -119,11 +103,194 @@ def pantalla_portal():
     o.texto(63, 34, "Fito-YUBUD6")
     return o
 
+# ---------------------------------------------------------------- animacion (espejo de pantalla.cpp)
+AMPLITUD = [2.2, 1.5, 0.8]
+CARA_NIVEL = [(1.0, 0.0, 1.0, 0.0), (0.55, 0.6, -0.5, 0.7), (0.6, 1.0, -1.0, 0.0)]   # abierto, inclina, boca, onda
+MORDISCO = [(90, 0, 0), (170, 1, 0), (290, 2, 2), (380, 1, 1), (460, 0, -1)]
+CARNI_BOCA = ["carni_abierta_0", "carni_media", "carni_cerrada"]
+CARNI_G = [14, 7, 0]
+PARPADEOS = [3400, 7600, 11300, 15700]       # en C++ es cada 3 a 5 s al azar
+
+def suave(t):
+    t = max(0.0, min(1.0, t))
+    return t * t * (3 - 2 * t)
+
+def redondear(v):
+    return int(math.floor(abs(v) + 0.5)) * (1 if v >= 0 else -1)
+
+class Lecturas:
+    def __init__(self, carnivora, nivel_en, mordiscos=(), codigo="YUBUD6", hum="65", luz="1200", temp="24.5"):
+        self.carn, self.nivel_en, self.mordiscos = carnivora, nivel_en, list(mordiscos)
+        self.codigo, self.hum, self.luz, self.temp = codigo, hum, luz, temp
+        self.cara_nivel = -1
+        self.desde = self.hasta = CARA_NIVEL[0]
+        self.t0 = 0
+
+    def cara(self, t):
+        k = suave((t - self.t0) / 400.0)
+        return tuple(a + (b - a) * k for a, b in zip(self.desde, self.hasta))
+
+    def fijar(self, nivel, t):
+        if nivel == self.cara_nivel:
+            return
+        self.desde = CARA_NIVEL[nivel] if self.cara_nivel < 0 else self.cara(t)
+        self.hasta = CARA_NIVEL[nivel]
+        self.t0, self.cara_nivel = t, nivel
+
+    def parpadeo(self, t):
+        for b in PARPADEOS:
+            if 0 <= t - b < 150:
+                dt = t - b
+                return 0.5 if dt < 50 else 0.0 if dt < 100 else 0.5
+        return 1.0
+
+    def desv(self, y, seno, amp):
+        return redondear(amp * seno * (46 - y) / 46.0) if y < 46 else 0
+
+    def cuerpo(self, o, nombre, seno, amp, dy):
+        s = arte(nombre)
+        for y in range(46):
+            o.im.paste(1, (self.desv(y, seno, amp), y + dy), s.crop((0, y, 48, y + 1)))
+        o.im.paste(1, (0, 46), s.crop((0, 46, 48, 64)))
+
+    def boca_y(self, x, cx, semi, y0, amplitud, c):
+        u = (x - cx) / semi
+        return y0 - redondear(c[2] * amplitud * u * u) + redondear(c[3] * 0.9 * math.sin(x * 2.3))
+
+    def cara_matera(self, o, c, parp, t):
+        a = c[0] * parp
+        h = 3 if a >= 0.85 else 2 if a >= 0.4 else 1
+        for ex in (17, 28):
+            o.d.rectangle((ex, 58 - h, ex + 2, 57), fill=0)
+            if h == 3:
+                o.d.point((ex, 55), fill=1); o.d.point((ex + 2, 55), fill=1)
+        if c[1] > 0.2:
+            dentro = 53 - redondear(c[1]); medio = 53 - (1 if c[1] > 0.5 else 0)
+            for p in ((17, 53), (18, medio), (19, dentro), (30, 53), (29, medio), (28, dentro)):
+                o.d.point(p, fill=0)
+        for x in range(21, 27):
+            y = self.boca_y(x, 23.5, 2.5, 60, 1.2, c)
+            o.d.point((x, max(59, min(62, y))), fill=0)
+        if self.cara_nivel == 2:
+            fase = t % 4200
+            if fase < 900:
+                y = 56 + fase * 5 // 900
+                for p in ((31, y), (30, y + 1), (31, y + 1), (32, y + 1), (31, y + 2)):
+                    o.d.point(p, fill=0)
+
+    def cara_trampa(self, o, c, parp, t, seno, amp, yo, dy, con_boca):
+        a = c[0] * parp
+        h = max(1, redondear(7 * a))
+        cx = 24 + self.desv(yo, seno, amp)
+        for lado in (-1, 1):
+            ex = cx + 9 * lado
+            top = yo + dy - h // 2
+            r = 2 if h >= 4 else 1 if h >= 2 else 0
+            o.d.rounded_rectangle((ex - 2, top, ex + 2, top + h - 1), radius=r, fill=0)
+            if h >= 5:
+                o.d.point((ex - 1, top + 1), fill=1)
+            if c[1] > 0.2:
+                fuera = yo + dy - 6 + redondear(c[1]); dentro = yo + dy - 6 - redondear(2 * c[1])
+                o.d.line((ex + 4 * lado, fuera, ex - 3 * lado, dentro), fill=0)
+        if con_boca:
+            for x in range(cx - 7, cx + 8):
+                o.d.point((x, self.boca_y(x, cx, 7.0, yo + 2 + dy, 4.0, c)), fill=0)
+            if self.cara_nivel == 2:
+                fase = t % 4200
+                if fase < 900:
+                    y = yo + dy + 3 + fase * 7 // 900
+                    o.d.point((cx + 13, y), fill=0); o.d.point((cx + 13, y + 1), fill=0)
+
+    def cuadro(self, t):
+        nivel = self.nivel_en(t)
+        self.fijar(nivel, t)
+        c = self.cara(t)
+        parp = self.parpadeo(t)
+        seno = math.sin(2 * math.pi * (t % 2800) / 2800)
+        amp = AMPLITUD[nivel]
+        o = Oled()
+        if not self.carn:
+            self.cuerpo(o, ["planta_saludable_0", "planta_riesgo_0", "planta_critico_0"][nivel], seno, amp, 0)
+            self.cara_matera(o, c, parp, t)
+        elif nivel > 0:
+            self.cuerpo(o, ["carni_riesgo_0", "carni_critico_0"][nivel - 1], seno, amp, 0)
+            self.cara_trampa(o, c, parp, t, seno, amp, 25 if nivel == 1 else 30, 0, True)
+        else:
+            boca, dy = 0, 0
+            for ini in self.mordiscos:
+                if 0 <= t - ini < 460:
+                    for hasta, b, d in MORDISCO:
+                        if t - ini < hasta:
+                            boca, dy = b, d
+                            break
+            self.cuerpo(o, CARNI_BOCA[boca], seno, amp, dy)
+            cm = (c[0] * (0.3 if boca == 2 else 1),) + tuple(c[1:])
+            self.cara_trampa(o, cm, parp, t, seno, amp, (32 - CARNI_G[boca]) // 2, dy, False)
+        etiqueta = ["SALUDABLE", "EN RIESGO", "CRITICO"][nivel]
+        for i, (ic, v, u) in enumerate((("icono_gota", self.hum, "%"), ("icono_sol", self.luz, "lx"), ("icono_termometro", self.temp, "C"))):
+            y = i * 15
+            o.sprite(ic, 50, y + 3)
+            o.texto(61, y, v, 2)
+            if len(v) < 5:
+                o.texto(61 + 12 * len(v) + 1, y + 7, u)
+        o.texto(50, 47, self.codigo)
+        o.texto(50, 56, etiqueta)
+        return o
+
+def anillo_visto(o, xo, p):
+    for r in (28, 29, 30):
+        o.d.ellipse((xo + 32 - r, 32 - r, xo + 32 + r, 32 + r), outline=1)
+    L1, L2 = 15.6, 29.4
+    d = p * (L1 + L2)
+    s = 0.0
+    while s <= d:
+        if s <= L1:
+            x, y = 17 + 11 * s / L1, 33 + 11 * s / L1
+        else:
+            k = (s - L1) / L2
+            x, y = 28 + 19 * k, 44 - 23 * k
+        o.d.ellipse((xo + int(x) - 2, int(y) - 2, xo + int(x) + 2, int(y) + 2), fill=1)
+        s += 1.0
+    if p >= 1.0:
+        for (x, y) in ((xo + 6, 56), (xo + 58, 6)):
+            o.d.line((x - 3, y, x + 3, y), fill=1); o.d.line((x, y - 3, x, y + 3), fill=1)
+
+def cuadro_exito(t, codigo="YUBUD6"):
+    o = Oled()
+    T_ANILLO, T_VISTO = 750, 1000
+    T_FIN_VISTO = T_VISTO + 450
+    T_DESLIZ = T_FIN_VISTO + 200
+    T_FIN_DESLIZ = T_DESLIZ + 400
+    xo = 32 if t < T_DESLIZ else 32 - int(suave((t - T_DESLIZ) / (T_FIN_DESLIZ - T_DESLIZ)) * 30)
+    if t < T_ANILLO:
+        o.sprite(f"exito_{t // 125}", xo, 0)
+    else:
+        p = 0.0 if t <= T_VISTO else 1.0 if t >= T_FIN_VISTO else (t - T_VISTO) / (T_FIN_VISTO - T_VISTO)
+        p = 1 - (1 - p) ** 2
+        anillo_visto(o, xo, p)
+        if t >= T_FIN_DESLIZ:
+            o.texto(70, 22, "Vinculada"); o.texto(70, 36, codigo)
+    return o
+
+def gif(nombre, cuadro_fn, duracion_ms, paso=50):
+    cuadros = [cuadro_fn(t).im.convert("L").resize((512, 256), Image.NEAREST) for t in range(0, duracion_ms, paso)]
+    cuadros[0].save(os.path.join(SALIDA, nombre + ".gif"), save_all=True, append_images=cuadros[1:], duration=paso, loop=0, optimize=False)
+
+def pantalla_lecturas(sprite, estado, punto=False, hum="65", luz="1200", temp="24.5", codigo="YUBUD6"):
+    nivel = {"SALUDABLE": 0, "EN RIESGO": 1, "CRITICO": 2}[estado]
+    mord = sprite == "carni_cerrada"
+    sim = Lecturas(sprite.startswith("carni"), lambda t: nivel, [100000] if mord else [], codigo, hum, luz, temp)
+    o = sim.cuadro(100000 + 200 if mord else 2500)
+    if punto:
+        o.d.ellipse((120, 56, 126, 62), fill=1)
+    return o
+
 def main():
     pantalla_reclamo().guardar("01_reclamo")
-    for i in range(8):
+    for i in range(6):
         pantalla_exito(i).guardar(f"02_exito_{i}")
-    pantalla_vinculada_final().guardar("03_vinculada_final")
+    cuadro_exito(1000 + 450 + 100).guardar("02_exito_visto")
+    cuadro_exito(3400).guardar("03_vinculada_final")
     pantalla_lecturas("planta_saludable_0", "SALUDABLE", True).guardar("04_lecturas_saludable")
     pantalla_lecturas("planta_riesgo_0", "EN RIESGO", hum="22").guardar("05_lecturas_riesgo")
     pantalla_lecturas("planta_critico_0", "CRITICO", hum="9").guardar("06_lecturas_critico")
@@ -132,6 +299,13 @@ def main():
     pantalla_lecturas("carni_riesgo_0", "EN RIESGO", luz="9500").guardar("09_carni_riesgo")
     pantalla_lecturas("carni_critico_0", "CRITICO", luz="9500").guardar("10_carni_critico")
     pantalla_portal().guardar("11_portal")
+    gif("anim_saludable", Lecturas(False, lambda t: 0).cuadro, 6000)
+    gif("anim_riesgo", Lecturas(False, lambda t: 1, hum="22").cuadro, 6000)
+    gif("anim_critico", Lecturas(False, lambda t: 2, hum="9").cuadro, 6000)
+    gif("anim_transicion", Lecturas(False, lambda t: 0 if t < 2000 else 1 if t < 4000 else 2).cuadro, 6000)
+    gif("anim_carnivora", Lecturas(True, lambda t: 0, [1000, 4000], luz="9500").cuadro, 6000)
+    gif("anim_carnivora_triste", Lecturas(True, lambda t: 0 if t < 1500 else 1 if t < 3500 else 2, luz="9500").cuadro, 6000)
+    gif("anim_exito", cuadro_exito, 3500)
     print("pantallas en", SALIDA)
 
 main()

@@ -9,7 +9,7 @@
 #include <ctype.h>
 
 namespace {
-Adafruit_SSD1306 oled(128, 64, &Wire, -1);
+Adafruit_SSD1306 oled(128, 64, &Wire, -1, 400000UL, 400000UL);   // I2C a 400 kHz tambien entre cuadros
 bool lista = false;
 uint8_t dirOled = 0;
 int pinSda = config::PIN_SDA, pinScl = config::PIN_SCL;
@@ -57,16 +57,125 @@ bool dibujarQr(const char *txt, int anchoBlanco, int margenX, int margenY) {
     return true;
 }
 
-// ---- sprites de la planta ----
-const uint8_t *const PLANTA[3][2] = {
-    {sprites::planta_saludable_0, sprites::planta_saludable_1},
-    {sprites::planta_riesgo_0, sprites::planta_riesgo_1},
-    {sprites::planta_critico_0, sprites::planta_critico_1}};
-const uint8_t *const CARNI_TRISTE[2][2] = {
-    {sprites::carni_riesgo_0, sprites::carni_riesgo_1},
-    {sprites::carni_critico_0, sprites::carni_critico_1}};
-const uint8_t *const EXITO[8] = {sprites::exito_0, sprites::exito_1, sprites::exito_2, sprites::exito_3,
-                                 sprites::exito_4, sprites::exito_5, sprites::exito_6, sprites::exito_7};
+// ---- sprites ----
+const uint8_t *const PLANTA[3] = {sprites::planta_saludable_0, sprites::planta_riesgo_0, sprites::planta_critico_0};
+const uint8_t *const CARNI_TRISTE[2] = {sprites::carni_riesgo_0, sprites::carni_critico_0};
+const uint8_t *const CARNI_BOCA[3] = {sprites::carni_abierta_0, sprites::carni_media, sprites::carni_cerrada};
+const int CARNI_G[3] = {14, 7, 0};                           // abertura de la boca de cada cuadro (la cara se ancla a ella)
+const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
+                                 sprites::exito_3, sprites::exito_4, sprites::exito_5};
+
+constexpr int Y_MATERA = 46;                                  // desde aqui el sprite no se balancea
+constexpr uint32_t MS_FOTOGRAMA = 50;                         // 20 cuadros por segundo
+constexpr uint32_t PERIODO_BALANCEO_MS = 2800;
+const float AMPLITUD[3] = {2.2f, 1.5f, 0.8f};                 // px de desplazamiento en la punta: la marchita casi no se mueve
+
+// Mordisco de la carnivora: (hasta ms, cuadro de boca, desplazamiento vertical) con un pequeno rebote al final.
+struct PasoMordisco { uint16_t hasta; uint8_t boca; int8_t dy; };
+const PasoMordisco MORDISCO[] = {{90, 0, 0}, {170, 1, 0}, {290, 2, 2}, {380, 1, 1}, {460, 0, -1}};
+constexpr uint32_t MORDISCO_MS = 460;
+
+// ---- cara expresiva (parametros que se interpolan) ----
+struct Cara { float abierto, inclina, boca, onda; };          // ojos 0..1, cejas 0..1, boca -1..1, ondulacion 0..1
+const Cara CARA_NIVEL[3] = {{1.0f, 0.0f, 1.0f, 0.0f},         // saludable: ojos redondos y sonrisa
+                            {0.55f, 0.6f, -0.5f, 0.7f},       // en riesgo: entrecerrados, cejas preocupadas, boca ondulada
+                            {0.6f, 1.0f, -1.0f, 0.0f}};       // critico: ojos caidos, cejas inclinadas, boca hacia abajo
+constexpr uint32_t TRANSICION_MS = 400;
+Cara caraDesde = CARA_NIVEL[0], caraHasta = CARA_NIVEL[0];
+uint32_t caraT0 = 0;
+int caraNivel = -1;
+uint32_t parpadeoDesde = 0, proximoParpadeo = 0;
+
+float suave(float t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
+float mezcla(float a, float b, float k) { return a + (b - a) * k; }
+
+Cara caraEn(uint32_t ahora) {
+    const float k = suave((float)(ahora - caraT0) / TRANSICION_MS);
+    return {mezcla(caraDesde.abierto, caraHasta.abierto, k), mezcla(caraDesde.inclina, caraHasta.inclina, k),
+            mezcla(caraDesde.boca, caraHasta.boca, k), mezcla(caraDesde.onda, caraHasta.onda, k)};
+}
+
+void fijarNivel(int nivel, uint32_t ahora) {
+    if (nivel == caraNivel) return;
+    caraDesde = caraNivel < 0 ? CARA_NIVEL[nivel] : caraEn(ahora);   // arranca desde lo que se veia: sin saltos
+    caraHasta = CARA_NIVEL[nivel];
+    caraT0 = ahora;
+    caraNivel = nivel;
+}
+
+// Parpadeo cada 3 a 5 s: medio cerrado, cerrado, medio cerrado (150 ms, 3 cuadros a 20 fps).
+float factorParpadeo(uint32_t ahora) {
+    if (!proximoParpadeo) proximoParpadeo = ahora + 3000 + random(2001);
+    if ((int32_t)(ahora - proximoParpadeo) >= 0) { parpadeoDesde = ahora; proximoParpadeo = ahora + 3000 + random(2001); }
+    if (!parpadeoDesde) return 1.0f;
+    const uint32_t t = ahora - parpadeoDesde;
+    return t < 50 ? 0.5f : t < 100 ? 0.0f : t < 150 ? 0.5f : 1.0f;
+}
+
+// Desplazamiento horizontal de la fila y: crece hacia arriba (la planta se dobla en vez de moverse rigida).
+int desv(int y, float seno, float amp) { return y < Y_MATERA ? (int)lroundf(amp * seno * (Y_MATERA - y) / (float)Y_MATERA) : 0; }
+
+void cuerpo(const uint8_t *bmp, float seno, float amp, int dy) {
+    for (int y = 0; y < Y_MATERA; y++) oled.drawBitmap(desv(y, seno, amp), y + dy, bmp + y * 6, 48, 1, SSD1306_WHITE);
+    oled.drawBitmap(0, Y_MATERA, bmp + Y_MATERA * 6, 48, 64 - Y_MATERA, SSD1306_WHITE);
+}
+
+// Boca en curva: boca>0 sonrisa, <0 ceno; `onda` la ondula. u va de -1 a 1 a lo ancho.
+int yBoca(int x, float cx, float semi, int y0, float amplitud, const Cara &c) {
+    const float u = (x - cx) / semi;
+    return y0 - (int)lroundf(c.boca * amplitud * u * u) + (int)lroundf(c.onda * 0.9f * sinf(x * 2.3f));
+}
+
+// Cara de la matera comun: ojos 3x3 (2 o 1 de alto al entrecerrar), cejas y boca de 6 px.
+void caraMatera(const Cara &c, float parpadeo, uint32_t ahora) {
+    const float a = c.abierto * parpadeo;
+    const int h = a >= 0.85f ? 3 : a >= 0.4f ? 2 : 1;
+    for (int ex : {17, 28}) {
+        oled.fillRect(ex, 58 - h, 3, h, SSD1306_BLACK);
+        if (h == 3) { oled.drawPixel(ex, 55, SSD1306_WHITE); oled.drawPixel(ex + 2, 55, SSD1306_WHITE); }
+    }
+    if (c.inclina > 0.2f) {
+        const int dentro = 53 - (int)lroundf(c.inclina), medio = 53 - (c.inclina > 0.5f ? 1 : 0);
+        oled.drawPixel(17, 53, SSD1306_BLACK); oled.drawPixel(18, medio, SSD1306_BLACK); oled.drawPixel(19, dentro, SSD1306_BLACK);
+        oled.drawPixel(30, 53, SSD1306_BLACK); oled.drawPixel(29, medio, SSD1306_BLACK); oled.drawPixel(28, dentro, SSD1306_BLACK);
+    }
+    for (int x = 21; x <= 26; x++) {
+        int y = yBoca(x, 23.5f, 2.5f, 60, 1.2f, c);
+        oled.drawPixel(x, y < 59 ? 59 : y > 62 ? 62 : y, SSD1306_BLACK);
+    }
+    if (caraNivel == 2) {                                         // lagrima ocasional
+        const uint32_t fase = ahora % 4200;
+        if (fase < 900) {
+            const int y = 56 + (int)(fase * 5 / 900);
+            oled.drawPixel(31, y, SSD1306_BLACK); oled.drawPixel(30, y + 1, SSD1306_BLACK);
+            oled.drawPixel(31, y + 1, SSD1306_BLACK); oled.drawPixel(32, y + 1, SSD1306_BLACK); oled.drawPixel(31, y + 2, SSD1306_BLACK);
+        }
+    }
+}
+
+// Cara de la carnivora: ojos 5 de ancho (alto segun lo abiertos), cejas y, si esta triste, la boca.
+void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp, int yo, int dy, bool conBoca) {
+    const float a = c.abierto * parpadeo;
+    const int h = max(1, (int)lroundf(7 * a));
+    const int cx = 24 + desv(yo, seno, amp);
+    for (int lado = -1; lado <= 1; lado += 2) {
+        const int ex = cx + 9 * lado;
+        const int top = yo + dy - h / 2;
+        oled.fillRoundRect(ex - 2, top, 5, h, h >= 4 ? 2 : h >= 2 ? 1 : 0, SSD1306_BLACK);
+        if (h >= 5) oled.drawPixel(ex - 1, top + 1, SSD1306_WHITE);
+        if (c.inclina > 0.2f) {                                   // el extremo de adentro mas alto: ceja triste
+            const int fuera = yo + dy - 6 + (int)lroundf(c.inclina), dentro = yo + dy - 6 - (int)lroundf(2 * c.inclina);
+            oled.drawLine(ex + 4 * lado, fuera, ex - 3 * lado, dentro, SSD1306_BLACK);
+        }
+    }
+    if (conBoca) {
+        for (int x = cx - 7; x <= cx + 7; x++) oled.drawPixel(x, yBoca(x, (float)cx, 7.0f, yo + 2 + dy, 4.0f, c), SSD1306_BLACK);
+        if (caraNivel == 2) {
+            const uint32_t fase = ahora % 4200;
+            if (fase < 900) { const int y = yo + dy + 3 + (int)(fase * 7 / 900); oled.drawPixel(cx + 13, y, SSD1306_BLACK); oled.drawPixel(cx + 13, y + 1, SSD1306_BLACK); }
+        }
+    }
+}
 
 // ---- estado de la pantalla de lecturas (para repintar sin que main reenvie todo) ----
 Lectura lLect = {};
@@ -75,12 +184,10 @@ char lEstado[16] = "";
 bool lPunto = false;
 bool lCarnivora = false;
 int lNivel = 0;                         // 0 saludable, 1 en riesgo, 2 critico
-int lUltimoCuadro = -1;
-bool lSucia = true;
-uint32_t mordiscoDesde = 0;
+uint32_t lUltimoDibujo = 0;
 bool mordiendo = false;
+uint32_t mordiscoDesde = 0;
 uint32_t proximoMordisco = 0;
-constexpr uint32_t MS_CUADRO = 600;
 
 bool contieneSinMayusculas(const char *pajar, const char *aguja) {
     const size_t n = strlen(aguja);
@@ -92,41 +199,37 @@ bool contieneSinMayusculas(const char *pajar, const char *aguja) {
     return false;
 }
 
-// Cuadro del mordisco: abierta, media, cerrada, media, abierta (540 ms).
-const uint8_t *cuadroDeMordisco(uint32_t t) {
-    if (t < 120) return sprites::carni_abierta_0;
-    if (t < 240) return sprites::carni_media;
-    if (t < 420) return sprites::carni_cerrada;
-    if (t < 540) return sprites::carni_media;
-    return sprites::carni_abierta_0;
-}
-
-// Identificador del cuadro a mostrar (y su bitmap). Cambia solo cuando hay que repintar.
-int elegirCuadro(uint32_t ahora, const uint8_t *&bmp) {
-    const int alterna = (ahora / MS_CUADRO) % 2;
-    if (!lCarnivora) { bmp = PLANTA[lNivel][alterna]; return lNivel * 2 + alterna; }
-    if (lNivel > 0) { bmp = CARNI_TRISTE[lNivel - 1][alterna]; return 10 + lNivel * 2 + alterna; }
-    if (!mordiendo && (int32_t)(ahora - proximoMordisco) >= 0) {       // mordisco espontaneo de vez en cuando
-        mordiendo = true; mordiscoDesde = ahora;
-        proximoMordisco = ahora + 6000 + (ahora % 4000);
-    }
-    if (mordiendo) {
-        uint32_t t = ahora - mordiscoDesde;
-        if (t >= 540) mordiendo = false;
-        else { bmp = cuadroDeMordisco(t); return 100 + (int)(t / 60); }
-    }
-    bmp = alterna ? sprites::carni_abierta_1 : sprites::carni_abierta_0;
-    return 20 + alterna;
-}
-
 void pintarLecturas(uint32_t ahora) {
-    const uint8_t *bmp = nullptr;
-    int cuadro = elegirCuadro(ahora, bmp);
     limpiar();
     modo = Modo::Lecturas;
-    lUltimoCuadro = cuadro * 2 + (lPunto ? 1 : 0);
-    lSucia = false;
-    bitmap(0, 0, bmp, 48, 64);
+    lUltimoDibujo = ahora;
+    fijarNivel(lNivel, ahora);
+    const Cara c = caraEn(ahora);
+    const float parpadeo = factorParpadeo(ahora);
+    const float seno = sinf(6.2831853f * (ahora % PERIODO_BALANCEO_MS) / PERIODO_BALANCEO_MS);
+    const float amp = AMPLITUD[lNivel];
+    if (!lCarnivora) {
+        cuerpo(PLANTA[lNivel], seno, amp, 0);
+        caraMatera(c, parpadeo, ahora);
+    } else if (lNivel > 0) {
+        cuerpo(CARNI_TRISTE[lNivel - 1], seno, amp, 0);
+        caraTrampa(c, parpadeo, ahora, seno, amp, lNivel == 1 ? 25 : 30, 0, true);
+    } else {
+        if (!mordiendo && (int32_t)(ahora - proximoMordisco) >= 0) {          // mordisco espontaneo de vez en cuando
+            mordiendo = true; mordiscoDesde = ahora;
+            proximoMordisco = ahora + 6000 + (ahora % 4000);
+        }
+        int boca = 0, dy = 0;
+        if (mordiendo) {
+            const uint32_t t = ahora - mordiscoDesde;
+            if (t >= MORDISCO_MS) mordiendo = false;
+            else { int i = 0; while (t >= MORDISCO[i].hasta) i++; boca = MORDISCO[i].boca; dy = MORDISCO[i].dy; }
+        }
+        cuerpo(CARNI_BOCA[boca], seno, amp, dy);
+        Cara cm = c;
+        if (boca == 2) cm.abierto *= 0.3f;                                    // al morder entrecierra los ojos
+        caraTrampa(cm, parpadeo, ahora, seno, amp, (32 - CARNI_G[boca]) / 2, dy, false);
+    }
     char v[12];
     struct Fila { const uint8_t *icono; const char *unidad; } filas[3] = {
         {sprites::icono_gota, "%"}, {sprites::icono_sol, "lx"}, {sprites::icono_termometro, "C"}};
@@ -149,11 +252,33 @@ void pintarLecturas(uint32_t ahora) {
 // ---- animacion de exito ----
 uint32_t exitoDesde = 0;
 char exitoCodigo[8] = "";
-int exitoUltimo = -1;
-constexpr uint32_t EXITO_MS_CUADRO = 125;                    // 8 cuadros por segundo
-constexpr uint32_t EXITO_FIN_CUADROS = 8 * EXITO_MS_CUADRO;  // 1000
-constexpr uint32_t EXITO_FIN_DESLIZ = EXITO_FIN_CUADROS + 400;
-constexpr uint32_t EXITO_TOTAL = EXITO_FIN_DESLIZ + 1800;
+uint32_t exitoUltimo = 0;
+bool exitoPintado = false;
+constexpr uint32_t EXITO_MS_CUADRO = 125;                    // 8 cuadros por segundo para el arte
+constexpr uint32_t T_ANILLO = 6 * EXITO_MS_CUADRO;           // 750: despues del destello
+constexpr uint32_t T_VISTO = T_ANILLO + 250;                 // el visto se traza de 1000 a 1450
+constexpr uint32_t T_FIN_VISTO = T_VISTO + 450;
+constexpr uint32_t T_DESLIZ = T_FIN_VISTO + 200;             // 1650 a 2050 se desliza a la izquierda
+constexpr uint32_t T_FIN_DESLIZ = T_DESLIZ + 400;
+constexpr uint32_t EXITO_TOTAL = T_FIN_DESLIZ + 1400;
+
+void estrellita(int x, int y) {
+    oled.drawFastHLine(x - 3, y, 7, SSD1306_WHITE); oled.drawFastVLine(x, y - 3, 7, SSD1306_WHITE);
+}
+
+// Anillo de 3 px y visto trazado hasta `p` (0..1), en un cuadro de 64x64 que empieza en xo.
+void anilloYVisto(int xo, float p) {
+    for (int r = 28; r <= 30; r++) oled.drawCircle(xo + 32, 32, r, SSD1306_WHITE);
+    const float L1 = 15.6f, L2 = 29.4f;
+    const float d = p * (L1 + L2);
+    for (float s = 0; s <= d; s += 1.0f) {
+        float x, y;
+        if (s <= L1) { x = 17 + 11 * s / L1; y = 33 + 11 * s / L1; }
+        else { const float k = (s - L1) / L2; x = 28 + 19 * k; y = 44 - 23 * k; }
+        oled.fillCircle(xo + (int)x, (int)y, 2, SSD1306_WHITE);
+    }
+    if (p >= 1.0f) { estrellita(xo + 6, 56); estrellita(xo + 58, 6); }
+}
 
 // Puntos de espera de la pantalla de reclamo.
 int puntosHasta = 0;
@@ -179,6 +304,16 @@ static uint8_t buscarOled(int sda, int scl) {
         if (Wire.endTransmission() == 0) return direccion;
     }
     return 0;
+}
+
+// Mide un display() completo a 400 kHz: es el techo real de cuadros por segundo.
+static void medirCuadro() {
+    Wire.setClock(400000);
+    oled.clearDisplay();
+    const uint32_t t0 = micros();
+    oled.display();
+    const uint32_t us = max<uint32_t>(1, micros() - t0);
+    registrar("OLED: %.1f ms por cuadro (tope %u cuadros/s)", us / 1000.0f, (unsigned)(1000000UL / us));
 }
 
 bool iniciar() {
@@ -208,7 +343,7 @@ bool iniciar() {
         return false;
     }
     lista = oled.begin(SSD1306_SWITCHCAPVCC, direccion);
-    if (lista) { dirOled = direccion; vistaAlgunaVez = true; registrar("OLED lista en 0x%02X", direccion); }
+    if (lista) { dirOled = direccion; vistaAlgunaVez = true; registrar("OLED lista en 0x%02X", direccion); medirCuadro(); }
     return lista;
 }
 
@@ -233,8 +368,10 @@ bool reintentarSiFalta(uint32_t ahoraMs) {
     if (!direccion) return false;
     // Pudo perder la alimentacion: se reinicializa del todo.
     if (!oled.begin(SSD1306_SWITCHCAPVCC, direccion)) return false;
+    Wire.setClock(400000);
     pinSda = sda; pinScl = scl; dirOled = direccion; vistaAlgunaVez = true; lista = true;
     registrar("OLED lista en 0x%02X (detectada en caliente)", direccion);
+    medirCuadro();
     return true;
 }
 
@@ -302,7 +439,7 @@ void animarEspera(uint32_t ahoraMs) {
 
 void empezarExito(uint32_t ahoraMs, const char *codigo) {
     exitoDesde = ahoraMs;
-    exitoUltimo = -1;
+    exitoPintado = false;
     strlcpy(exitoCodigo, codigo, sizeof exitoCodigo);
 }
 
@@ -310,19 +447,21 @@ bool animarExito(uint32_t ahoraMs) {
     const uint32_t t = ahoraMs - exitoDesde;
     if (t >= EXITO_TOTAL) return false;
     if (!lista) return true;
-    int clave;
-    int x = 32;
-    if (t < EXITO_FIN_CUADROS) clave = t / EXITO_MS_CUADRO;
-    else if (t < EXITO_FIN_DESLIZ) {
-        x = 32 - (int)((t - EXITO_FIN_CUADROS) * 30 / (EXITO_FIN_DESLIZ - EXITO_FIN_CUADROS));
-        clave = 100 + x;
-    } else clave = 200;
-    if (clave == exitoUltimo && modo == Modo::Exito) return true;
-    exitoUltimo = clave;
-    if (clave == 200) { vinculada(exitoCodigo); modo = Modo::Exito; return true; }
+    if (exitoPintado && ahoraMs - exitoUltimo < MS_FOTOGRAMA) return true;     // 20 cuadros por segundo
+    exitoPintado = true;
+    exitoUltimo = ahoraMs;
     limpiar();
     modo = Modo::Exito;
-    bitmap(x, 0, EXITO[t < EXITO_FIN_CUADROS ? clave : 7], 64, 64);
+    int xo = 32;
+    if (t >= T_DESLIZ) xo = 32 - (int)(suave((float)(t - T_DESLIZ) / (T_FIN_DESLIZ - T_DESLIZ)) * 30);
+    if (t < T_ANILLO) {
+        bitmap(xo, 0, EXITO[t / EXITO_MS_CUADRO], 64, 64);
+    } else {
+        float p = t <= T_VISTO ? 0.0f : t >= T_FIN_VISTO ? 1.0f : (float)(t - T_VISTO) / (T_FIN_VISTO - T_VISTO);
+        p = 1.0f - (1.0f - p) * (1.0f - p);                                       // arranca rapido y frena
+        anilloYVisto(xo, p);
+        if (t >= T_FIN_DESLIZ) { texto(70, 22, "Vinculada"); texto(70, 36, exitoCodigo); }
+    }
     listo();
     return true;
 }
@@ -330,7 +469,7 @@ bool animarExito(uint32_t ahoraMs) {
 void vinculada(const char *codigo) {
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
     limpiar();
-    bitmap(2, 0, sprites::exito_7, 64, 64);
+    anilloYVisto(2, 1.0f);
     texto(70, 22, "Vinculada");
     texto(70, 36, codigo);
     listo();
@@ -356,9 +495,7 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
 
 void animarLecturas(uint32_t ahoraMs) {
     if (!lista || modo != Modo::Lecturas) return;
-    const uint8_t *bmp;
-    const int cuadro = elegirCuadro(ahoraMs, bmp) * 2 + (lPunto ? 1 : 0);
-    if (cuadro == lUltimoCuadro && !lSucia) return;
+    if (ahoraMs - lUltimoDibujo < MS_FOTOGRAMA) return;       // 20 cuadros por segundo, sin esperar
     pintarLecturas(ahoraMs);
 }
 

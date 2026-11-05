@@ -102,21 +102,21 @@ def planta(estado, cuadro):
         hoja(d, (24, 35), (43 + s, 13), 6, curva=3)
         hoja(d, (24, 44), (7, 36), 4, curva=-2, vena=False)
         hoja(d, (24, 44), (41, 35), 4, curva=2, vena=False)
-        matera(d, "contenta")
+        matera(d, None)
     elif estado == "riesgo":
         tallo(d, curva_q((24, 47), (24, 34), (30 + s, 25)), 3)
         hoja(d, (30 + s, 26), (42 + s, 36), 6, curva=-4)          # hoja de la punta, caida
         hoja(d, (25, 37), (5, 40 + s), 6, curva=5)
         hoja(d, (27, 33), (46, 41 - s), 5, curva=-5)
         hoja(d, (28, 28), (14, 17), 4, curva=4, vena=False)
-        matera(d, "seria")
+        matera(d, None)
     else:  # critico
         tallo(d, curva_q((24, 47), (22, 30), (33 + s, 30)), 3)
         hoja(d, (33 + s, 31), (37 + s, 44), 5, curva=-2)           # cuelga casi vertical
         hoja(d, (24, 38), (14, 45 + s), 4, curva=3, vena=False)
         hoja(d, (26, 35), (21 + s, 45), 4, curva=-3, vena=False)
         hoja(d, (37, 61), (47, 59), 2, curva=1, vena=False)        # una hoja en el suelo
-        matera(d, "triste")
+        matera(d, None)
     return im
 
 
@@ -152,26 +152,7 @@ def trampa(d, cx, cy, abertura, estado):
         pts = [(cx - ancho_boca + i * 3, cy + (2 if i % 2 else -2)) for i in range(0, 14)]
         d.line(pts, fill=0, width=1)
         d.line((cx - ancho_boca, cy, cx - ancho_boca + 1, cy), fill=0)
-    else:
-        # triste: boca pequena en arco hacia abajo, con dientecitos
-        k = 3 if estado == "riesgo" else 5
-        for x in range(cx - 7, cx + 8):
-            u = (x - cx) / 7
-            d.point((x, cy + 4 - round(k * (1 - u * u))), fill=0)
-    # ojos
-    yo = sup + 8 if estado == "feliz" else sup + 12
-    for ex in (cx - 9, cx + 9):
-        if estado == "critico":
-            d.line((ex - 3, yo - 3, ex + 3, yo + 3), fill=0); d.line((ex - 3, yo + 3, ex + 3, yo - 3), fill=0)
-            d.line((ex - 3, yo - 2, ex + 3, yo + 4), fill=0); d.line((ex - 3, yo + 4, ex + 3, yo - 2), fill=0)
-        else:
-            d.ellipse((ex - 3, yo - 3, ex + 3, yo + 4) if estado != "feliz" else (ex - 2, yo - 3, ex + 2, yo + 3), fill=0)
-            d.point((ex - 1, yo - 2), fill=1)
-            if estado == "riesgo":
-                d.line((ex - 4 if ex < cx else ex + 4, yo - 4, ex + 3 if ex < cx else ex - 3, yo - 7), fill=0)
-    if estado != "feliz":
-        d.ellipse((cx + 13, sup + 7, cx + 15, sup + 12), fill=0)       # gota de sudor
-        d.point((cx + 14, sup + 5), fill=0)
+    # ojos, cejas, boca triste y gotas: los dibuja pantalla.cpp (cara expresiva por codigo)
 
 
 def carnivora(estado, cuadro, abertura=14):
@@ -289,17 +270,17 @@ def exito(i):
 
 def main():
     os.makedirs(ARTE, exist_ok=True)
+    for viejo in os.listdir(ARTE):
+        if viejo.startswith(("planta_", "carni_", "exito_")):
+            os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
-        for c in (0, 1):
-            guardar(f"planta_{estado}_{c}", planta(estado, c))
+        guardar(f"planta_{estado}_0", planta(estado, 0))
     guardar("carni_abierta_0", carnivora("feliz", 0, 14))
-    guardar("carni_abierta_1", carnivora("feliz", 1, 14))
     guardar("carni_media", carnivora("feliz", 0, 7))
     guardar("carni_cerrada", carnivora("feliz", 0, 0))
-    for estado, nombre in (("riesgo", "riesgo"), ("critico", "critico")):
-        for c in (0, 1):
-            guardar(f"carni_{nombre}_{c}", carnivora(estado, c))
-    for i in range(8):
+    guardar("carni_riesgo_0", carnivora("riesgo", 0))
+    guardar("carni_critico_0", carnivora("critico", 0))
+    for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))
 
 
