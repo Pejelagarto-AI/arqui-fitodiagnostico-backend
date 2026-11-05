@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.LecturaInvalidaException;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
@@ -12,6 +13,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.integration.mqtt.support.MqttHeaders;
@@ -62,14 +64,16 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
 
     private final JwtDecoder decodificador;
     private final RegistrarLecturaPort lecturas;
+    private final VerificarVinculoPort vinculo;
     private final ObjectMapper json;
     private final MessageHandler publicador;
 
     /** @param publicador salida hacia el broker: recibe un mensaje con el tópico en {@link MqttHeaders#TOPIC}. */
-    public SuscriptorDeLecturasMqtt(JwtDecoder decodificador, RegistrarLecturaPort lecturas, ObjectMapper json,
-                                    MessageHandler publicador) {
+    public SuscriptorDeLecturasMqtt(JwtDecoder decodificador, RegistrarLecturaPort lecturas, VerificarVinculoPort vinculo,
+                                    ObjectMapper json, MessageHandler publicador) {
         this.decodificador = decodificador;
         this.lecturas = lecturas;
+        this.vinculo = vinculo;
         this.json = json;
         this.publicador = publicador;
     }
@@ -128,6 +132,7 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
                 return rechazar("OPERACION_NO_PERMITIDA", "el token pertenece a otro dispositivo.", serial, Map.of());
             }
             UUID plantaId = UUID.fromString(jwt.getClaimAsString(CLAIM_PLANTA));
+            VerificarVinculoPort.VinculoVigente vigente = vinculo.exigirVinculo(serial, plantaId);   // D96: el token puede sobrevivir a la desvinculación
 
             LecturaMqtt lectura = json.treeToValue(raiz, LecturaMqtt.class);
             Optional<String> ausente = campoAusente(lectura);
@@ -143,7 +148,7 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
                     lectura.marcaDeTiempo());
             log.info("lectura MQTT de {} registrada: {}", serial, registro.diagnostico().estado());
             return RespuestaMqtt.exito(registro.id().toString(), registro.diagnostico().estado().name(),
-                    registro.registradoEn().toString());
+                    registro.registradoEn().toString(), vigente.apodo());
         } catch (JsonMappingException e) {
             String campo = e.getPath().isEmpty() ? null : e.getPath().get(0).getFieldName();
             return campo == null
@@ -153,6 +158,8 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
         } catch (LecturaInvalidaException e) {
             return rechazar("PARAMETRO_INVALIDO", e.getMessage(), serial,
                     Map.of("campo", e.getMagnitud().name().toLowerCase(Locale.ROOT)));
+        } catch (CredencialRechazadaException e) {
+            return rechazar("CREDENCIAL_RECHAZADA", "el dispositivo ya no está vinculado a esa planta; renueva la credencial.", serial, Map.of());
         } catch (PlantaNoEncontradaException e) {
             return rechazar("PLANTA_NO_ENCONTRADA", e.getMessage(), serial, Map.of("id", e.getId().toString()));
         } catch (IllegalArgumentException e) {

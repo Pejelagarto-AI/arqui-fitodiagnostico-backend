@@ -11,7 +11,9 @@ import com.vivero.fitodiagnostico.dominio.modelo.Reto;
 import com.vivero.fitodiagnostico.dominio.modelo.TokenDeDispositivo;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutenticarDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutorregistrarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.DescubrirDispositivosPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.ReclamarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarDispositivoDeFabricaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.AutenticadorDeDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorTokenDispositivoPort;
@@ -19,13 +21,16 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.GeneradorDeTokens;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
+import com.vivero.fitodiagnostico.dominio.servicio.MismaRed;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,7 +51,7 @@ import java.util.UUID;
  */
 @Service
 public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, ReclamarDispositivoPort,
-        AutenticarDispositivoPort, AutorregistrarDispositivoPort {
+        AutenticarDispositivoPort, AutorregistrarDispositivoPort, DescubrirDispositivosPort, VerificarVinculoPort {
 
     /** Lo que ve el usuario si escanea el sticker antes de que la matera haya prendido por primera vez. */
     static final String MENSAJE_RECLAMO_SIN_REGISTRO = "no existe o la matera no ha encendido todavía";
@@ -58,6 +63,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
     private static final int LARGO_DEL_SERIAL = 6;
 
     private final AutorizadorDePlantas autorizador;
+    private final RepositorioPlantas plantas;
     private final RepositorioDispositivos dispositivos;
     private final EmisorTokenDispositivoPort emisor;
     private final AutenticadorDeDispositivos autenticador;
@@ -68,6 +74,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
                                 RepositorioDispositivos dispositivos, EmisorTokenDispositivoPort emisor,
                                 AutenticadorDeDispositivos autenticador, GeneradorDeTokens generador, Clock reloj) {
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
+        this.plantas = plantas;
         this.dispositivos = dispositivos;
         this.emisor = emisor;
         this.autenticador = autenticador;
@@ -105,7 +112,7 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
      */
     @Override
     @Transactional
-    public Resultado registrar(String serial, String secreto, String firma) {
+    public Resultado registrar(String serial, String secreto, String firma, String ip) {
         if (!autenticador.firmaDeFlotaValida(serial, secreto, firma)) {
             throw new FirmaDeFlotaInvalidaException();
         }
@@ -114,9 +121,12 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
             if (!existente.get().tieneElSecreto(secreto)) {
                 throw new DispositivoYaExisteException(serial);
             }
+            existente.get().registrarContacto(ahora(), ip);
+            dispositivos.guardar(existente.get());
             return new Resultado(existente.get(), false);
         }
         Dispositivo nuevo = Dispositivo.autorregistrado(serial, secreto, ahora());
+        nuevo.registrarContacto(nuevo.creadoEn(), ip);
         dispositivos.guardar(nuevo);
         return new Resultado(nuevo, true);
     }
@@ -152,14 +162,51 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
         dispositivos.guardar(dispositivo);
     }
 
+    // ---- vínculo vigente (cada lectura) ----
+
+    @Override
+    @Transactional(readOnly = true)
+    public VinculoVigente exigirVinculo(String serial, UUID plantaId) {
+        boolean vinculado = dispositivos.porSerial(serial)
+                .flatMap(Dispositivo::plantaId)
+                .filter(plantaId::equals)
+                .isPresent();
+        if (!vinculado) {
+            throw new CredencialRechazadaException(serial);
+        }
+        // Una planta eliminada ya desvinculó sus dispositivos; si aun así no está, el vínculo no es vigente.
+        Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new CredencialRechazadaException(serial));
+        return new VinculoVigente(plantaId, planta.apodo());
+    }
+
+    // ---- descubrimiento ----
+
+    /**
+     * Las materas sin dueño que acaban de hablar con el servidor desde la misma red que quien pregunta. El
+     * {@code usuario} solo identifica que hay sesión de persona (la ruta ya lo exige); no filtra nada: una matera
+     * sin dueño no es de nadie.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<Cercano> cercanos(UUID usuario, String ipDelSolicitante) {
+        Instant ahora = ahora();
+        return dispositivos.todos().stream()
+                .filter(d -> d.estaCercaSinReclamar(ahora, VENTANA_DE_CERCANIA))
+                .filter(d -> MismaRed.entre(ipDelSolicitante, d.ultimaIp().orElse(null)))
+                .map(d -> new Cercano(d, Math.max(0, Duration.between(d.ultimoContactoEn().orElseThrow(), ahora).toSeconds())))
+                .sorted(Comparator.comparingLong(Cercano::vistoHaceSegundos))
+                .toList();
+    }
+
     // ---- dispositivo ----
 
     @Override
     @Transactional
-    public Reto reto(String serial) {
+    public Reto reto(String serial, String ip) {
         Dispositivo dispositivo = dispositivos.porSerial(serial)
                 .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
         Instant ahora = ahora();
+        dispositivo.registrarContacto(ahora, ip);
         Reto reto = dispositivo.asignarReto(retoNuevo(), ahora.plus(Dispositivo.VIGENCIA_DEL_RETO));
         dispositivos.guardar(dispositivo);
         return reto;
@@ -172,10 +219,11 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
      */
     @Override
     @Transactional(noRollbackFor = {DispositivoSinReclamarException.class, CredencialRechazadaException.class})
-    public TokenDeDispositivo credencial(String serial, String respuesta) {
+    public CredencialEmitida credencial(String serial, String respuesta, String ip) {
         Dispositivo dispositivo = dispositivos.porSerial(serial)
                 .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
         Instant ahora = ahora();
+        dispositivo.registrarContacto(ahora, ip);
         Optional<String> reto = dispositivo.consumirReto(ahora);
         dispositivos.guardar(dispositivo);
 
@@ -187,7 +235,8 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
 
         dispositivo.registrarCredencial(ahora);
         dispositivos.guardar(dispositivo);
-        return emisor.emitir(dispositivo.serial(), plantaId);
+        String apodo = plantas.buscar(plantaId).map(Planta::apodo).orElseThrow(() -> new CredencialRechazadaException(serial));
+        return new CredencialEmitida(emisor.emitir(dispositivo.serial(), plantaId), apodo);
     }
 
     /**

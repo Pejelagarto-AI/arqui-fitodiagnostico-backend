@@ -14,7 +14,12 @@ public interface AutenticarDispositivoPort {
      *
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.DispositivoNoEncontradoException si el serial no existe
      */
-    Reto reto(String serial);
+    default Reto reto(String serial) {
+        return reto(serial, null);
+    }
+
+    /** Igual, anotando el contacto y la dirección desde la que habló el dispositivo (null si no se conoce). */
+    Reto reto(String serial, String ip);
 
     /**
      * Gasta el reto vigente: lo consume aunque falle.
@@ -24,5 +29,13 @@ public interface AutenticarDispositivoPort {
      * @throws com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException si no hay reto vigente
      *         o la respuesta no corresponde
      */
-    TokenDeDispositivo credencial(String serial, String respuesta);
+    default TokenDeDispositivo credencial(String serial, String respuesta) {
+        return credencial(serial, respuesta, null).token();
+    }
+
+    /** La credencial y el apodo de la planta a la que sirve (la pantalla de la matera muestra el nombre, no el código). */
+    record CredencialEmitida(TokenDeDispositivo token, String apodo) { }
+
+    /** Igual, anotando el contacto y la dirección desde la que habló el dispositivo (null si no se conoce). */
+    CredencialEmitida credencial(String serial, String respuesta, String ip);
 }

@@ -115,6 +115,9 @@ class LecturasMqttIntegracionTest {
         String dueno = registrarEIniciarSesion();
         planta = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
                 "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+        // Desde la D96 una lectura exige que el dispositivo siga reclamado por la planta del token.
+        jdbc.update("insert into dispositivo (serial, secreto, planta_id, reclamado_en, creado_en, registrado_por) "
+                + "values (?, 's', ?, now(), now(), 'ADMIN')", SERIAL, UUID.fromString(planta));
         tokenValido = emisor.emitir(SERIAL, UUID.fromString(planta)).valor();
 
         chip = new MqttClient("tcp://127.0.0.1:" + puerto, "chip-" + UUID.randomUUID(), new MemoryPersistence());
@@ -130,6 +133,7 @@ class LecturasMqttIntegracionTest {
     void limpiar() throws Exception {
         if (chip != null && chip.isConnected()) chip.disconnect();
         if (chip != null) chip.close();
+        jdbc.update("delete from dispositivo where serial = ?", SERIAL);
         jdbc.update("delete from diagnostico_planta where planta_id in (select p.id from planta p "
                 + "join usuario u on u.id = p.dueno_id where u.correo like 'mqtt-%')");
         jdbc.update("delete from planta where dueno_id in (select id from usuario where correo like 'mqtt-%')");
@@ -148,6 +152,7 @@ class LecturasMqttIntegracionTest {
         assertThat(r.get("estado").asText()).isEqualTo("SALUDABLE");
         assertThat(r.get("id").asText()).isNotBlank();
         assertThat(r.get("registradaEn").asText()).isNotBlank();
+        assertThat(r.get("apodo").asText()).isEqualTo("Pepa");
 
         Map<String, Object> fila = jdbc.queryForMap(
                 "select origen, tomada_en from diagnostico_planta where planta_id = ?", UUID.fromString(planta));
@@ -172,6 +177,17 @@ class LecturasMqttIntegracionTest {
         publicar(SERIAL, lectura(ajeno, "55", "700", "22"));
 
         assertThat(respuestaDe(SERIAL).get("error").asText()).isEqualTo("OPERACION_NO_PERMITIDA");
+        assertThat(diagnosticos()).isZero();
+    }
+
+    @Test
+    void trasDesvincularLaMateraElTokenVigenteRecibeCredencialRechazada() throws Exception {
+        jdbc.update("update dispositivo set planta_id = null, reclamado_en = null where serial = ?", SERIAL);
+        publicar(SERIAL, lectura(tokenValido, "55", "700", "22"));
+
+        JsonNode r = respuestaDe(SERIAL);
+        assertThat(r.get("ok").asBoolean()).isFalse();
+        assertThat(r.get("error").asText()).isEqualTo("CREDENCIAL_RECHAZADA");
         assertThat(diagnosticos()).isZero();
     }
 

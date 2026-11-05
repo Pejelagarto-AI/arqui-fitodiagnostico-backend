@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.adaptador.entrada.dispositivo;
 
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutorregistrarDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutorregistrarDispositivoPort.Resultado;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.HttpStatus;
@@ -33,8 +34,10 @@ public class RegistroDeDispositivoController {
 
     /** 201 si el dispositivo es nuevo; 200 con el mismo cuerpo si ya existía con el mismo secreto (chip reiniciado). */
     @PostMapping
-    public ResponseEntity<RespuestaRegistro> registrar(@Valid @RequestBody SolicitudRegistro solicitud) {
-        Resultado r = registro.registrar(solicitud.serial(), solicitud.secreto(), solicitud.firma());
+    public ResponseEntity<RespuestaRegistro> registrar(@Valid @RequestBody SolicitudRegistro solicitud,
+                                                       HttpServletRequest peticion) {
+        Resultado r = registro.registrar(solicitud.serial(), solicitud.secreto(), solicitud.firma(),
+                peticion.getRemoteAddr());
         return ResponseEntity.status(r.creado() ? HttpStatus.CREATED : HttpStatus.OK)
                 .body(RespuestaRegistro.desde(r.dispositivo()));
     }

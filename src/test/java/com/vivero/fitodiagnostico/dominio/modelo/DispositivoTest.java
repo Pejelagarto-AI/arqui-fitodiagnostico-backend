@@ -210,4 +210,57 @@ class DispositivoTest {
         d.registrarCredencial(T0.plusSeconds(3600));
         assertThat(d.ultimaCredencialEn()).contains(T0.plusSeconds(3600));
     }
+
+    // ---- contacto (descubrimiento) ----
+
+    private static final java.time.Duration VENTANA = java.time.Duration.ofSeconds(30);
+
+    @Test
+    void nace_sin_contacto_ni_ip_y_no_esta_cerca() {
+        Dispositivo d = deFabrica();
+
+        assertThat(d.ultimoContactoEn()).isEmpty();
+        assertThat(d.ultimaIp()).isEmpty();
+        assertThat(d.estaCercaSinReclamar(T0, VENTANA)).isFalse();
+    }
+
+    @Test
+    void registrar_contacto_anota_hora_e_ip_y_lo_deja_cerca_hasta_los_30_segundos() {
+        Dispositivo d = deFabrica();
+
+        d.registrarContacto(T0, "172.20.10.2");
+
+        assertThat(d.ultimoContactoEn()).contains(T0);
+        assertThat(d.ultimaIp()).contains("172.20.10.2");
+        assertThat(d.estaCercaSinReclamar(T0.plusSeconds(30), VENTANA)).isTrue();
+        assertThat(d.estaCercaSinReclamar(T0.plusSeconds(31), VENTANA)).isFalse();
+    }
+
+    @Test
+    void una_ip_desconocida_no_borra_la_anterior_pero_si_renueva_la_hora() {
+        Dispositivo d = deFabrica();
+        d.registrarContacto(T0, "172.20.10.2");
+
+        d.registrarContacto(T0.plusSeconds(5), null);
+
+        assertThat(d.ultimaIp()).contains("172.20.10.2");
+        assertThat(d.ultimoContactoEn()).contains(T0.plusSeconds(5));
+    }
+
+    @Test
+    void reclamado_no_esta_cerca_aunque_acabe_de_hablar() {
+        Dispositivo d = deFabrica();
+        d.registrarContacto(T0, "172.20.10.2");
+        d.reclamar(planta, T0);
+
+        assertThat(d.estaCercaSinReclamar(T0, VENTANA)).isFalse();
+    }
+
+    @Test
+    void sin_ip_no_esta_cerca_y_registrar_contacto_exige_la_hora() {
+        Dispositivo d = new Dispositivo("fito-1", "s", null, null, null, null, T0, OrigenDeRegistro.FLOTA, T0, null);
+
+        assertThat(d.estaCercaSinReclamar(T0, VENTANA)).isFalse();
+        assertThatThrownBy(() -> d.registrarContacto(null, "10.0.0.1")).isInstanceOf(IllegalArgumentException.class);
+    }
 }

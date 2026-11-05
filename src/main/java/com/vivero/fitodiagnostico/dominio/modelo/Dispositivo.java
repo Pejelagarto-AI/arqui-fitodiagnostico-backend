@@ -35,6 +35,8 @@ public class Dispositivo {
     private Instant reclamadoEn;
     private Instant ultimaCredencialEn;
     private Reto reto;
+    private Instant ultimoContactoEn;
+    private String ultimaIp;
 
     /** Mínimo de caracteres del secreto de un dispositivo que se autorregistra. */
     public static final int LARGO_MINIMO_DEL_SECRETO_AUTORREGISTRADO = 32;
@@ -45,9 +47,16 @@ public class Dispositivo {
         this(serial, secreto, plantaId, reclamadoEn, ultimaCredencialEn, reto, creadoEn, OrigenDeRegistro.ADMIN);
     }
 
-    /** Reconstruye un dispositivo ya guardado (lo usa el adaptador de persistencia). */
+    /** Reconstruye un dispositivo ya guardado sin datos de contacto (nunca habló con el servidor). */
     public Dispositivo(String serial, String secreto, UUID plantaId, Instant reclamadoEn,
                        Instant ultimaCredencialEn, Reto reto, Instant creadoEn, OrigenDeRegistro registradoPor) {
+        this(serial, secreto, plantaId, reclamadoEn, ultimaCredencialEn, reto, creadoEn, registradoPor, null, null);
+    }
+
+    /** Reconstruye un dispositivo ya guardado (lo usa el adaptador de persistencia). */
+    public Dispositivo(String serial, String secreto, UUID plantaId, Instant reclamadoEn,
+                       Instant ultimaCredencialEn, Reto reto, Instant creadoEn, OrigenDeRegistro registradoPor,
+                       Instant ultimoContactoEn, String ultimaIp) {
         if (serial == null || !TokenDeDispositivo.FORMATO_DEL_ID.matcher(serial).matches()) {
             throw new IllegalArgumentException(
                     "el serial debe tener de 1 a 64 letras, números, punto, guion o guion bajo");
@@ -72,6 +81,8 @@ public class Dispositivo {
         this.reto = reto;
         this.creadoEn = creadoEn;
         this.registradoPor = registradoPor;
+        this.ultimoContactoEn = ultimoContactoEn;
+        this.ultimaIp = ultimaIp;
     }
 
     /** Un dispositivo recién salido de fábrica: sin planta, sin reto, sin credencial. */
@@ -160,6 +171,25 @@ public class Dispositivo {
         this.ultimaCredencialEn = ahora;
     }
 
+    // ---- contacto ----
+
+    /** Cuándo vino a hablar con el servidor y desde qué dirección. Una IP desconocida (null) no borra la anterior. */
+    public void registrarContacto(Instant ahora, String ip) {
+        if (ahora == null) {
+            throw new IllegalArgumentException("registrar contacto requiere la hora");
+        }
+        this.ultimoContactoEn = ahora;
+        if (ip != null && !ip.isBlank()) {
+            this.ultimaIp = ip;
+        }
+    }
+
+    /** ¿Nadie lo ha reclamado y habló con el servidor en los últimos {@code ventana}? */
+    public boolean estaCercaSinReclamar(Instant ahora, Duration ventana) {
+        return plantaId == null && ultimoContactoEn != null && ultimaIp != null
+                && !ultimoContactoEn.plus(ventana).isBefore(ahora);
+    }
+
     // ---- lectura ----
 
     public String serial() { return serial; }
@@ -174,6 +204,10 @@ public class Dispositivo {
     public Optional<Instant> ultimaCredencialEn() { return Optional.ofNullable(ultimaCredencialEn); }
 
     public Optional<Reto> reto() { return Optional.ofNullable(reto); }
+
+    public Optional<Instant> ultimoContactoEn() { return Optional.ofNullable(ultimoContactoEn); }
+
+    public Optional<String> ultimaIp() { return Optional.ofNullable(ultimaIp); }
 
     public Instant creadoEn() { return creadoEn; }
 

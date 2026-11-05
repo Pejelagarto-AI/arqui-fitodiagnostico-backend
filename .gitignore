@@ -3,3 +3,5 @@ target/
 # Memoria no volatil simulada del simulador (token del dispositivo): no se versiona
 simulador/.nvs-*.json
 .nvs-*.json
+simulador/__pycache__/
+.env.demo

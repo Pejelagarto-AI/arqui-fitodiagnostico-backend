@@ -65,7 +65,7 @@ Sin servidor SMTP la aplicación arranca y funciona; cada correo falla con un `W
 
 ### Vinculación de dispositivos "a modo Chromecast" (fase 3)
 
-El humano nunca toca una credencial. Cada dispositivo sale de **fábrica** con un **serial** (impreso, por ejemplo `fito-7K2M9Q`) y un **secreto** (grabado en el chip). El dueño **reclama** el serial desde su planta; el dispositivo demuestra por su cuenta que conoce el secreto (**reto HMAC**) y recibe un token de **alcance limitado**: sirve únicamente para reportar lecturas de esa planta, caduca en una hora (`FITO_JWT_DISPOSITIVO_EXPIRACION`, ISO-8601, por defecto `PT1H`) y el chip lo renueva solo. Desvincular impide renovar: el token vivo muere en como máximo una hora. Un token de dispositivo se rechaza (403) en cualquier otro endpoint; un token de persona no abre el endpoint de lecturas.
+El humano nunca toca una credencial. Cada dispositivo sale de **fábrica** con un **serial** (impreso, por ejemplo `fito-7K2M9Q`) y un **secreto** (grabado en el chip). El dueño **reclama** el serial desde su planta; el dispositivo demuestra por su cuenta que conoce el secreto (**reto HMAC**) y recibe un token de **alcance limitado**: sirve únicamente para reportar lecturas de esa planta, caduca en una hora (`FITO_JWT_DISPOSITIVO_EXPIRACION`, ISO-8601, por defecto `PT1H`) y el chip lo renueva solo. Desvincular corta el reporte al instante: cada lectura comprueba que el dispositivo siga vinculado a la planta de su token (D96), así que el siguiente envío da 401 y el chip renueva (409 si quedó sin dueño, o un token de la planta nueva). Las respuestas de credencial y de lecturas traen el `apodo` de la planta (D97). Un token de dispositivo se rechaza (403) en cualquier otro endpoint; un token de persona no abre el endpoint de lecturas.
 
 **Fábrica automática (fase 3b, opcional).** Si el back arranca con `FITO_CLAVE_FLOTA` (mínimo 32 caracteres, `openssl rand -base64 48`), la matera ya no necesita que nadie la dé de alta: la primera vez que prende deriva su serial de la MAC, genera su secreto y se registra sola con `POST /api/v1/dispositivos/registro {serial, secreto, firma}`, donde `firma = base64(HMAC-SHA256(clave de flota, serial + "\n" + secreto))` (público; 201 si es nueva, 200 si ya existía con ese secreto, 401 `FIRMA_DE_FLOTA_INVALIDA`, 409 `DISPOSITIVO_YA_EXISTE` si otro secreto, 400 por formato). Sin `FITO_CLAVE_FLOTA` la ruta no existe (404). Después todo sigue igual: el dueño reclama el serial del sticker y el chip pide su credencial (409 mientras espera). Si el dueño escanea antes de que la matera prenda, el reclamo da 404 "no existe o la matera no ha encendido todavía". `GET /api/v1/admin/dispositivos` muestra `registradoPor` (`ADMIN` o `FLOTA`). Detalle y límites en `docs/fase3/IMPLEMENTACION.md` (D86 a D88). El flujo manual de abajo sigue vigente para la demo y para registrar a mano.
 
@@ -99,6 +99,10 @@ curl -X DELETE $B/plantas/$PLANTA_ID/dispositivos/fito-7K2M9Q -H "Authorization:
 ```
 
 La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del secreto, mensaje = el string del reto ) )`, sin decodificar nada. Errores del dispositivo en lecturas: `400 PARAMETRO_INVALIDO` (campo ausente, valor no numérico, fuera del rango físico del sensor, fecha mal formada), `401` sin token, `403` con un token de persona o de otro dispositivo. Detalle del flujo, el contrato y las decisiones (D74 a D81) en [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md).
+
+### Firmware de la matera (fase 5)
+
+`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba; las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md).
 
 ### Broker MQTT para desarrollo (fase 4)
 
@@ -267,6 +271,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 - [`docs/corte2/IMPLEMENTACION.md`](docs/corte2/IMPLEMENTACION.md) — corte 2, bloques 1 (cuentas, administración, catálogo), 3 (plantas, mediciones, cambio de estado, cascadas) y 4 (compartir plantas, recuperación de contraseña, correo, vista en vivo por WebSocket, solicitudes de especie): mapa de archivos, decisiones D20+, límites conocidos y preguntas de mutación.
 - [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
 - [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
+- [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

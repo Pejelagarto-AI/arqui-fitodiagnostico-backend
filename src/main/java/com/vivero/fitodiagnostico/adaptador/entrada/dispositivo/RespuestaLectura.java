@@ -15,20 +15,20 @@ import java.util.UUID;
  * no se reutiliza porque un adaptador de entrada no depende de otro.
  */
 public record RespuestaLectura(UUID id, UUID plantaId, String origen, Instant tomadaEn, Instant registradoEn,
-                               Diagnostico diagnostico) {
+                               Diagnostico diagnostico, String apodo) {
 
     public record Diagnostico(String especie, String estado, List<Parametro> parametros,
                               List<String> recomendaciones) { }
 
     public record Parametro(String nombre, double valor, String unidad, double[] rangoOptimo, String estado) { }
 
-    public static RespuestaLectura desde(DiagnosticoDePlanta registro) {
+    public static RespuestaLectura desde(DiagnosticoDePlanta registro, String apodo) {
         var diagnostico = registro.diagnostico();
         return new RespuestaLectura(registro.id(), registro.plantaId(), registro.origen().name(),
                 registro.tomadaEn(), registro.registradoEn(),
                 new Diagnostico(diagnostico.especie().nombre(), diagnostico.estado().name(),
                         diagnostico.parametros().stream().map(RespuestaLectura::parametroDesde).toList(),
-                        diagnostico.recomendaciones()));
+                        diagnostico.recomendaciones()), apodo);
     }
 
     private static Parametro parametroDesde(ResultadoParametro resultado) {

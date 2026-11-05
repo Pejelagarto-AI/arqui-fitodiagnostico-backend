@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.adaptador.entrada.dispositivo;
 
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutenticarDispositivoPort;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,13 +29,14 @@ public class AutenticacionDeDispositivoController {
 
     /** 200 con un reto nuevo (reemplaza al anterior). Sin cuerpo. */
     @PostMapping("/reto")
-    public RespuestaReto reto(@PathVariable String serial) {
-        return RespuestaReto.desde(autenticacion.reto(serial));
+    public RespuestaReto reto(@PathVariable String serial, HttpServletRequest peticion) {
+        return RespuestaReto.desde(autenticacion.reto(serial, peticion.getRemoteAddr()));
     }
 
     /** 200 con la credencial. El reto se consume aunque falle. */
     @PostMapping("/credencial")
-    public RespuestaCredencial credencial(@PathVariable String serial, @Valid @RequestBody SolicitudCredencial solicitud) {
-        return RespuestaCredencial.desde(autenticacion.credencial(serial, solicitud.respuesta()));
+    public RespuestaCredencial credencial(@PathVariable String serial, @Valid @RequestBody SolicitudCredencial solicitud,
+                                          HttpServletRequest peticion) {
+        return RespuestaCredencial.desde(autenticacion.credencial(serial, solicitud.respuesta(), peticion.getRemoteAddr()));
     }
 }

@@ -45,10 +45,17 @@ public class DispositivoEntity {
     @Column(name = "registrado_por", nullable = false)
     private OrigenDeRegistro registradoPor;
 
+    @Column(name = "ultimo_contacto_en")
+    private Instant ultimoContactoEn;
+
+    @Column(name = "ultima_ip", length = 64)
+    private String ultimaIp;
+
     protected DispositivoEntity() { }   // requerido por JPA
 
     DispositivoEntity(String serial, String secreto, UUID plantaId, Instant reclamadoEn, Instant ultimaCredencialEn,
-                      String reto, Instant retoExpira, Instant creadoEn, OrigenDeRegistro registradoPor) {
+                      String reto, Instant retoExpira, Instant creadoEn, OrigenDeRegistro registradoPor,
+                      Instant ultimoContactoEn, String ultimaIp) {
         this.serial = serial;
         this.secreto = secreto;
         this.plantaId = plantaId;
@@ -58,6 +65,8 @@ public class DispositivoEntity {
         this.retoExpira = retoExpira;
         this.creadoEn = creadoEn;
         this.registradoPor = registradoPor;
+        this.ultimoContactoEn = ultimoContactoEn;
+        this.ultimaIp = ultimaIp;
     }
 
     String getSerial() { return serial; }
@@ -77,4 +86,8 @@ public class DispositivoEntity {
     Instant getCreadoEn() { return creadoEn; }
 
     OrigenDeRegistro getRegistradoPor() { return registradoPor; }
+
+    Instant getUltimoContactoEn() { return ultimoContactoEn; }
+
+    String getUltimaIp() { return ultimaIp; }
 }

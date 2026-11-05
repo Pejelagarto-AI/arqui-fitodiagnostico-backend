@@ -1,0 +1,12 @@
+; Copie este archivo a local.ini (cp local.ini.ejemplo local.ini) y llenelo. local.ini NO se versiona.
+; scripts/demo-lan.sh imprime este bloque ya listo para pegar.
+[fito]
+; La misma FITO_CLAVE_FLOTA con que arranca el backend (minimo 32 caracteres).
+clave_flota = CAMBIAME-por-la-clave-de-flota-del-servidor
+; Wi-Fi de la prueba (hotspot del celular en 2.4 GHz). Si los deja vacios, la matera abre el portal cautivo.
+wifi_ssid = MiHotspot
+wifi_clave = laclavedelhotspot
+; IP del portatil en esa red (la imprime demo-lan.sh).
+servidor = 192.168.43.105
+puerto_api = 8080
+puerto_front = 5500
