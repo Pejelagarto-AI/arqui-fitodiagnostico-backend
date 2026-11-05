@@ -3,6 +3,7 @@ package com.vivero.fitodiagnostico.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vivero.fitodiagnostico.adaptador.entrada.mqtt.SuscriptorDeLecturasMqtt;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -67,9 +68,9 @@ public class ConfiguracionMqtt {
 
     @Bean
     public SuscriptorDeLecturasMqtt suscriptorDeLecturasMqtt(JwtDecoder decodificador, RegistrarLecturaPort lecturas,
-                                                             ObjectMapper json,
+                                                             VerificarVinculoPort vinculo, ObjectMapper json,
                                                              MqttPahoMessageHandler publicadorDeRespuestasMqtt) {
-        return new SuscriptorDeLecturasMqtt(decodificador, lecturas, json, publicadorDeRespuestasMqtt);
+        return new SuscriptorDeLecturasMqtt(decodificador, lecturas, vinculo, json, publicadorDeRespuestasMqtt);
     }
 
     @Bean

@@ -3,6 +3,7 @@ package com.vivero.fitodiagnostico.adaptador.entrada.dispositivo;
 import com.vivero.fitodiagnostico.dominio.excepcion.OperacionNoPermitidaException;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,9 +44,11 @@ public class LecturasDeDispositivoController {
     private static final String ALCANCE_REPORTAR_LECTURAS = "lecturas:reportar";
 
     private final RegistrarLecturaPort lecturas;
+    private final VerificarVinculoPort vinculo;
 
-    public LecturasDeDispositivoController(RegistrarLecturaPort lecturas) {
+    public LecturasDeDispositivoController(RegistrarLecturaPort lecturas, VerificarVinculoPort vinculo) {
         this.lecturas = lecturas;
+        this.vinculo = vinculo;
     }
 
     /** 201 con el diagnóstico guardado. 400 si el cuerpo es inválido; 403 si el token no es de este dispositivo. */
@@ -60,6 +63,8 @@ public class LecturasDeDispositivoController {
             throw new OperacionNoPermitidaException("el token pertenece a otro dispositivo");
         }
         UUID plantaId = UUID.fromString(token.getClaimAsString(CLAIM_PLANTA));
+        // El token puede seguir vigente tras desvincular o traspasar la matera: se exige el vínculo actual (D96).
+        vinculo.exigirVinculo(dispositivoId, plantaId);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(RespuestaLectura.desde(
                 lecturas.registrar(plantaId, solicitud.aMedicion(), OrigenDeMedicion.DISPOSITIVO,

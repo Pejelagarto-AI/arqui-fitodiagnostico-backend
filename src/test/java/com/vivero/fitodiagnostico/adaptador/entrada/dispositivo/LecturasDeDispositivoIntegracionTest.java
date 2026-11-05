@@ -58,6 +58,7 @@ class LecturasDeDispositivoIntegracionTest {
 
     @AfterEach
     void limpiar() {
+        jdbc.update("delete from dispositivo where serial like 'esp32-%'");
         jdbc.update("delete from diagnostico_planta where planta_id in (select p.id from planta p "
                 + "join usuario u on u.id = p.dueno_id where u.correo like 'lect-%')");
         jdbc.update("delete from planta where dueno_id in (select id from usuario where correo like 'lect-%')");
@@ -95,6 +96,10 @@ class LecturasDeDispositivoIntegracionTest {
 
     /** El token se emite directo por el puerto: aqui se prueba el endpoint de lecturas, no la obtencion de la credencial. */
     private String emitirToken(String plantaId, String serial) {
+        // Desde la D96 una lectura exige que el dispositivo siga reclamado por la planta del token: se deja la fila.
+        jdbc.update("delete from dispositivo where serial = ?", serial);
+        jdbc.update("insert into dispositivo (serial, secreto, planta_id, reclamado_en, creado_en, registrado_por) "
+                + "values (?, 's', ?, now(), now(), 'ADMIN')", serial, UUID.fromString(plantaId));
         return emisor.emitir(serial, UUID.fromString(plantaId)).valor();
     }
 
@@ -229,6 +234,7 @@ class LecturasDeDispositivoIntegracionTest {
         mockMvc.perform(con(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .delete("/api/v1/plantas/" + planta), dueno)).andExpect(status().isNoContent());
 
-        reportar(tokenDelDispositivo, lectura("55", "700", "22")).andExpect(status().isNotFound());
+        // La cascada desvincula la matera al borrar la planta; con la D96 el token queda sin vínculo: 401 para que renueve.
+        reportar(tokenDelDispositivo, lectura("55", "700", "22")).andExpect(status().isUnauthorized());
     }
 }

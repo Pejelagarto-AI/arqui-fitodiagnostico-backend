@@ -408,4 +408,48 @@ class ServicioDispositivosTest {
                 .isInstanceOf(DispositivoNoEncontradoException.class)
                 .hasMessageContaining("la matera no ha encendido todavía");
     }
+
+    // ---- vínculo vigente en cada lectura (D96) ----
+
+    @Test
+    void exigirVinculoPasaSoloSiElDispositivoSigueReclamadoPorEsaPlanta() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        servicio.exigirVinculo("fito-AAAAAA", planta.id());   // no lanza
+    }
+
+    @Test
+    void exigirVinculoRechazaUnDispositivoQueNoExisteOSinReclamarOReclamadoPorOtraPlanta() {
+        assertThatThrownBy(() -> servicio.exigirVinculo("fito-NOEXIS", planta.id()))
+                .isInstanceOf(CredencialRechazadaException.class);
+
+        deFabrica();
+        assertThatThrownBy(() -> servicio.exigirVinculo("fito-AAAAAA", planta.id()))
+                .isInstanceOf(CredencialRechazadaException.class);
+
+        Planta otra = Planta.nueva(ajeno, "Otra", Muestras.especie("helecho"));
+        mundo.plantas.guardar(otra);
+        servicio.reclamar(ajeno, otra.id(), "fito-AAAAAA");
+        assertThatThrownBy(() -> servicio.exigirVinculo("fito-AAAAAA", planta.id()))
+                .isInstanceOf(CredencialRechazadaException.class);
+        servicio.exigirVinculo("fito-AAAAAA", otra.id());
+    }
+
+    @Test
+    void desvincularBorraLaUltimaCredencialYElRetoPendiente() {
+        DispositivoDeFabrica fabrica = deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        Reto reto = servicio.reto("fito-AAAAAA");
+        servicio.credencial("fito-AAAAAA", responder(fabrica, reto));
+        servicio.reto("fito-AAAAAA");
+
+        servicio.desvincular(dueno, planta.id(), "fito-AAAAAA");
+
+        Dispositivo d = mundo.dispositivos.porSerial("fito-AAAAAA").orElseThrow();
+        assertThat(d.ultimaCredencialEn()).isEmpty();
+        assertThat(d.reto()).isEmpty();
+        assertThatThrownBy(() -> servicio.exigirVinculo("fito-AAAAAA", planta.id()))
+                .isInstanceOf(CredencialRechazadaException.class);
+    }
 }

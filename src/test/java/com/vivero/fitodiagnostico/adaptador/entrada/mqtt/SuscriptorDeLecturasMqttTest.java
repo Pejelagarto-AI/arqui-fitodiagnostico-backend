@@ -11,6 +11,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.integration.mqtt.support.MqttHeaders;
@@ -44,6 +45,10 @@ class SuscriptorDeLecturasMqttTest {
     private final List<Llamada> llamadas = new ArrayList<>();
     private final List<Message<?>> publicados = new ArrayList<>();
     private RuntimeException falloDelPuerto;
+    private boolean vinculado = true;
+    private final VerificarVinculoPort vinculo = (serial, planta) -> {
+        if (!vinculado) throw new com.vivero.fitodiagnostico.dominio.excepcion.CredencialRechazadaException(serial);
+    };
     private SuscriptorDeLecturasMqtt suscriptor;
     private ObjectMapper json;
 
@@ -66,7 +71,7 @@ class SuscriptorDeLecturasMqttTest {
             case "sin-planta" -> jwt(Map.of("tipo", "dispositivo", "scope", "lecturas:reportar", "sub", SERIAL));
             default -> throw new BadJwtException("firma invalida");
         };
-        suscriptor = new SuscriptorDeLecturasMqtt(decodificador, puerto, json, publicados::add);
+        suscriptor = new SuscriptorDeLecturasMqtt(decodificador, puerto, vinculo, json, publicados::add);
     }
 
     private static Jwt jwt(Map<String, Object> claims) {
@@ -233,12 +238,23 @@ class SuscriptorDeLecturasMqttTest {
     }
 
     @Test
+    void unDispositivoYaNoVinculadoSeRechazaConCredencialRechazadaYNoLlegaAlPuerto() {
+        vinculado = false;
+
+        RespuestaMqtt r = suscriptor.procesar(SERIAL, lectura("bueno", "50", "600", "24").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(r.error()).isEqualTo("CREDENCIAL_RECHAZADA");
+        assertThat(llamadas).isEmpty();
+    }
+
+    @Test
     void siElPublicadorFallaElSuscriptorNoLanzaYSigueAtendiendo() {
         List<Message<?>> recibidos = new ArrayList<>();
         boolean[] primera = { true };
         SuscriptorDeLecturasMqtt fragil = new SuscriptorDeLecturasMqtt(
                 token -> jwt(Map.of("tipo", "dispositivo", "scope", "lecturas:reportar", "sub", SERIAL, "planta", PLANTA.toString())),
                 (p, m, o, t) -> DiagnosticoDePlanta.deUnaEvaluacion(p, o, t, Muestras.diagnosticoCon(EstadoGlobal.SALUDABLE)),
+                (s, p) -> { },
                 json, m -> {
                     if (primera[0]) { primera[0] = false; throw new IllegalStateException("broker caido"); }
                     recibidos.add(m);

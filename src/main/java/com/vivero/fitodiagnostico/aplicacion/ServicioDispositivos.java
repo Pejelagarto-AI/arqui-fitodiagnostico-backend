@@ -13,6 +13,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutenticarDispositivoPo
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AutorregistrarDispositivoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.DescubrirDispositivosPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.ReclamarDispositivoPort;
+import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarDispositivoDeFabricaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.AutenticadorDeDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.EmisorTokenDispositivoPort;
@@ -50,7 +51,7 @@ import java.util.UUID;
  */
 @Service
 public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, ReclamarDispositivoPort,
-        AutenticarDispositivoPort, AutorregistrarDispositivoPort, DescubrirDispositivosPort {
+        AutenticarDispositivoPort, AutorregistrarDispositivoPort, DescubrirDispositivosPort, VerificarVinculoPort {
 
     /** Lo que ve el usuario si escanea el sticker antes de que la matera haya prendido por primera vez. */
     static final String MENSAJE_RECLAMO_SIN_REGISTRO = "no existe o la matera no ha encendido todavía";
@@ -157,6 +158,20 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
                 .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
         dispositivo.desvincular();
         dispositivos.guardar(dispositivo);
+    }
+
+    // ---- vínculo vigente (cada lectura) ----
+
+    @Override
+    @Transactional(readOnly = true)
+    public void exigirVinculo(String serial, UUID plantaId) {
+        boolean vinculado = dispositivos.porSerial(serial)
+                .flatMap(Dispositivo::plantaId)
+                .filter(plantaId::equals)
+                .isPresent();
+        if (!vinculado) {
+            throw new CredencialRechazadaException(serial);
+        }
     }
 
     // ---- descubrimiento ----
