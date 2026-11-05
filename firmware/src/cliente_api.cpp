@@ -10,6 +10,8 @@
 
 namespace {
 String base;
+String especieActual;
+api::Rangos rangosActuales = {};
 
 // POST con cuerpo ya serializado. Si aun no hay hora, toma la de la cabecera Date de la respuesta (D91).
 int post(const String &ruta, const String &cuerpo, const char *token, String &respuesta) {
@@ -45,6 +47,9 @@ String mensajeDeError(const String &cuerpo, String *codigoError = nullptr) {
 }
 
 namespace api {
+const String &especie() { return especieActual; }
+const Rangos &rangos() { return rangosActuales; }
+
 void iniciar(const String &servidor) {
     base = "http://" + servidor + ":" + String(FITO_PUERTO_API) + "/api/v1";
     registrar("API en %s", base.c_str());
@@ -116,7 +121,23 @@ int enviarLectura(const String &token, const Lectura &l, String &estado) {
     estado = "";
     if (codigo == 201) {
         JsonDocument r;
-        if (!deserializeJson(r, resp)) estado = (const char *)(r["diagnostico"]["estado"] | "");
+        if (!deserializeJson(r, resp)) {
+            estado = (const char *)(r["diagnostico"]["estado"] | "");
+            const char *esp = r["diagnostico"]["especie"] | "";
+            if (esp[0] && especieActual != esp) { especieActual = esp; registrar("especie de la planta: %s", esp); }
+            Rangos nuevos = {};
+            int cuantos = 0;
+            for (JsonObject p : r["diagnostico"]["parametros"].as<JsonArray>()) {
+                const char *nombre = p["nombre"] | "";
+                int i = !strcmp(nombre, "humedad") ? 0 : !strcmp(nombre, "luz") ? 1 : !strcmp(nombre, "temperatura") ? 2 : -1;
+                JsonArray rango = p["rangoOptimo"].as<JsonArray>();
+                if (i < 0 || rango.size() != 2) continue;
+                nuevos.minimo[i] = rango[0].as<float>();
+                nuevos.maximo[i] = rango[1].as<float>();
+                cuantos++;
+            }
+            if (cuantos == 3) { nuevos.hay = true; rangosActuales = nuevos; }
+        }
     } else if (codigo != SIN_RED) {
         registrar("lectura HTTP %d %s", codigo, mensajeDeError(resp).c_str());
     }
