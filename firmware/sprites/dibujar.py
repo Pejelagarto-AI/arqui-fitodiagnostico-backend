@@ -235,6 +235,39 @@ def girasol(estado, cuadro=0):
     return im
 
 
+def cactus(estado):
+    """Cactus de columna con dos brazos; el cuerpo queda liso arriba para la cara y la flor la pinta pantalla.cpp."""
+    im, d = lienzo(48, 64)
+    if estado == "saludable":
+        top = 9
+        brazos = [((5, 16, 11, 34), (6, 28, 18, 34)), ((37, 11, 43, 30), (30, 24, 42, 30))]
+    elif estado == "riesgo":
+        top = 10
+        brazos = [((4, 30, 10, 42), (5, 30, 18, 36)), ((38, 27, 44, 39), (30, 27, 43, 33))]
+    else:
+        top = 17
+        brazos = [((3, 36, 8, 45), (4, 34, 18, 39)), ((40, 33, 45, 42), (30, 31, 44, 36))]
+    for vertical, horizontal in brazos:
+        d.rounded_rectangle(vertical, radius=3, fill=1)
+        d.rounded_rectangle(horizontal, radius=3, fill=1)
+        x = (vertical[0] + vertical[2]) // 2
+        d.line((x, vertical[1] + 3, x, vertical[3] - 4), fill=0)      # costilla del brazo
+    d.rounded_rectangle((15, top, 33, 47), radius=9, fill=1)
+    for x in (19, 24, 29):                                          # costillas del cuerpo, debajo de la cara
+        d.line((x, 37 if estado != "critico" else 41, x, 45), fill=0)
+    # espinas: pelitos de 1 px hacia afuera de la silueta
+    for y in range(top + 6, 46, 5):
+        d.point((14, y), fill=1); d.point((34, y + 2), fill=1)
+    for vertical, _ in brazos:
+        x0, y0, x1, y1 = vertical
+        for y in range(y0 + 3, y1 - 2, 5):
+            d.point((x0 - 1, y), fill=1); d.point((x1 + 1, y + 2), fill=1)
+    if estado == "critico":
+        d.line((40, 61, 43, 58), fill=1)                            # una espina caida
+    matera(d, None, deco="zigzag")
+    return im
+
+
 # ---------------------------------------------------------------- animacion de exito (64x64)
 
 def matera_exito(d):
@@ -328,7 +361,7 @@ def exito(i):
 def main():
     os.makedirs(ARTE, exist_ok=True)
     for viejo in os.listdir(ARTE):
-        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_")):
+        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_")):
             os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"planta_{estado}_0", planta(estado, 0))
@@ -339,6 +372,7 @@ def main():
     guardar("carni_critico_0", carnivora("critico", 0))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"girasol_{estado}_0", girasol(estado, 0))
+        guardar(f"cactus_{estado}", cactus(estado))
     guardar("girasol_saludable_1", girasol("saludable", 1))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))

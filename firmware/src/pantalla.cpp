@@ -106,6 +106,7 @@ const uint8_t *const CARNI_BOCA[3] = {sprites::carni_abierta_0, sprites::carni_m
 const int CARNI_G[3] = {14, 7, 0};                           // abertura de la boca de cada cuadro (la cara se ancla a ella)
 // Mascotas por especie (fase 7). Cada familia tiene su cuerpo por estado y, si lo necesita, un cuadro de idle.
 const uint8_t *const GIRASOL[3] = {sprites::girasol_saludable_0, sprites::girasol_riesgo_0, sprites::girasol_critico_0};
+const uint8_t *const CACTUS[3] = {sprites::cactus_saludable, sprites::cactus_riesgo, sprites::cactus_critico};
 const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
                                  sprites::exito_3, sprites::exito_4, sprites::exito_5};
 
@@ -253,14 +254,14 @@ uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cact
 uint32_t lUltimoDibujo = 0;
 
 // ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
-enum class Familia : uint8_t { Comun, Carnivora, Girasol };
+enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus };
 struct Clave { const char *texto; Familia familia; };
 // Se busca cada texto dentro del nombre, sin mayusculas. La primera que coincide gana; sin coincidencia, la comun.
 const Clave CLAVES[] = {{"atrapamoscas", Familia::Carnivora}, {"carniv", Familia::Carnivora},
-                        {"girasol", Familia::Girasol}};
+                        {"girasol", Familia::Girasol}, {"cactus", Familia::Cactus}, {"cacto", Familia::Cactus}};
 Familia lFamilia = Familia::Comun;
 // Cuanto se balancea cada familia respecto a la comun (el girasol mas, el cactus casi nada). Indice: Familia.
-const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f};
+const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f};
 bool mordiendo = false;
 uint32_t mordiscoDesde = 0;
 uint32_t proximoMordisco = 0;
@@ -285,6 +286,10 @@ Familia familiaDe(const char *especie) {
 // Centro de la cara de cada familia por nivel (saludable, en riesgo, critico): sigue a la cabeza del sprite.
 struct Punto { int8_t x, y; };
 const Punto CARA_GIRASOL[3] = {{24, 17}, {28, 22}, {31, 29}};
+const Punto CARA_CACTUS[3] = {{24, 22}, {24, 23}, {24, 29}};
+constexpr int CACTUS_Y_FLOR = 4;                 // centro de la flor: 5 px sobre la punta del cuerpo (fila 9)
+constexpr uint32_t CACTUS_ESPERA_FLOR_MS = 600;  // tras volver a saludable, un respiro y la flor empieza a crecer
+constexpr uint32_t CACTUS_CRECE_FLOR_MS = 1500;
 
 // Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
 // En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
@@ -301,6 +306,29 @@ void pintarGirasol(const Cara &c, float parpadeo, uint32_t ahora, float seno, fl
     caraGrande(c, parpadeo, ahora, p.x + mira + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
 }
 
+// Flor del cactus: de boton a cinco petalos segun `k` (0..1), con el centro apagado para que se lea como flor.
+void florCactus(int x, int y, float k) {
+    if (k <= 0) return;
+    if (k < 0.3f) { oled.fillRect(x - 1, y + 1, 3, 2, SSD1306_WHITE); return; }        // boton
+    const int d = 1 + (int)lroundf(2 * k), r = 1;
+    oled.fillCircle(x, y - d, r, SSD1306_WHITE);
+    oled.fillCircle(x - d, y - 1, r, SSD1306_WHITE); oled.fillCircle(x + d, y - 1, r, SSD1306_WHITE);
+    oled.fillCircle(x - d + 1, y + d - 1, r, SSD1306_WHITE); oled.fillCircle(x + d - 1, y + d - 1, r, SSD1306_WHITE);
+    oled.drawPixel(x, y, SSD1306_BLACK);
+}
+
+// Cactus: casi no se balancea; parpadea como todos y, saludable, le crece una flor en la punta.
+// En riesgo baja los brazos y la flor se va; critico se encoge y bota una espina.
+void pintarCactus(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const Punto p = CARA_CACTUS[lNivel];
+    cuerpo(CACTUS[lNivel], seno, amp, 0);
+    caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y, GEO_CACTUS, true);
+    if (lNivel == 0 && ahora - lNivelDesde > CACTUS_ESPERA_FLOR_MS) {
+        const float k = min(1.0f, (float)(ahora - lNivelDesde - CACTUS_ESPERA_FLOR_MS) / CACTUS_CRECE_FLOR_MS);
+        florCactus(24 + desv(CACTUS_Y_FLOR, seno, amp), CACTUS_Y_FLOR, suave(k));
+    }
+}
+
 void pintarLecturas(uint32_t ahora) {
     limpiar();
     modo = Modo::Lecturas;
@@ -312,6 +340,8 @@ void pintarLecturas(uint32_t ahora) {
     const float amp = AMPLITUD[lNivel] * FACTOR_BALANCEO[(int)lFamilia];
     if (lFamilia == Familia::Girasol) {
         pintarGirasol(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Cactus) {
+        pintarCactus(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia != Familia::Carnivora) {
         cuerpo(PLANTA[lNivel], seno, amp, 0);
         caraMatera(c, parpadeo, ahora);
