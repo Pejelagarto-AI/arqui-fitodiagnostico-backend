@@ -102,7 +102,7 @@ La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del sec
 
 ### Firmware de la matera (fase 5)
 
-`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba; las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md).
+`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba, y `scripts/demo-https.sh` pone además un proxy Caddy con certificado propio en `https://<ip>:8443`, necesario para la cámara en vivo del lector de QR del front (contexto seguro y API del mismo origen); las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md).
 
 ### Broker MQTT para desarrollo (fase 4)
 
