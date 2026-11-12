@@ -87,6 +87,14 @@ https://$IP:$PUERTO_HTTPS, https://localhost:$PUERTO_HTTPS, https://127.0.0.1:$P
 	tls internal
 	encode gzip
 
+	# La autoridad local de Caddy, para instalarla en el celular o el portatil y que el certificado quede confiable.
+	handle /ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=fito-ca.crt"
+		file_server
+	}
 	@backend path /api/* /ws /ws/*
 	handle @backend {
 		reverse_proxy 127.0.0.1:$PUERTO_API
@@ -114,8 +122,12 @@ API (mismo origen)   https://$IP:$PUERTO_HTTPS/api/v1
 Backend directo      http://$IP:$PUERTO_API/api/v1   (la matera sigue hablando por HTTP)
 Caddyfile            $ESTADO/Caddyfile
 
-En Safari el certificado es propio: "Mostrar detalles" > "Visitar sitio web". Despues la camara en vivo
-del lector de QR funciona porque la pagina tiene contexto seguro.
+El certificado lo firma la autoridad local de Caddy. Para que el navegador no avise "no es seguro":
+  iPhone:   abrir https://$IP:$PUERTO_HTTPS/ca.crt en Safari > Permitir > Ajustes > Perfil descargado > Instalar;
+            luego Ajustes > General > Información > Ajustes de confianza de certificados > activar "Caddy Local Authority".
+  Chrome en este portatil (sin sudo):
+            curl -sk https://127.0.0.1:$PUERTO_HTTPS/ca.crt -o /tmp/fito-ca.crt && certutil -d sql:\$HOME/.pki/nssdb -A -t "C,," -n "Fito Caddy Local Authority" -i /tmp/fito-ca.crt
+            y reiniciar Chrome. Aun sin instalarla, la camara en vivo funciona tras aceptar el aviso: la pagina sigue siendo contexto seguro.
 
 Si el celular no llega al portatil (ufw activo):
   sudo ufw allow $PUERTO_HTTPS/tcp && sudo ufw allow $PUERTO_API/tcp
