@@ -7,7 +7,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
-import com.vivero.fitodiagnostico.dominio.puerto.RangosPorEspecie;
+import com.vivero.fitodiagnostico.dominio.puerto.salida.RangosPorEspecie;
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
@@ -118,5 +118,20 @@ class ServicioDiagnosticoTest {
         servicio.diagnosticar("sansevieria", Medicion.de(new Lectura(Magnitud.HUMEDAD, 30.0)));
 
         assertThat(llamadas.get()).isEqualTo(1);
+    }
+
+    @Test
+    void unaEspecieDescontinuadaSigueSiendoDiagnosticable() {
+        // RN11 / D10: desactivar una especie solo la saca del listado público.
+        // Las plantas que ya la usan se siguen diagnosticando con normalidad.
+        ServicioDiagnostico servicio = servicioCon(nombre -> Optional.of(sansevieria().desactivada()));
+
+        var diagnostico = servicio.diagnosticar("sansevieria", Medicion.de(
+                new Lectura(Magnitud.HUMEDAD, 32.5),
+                new Lectura(Magnitud.LUZ, 850),
+                new Lectura(Magnitud.TEMPERATURA, 21.0)));
+
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(diagnostico.especie().activa()).isFalse();
     }
 }

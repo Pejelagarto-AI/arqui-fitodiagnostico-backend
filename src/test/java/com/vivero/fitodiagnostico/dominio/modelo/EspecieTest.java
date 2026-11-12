@@ -62,4 +62,41 @@ class EspecieTest {
 
         assertThat(especie.rango(Magnitud.LUZ)).isEqualTo(new Rango(1000, 2500));
     }
+
+    @Test
+    void unaEspecieNuevaNaceActiva() {
+        assertThat(new Especie("especie-de-prueba", rangosDePrueba()).activa()).isTrue();
+    }
+
+    @Test
+    void desactivarDevuelveUnaCopiaInactivaSinTocarLaOriginal() {
+        Especie original = new Especie("especie-de-prueba", rangosDePrueba());
+
+        Especie descontinuada = original.desactivada();
+
+        assertThat(descontinuada.activa()).isFalse();
+        assertThat(original.activa()).isTrue();
+        assertThat(descontinuada.nombre()).isEqualTo(original.nombre());
+        assertThat(descontinuada.rangos()).isEqualTo(original.rangos());
+    }
+
+    @Test
+    void reactivarDevuelveUnaCopiaActiva() {
+        Especie reactivada = new Especie("especie-de-prueba", rangosDePrueba()).desactivada().reactivada();
+
+        assertThat(reactivada.activa()).isTrue();
+    }
+
+    @Test
+    void conRangosConservaNombreYActivacion() {
+        Especie inactiva = new Especie("especie-de-prueba", rangosDePrueba()).desactivada();
+        Map<Magnitud, Rango> otros = new EnumMap<>(Magnitud.class);
+        otros.put(Magnitud.HUMEDAD, new Rango(10.0, 20.0));
+
+        Especie editada = inactiva.conRangos(otros);
+
+        assertThat(editada.nombre()).isEqualTo("especie-de-prueba");
+        assertThat(editada.activa()).isFalse();
+        assertThat(editada.rango(Magnitud.HUMEDAD)).isEqualTo(new Rango(10.0, 20.0));
+    }
 }
