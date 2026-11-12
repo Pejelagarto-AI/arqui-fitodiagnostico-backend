@@ -58,9 +58,9 @@ class FlujoDePlantasIntegracionTest {
     private static final String ADMIN_CONTRASENA = "contrasena-de-pruebas-1";
     private static final String CLAVE = "clave-larga-1";
 
-    private static final String SALUDABLE = "{\"humedad\":55,\"luz\":700,\"temperatura\":22}";   // potos: 40-70, 300-1200, 18-30
+    private static final String SALUDABLE = "{\"humedad\":70,\"luz\":500,\"temperatura\":22}";   // helecho: 60-85, 150-800, 16-26
     private static final String CRITICA = "{\"humedad\":5,\"luz\":700,\"temperatura\":22}";
-    private static final String EN_RIESGO = "{\"humedad\":38,\"luz\":700,\"temperatura\":22}";
+    private static final String EN_RIESGO = "{\"humedad\":57,\"luz\":700,\"temperatura\":22}";
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
@@ -162,7 +162,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void registrarseCrearPlantaMedirDosVecesCambiandoDeEstadoVerElHistorialYUnSoloAviso() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(planta, idInvitado);   // el endpoint de compartir llega en el bloque siguiente
 
         // RN9: recién creada no tiene diagnóstico, y consultarlo no es un error ni escribe nada.
@@ -177,7 +177,7 @@ class FlujoDePlantasIntegracionTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.origen").value("MANUAL"))
                 .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))
-                .andExpect(jsonPath("$.diagnostico.especie").value("potos"));
+                .andExpect(jsonPath("$.diagnostico.especie").value("helecho"));
         assertThat(avisos()).isEmpty();
 
         // Segunda medición: CRITICO. Ahora sí hay un cambio.
@@ -220,7 +220,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void repetirElMismoEstadoNoVuelveAAvisar() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         medir(dueno, planta, EN_RIESGO).andExpect(status().isCreated());
         medir(dueno, planta, EN_RIESGO).andExpect(status().isCreated());
 
@@ -229,7 +229,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void elHistorialSePaginaDeVerdad() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         medir(dueno, planta, SALUDABLE);
         medir(dueno, planta, EN_RIESGO);
         medir(dueno, planta, CRITICA);
@@ -249,11 +249,11 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void elInvitadoSoloLeeYElAjenoNoSabeQueLaPlantaExiste() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         medir(dueno, planta, SALUDABLE).andExpect(status().isCreated());
         compartir(planta, idInvitado);
         String ruta = "/api/v1/plantas/" + planta;
-        String cuerpoPlanta = "{\"apodo\":\"Otro\",\"especie\":\"potos\"}";
+        String cuerpoPlanta = "{\"apodo\":\"Otro\",\"especie\":\"helecho\"}";
 
         // Invitado: lee todo, y es esDueno=false.
         mockMvc.perform(con(get(ruta), invitado)).andExpect(status().isOk()).andExpect(jsonPath("$.esDueno").value(false));
@@ -287,7 +287,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void cadaClienteListaSoloSusPlantasYElAdministradorNoVeLasAjenas() throws Exception {
-        crearPlanta(dueno, "De dueno", "potos");
+        crearPlanta(dueno, "De dueno", "helecho");
         crearPlanta(ajeno, "De ajeno", "helecho");
         compartir(crearPlanta(ajeno, "Compartida", "helecho"), idDueno);
 
@@ -309,7 +309,7 @@ class FlujoDePlantasIntegracionTest {
     @Test
     void noSePuedeRegistrarUnaPlantaAUnDuenoDistintoDelDelToken() throws Exception {
         String id = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\",\"duenoId\":\"" + idInvitado + "\"}"))
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\",\"duenoId\":\"" + idInvitado + "\"}"))
                 .andExpect(status().isCreated()), "$.id");
 
         mockMvc.perform(con(get("/api/v1/plantas/" + id), dueno)).andExpect(jsonPath("$.duenoId").value(idDueno));
@@ -320,8 +320,8 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void editarCambiaApodoYEspecieYLaMedicionSiguienteUsaLaEspecieNueva() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
-        // 15 % de humedad: crítico para potos (40-70) pero saludable para suculenta (10-30).
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
+        // 20 % de humedad: crítico para helecho (60-85) pero saludable para suculenta (10-30).
         String seca = "{\"humedad\":20,\"luz\":1500,\"temperatura\":22}";
         medir(dueno, planta, seca).andExpect(jsonPath("$.diagnostico.estado").value("CRITICO"));
 
@@ -335,19 +335,19 @@ class FlujoDePlantasIntegracionTest {
         // El historial conserva lo que dijo cada diagnóstico con la especie de ese momento.
         mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/diagnosticos"), dueno))
                 .andExpect(jsonPath("$.contenido[0].diagnostico.especie").value("suculenta"))
-                .andExpect(jsonPath("$.contenido[1].diagnostico.especie").value("potos"))
+                .andExpect(jsonPath("$.contenido[1].diagnostico.especie").value("helecho"))
                 .andExpect(jsonPath("$.contenido[1].diagnostico.estado").value("CRITICO"));
     }
 
     @Test
     void laEspecieDebeExistirYLosCamposSeValidanEnElBorde() throws Exception {
-        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"Pepa\",\"especie\":\"cactus\"}"))
+        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"Pepa\",\"especie\":\"orquidea\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("ESPECIE_NO_SOPORTADA"));
-        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"\",\"especie\":\"potos\"}"))
+        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"\",\"especie\":\"helecho\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detalle.campo").value("apodo"));
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         medir(dueno, planta, "{\"humedad\":-1,\"luz\":700,\"temperatura\":22}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detalle.campo").value("humedad"));
@@ -358,7 +358,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void todasLasRespuestasDeLasRutasDePlantasSonJsonAunqueSePidaHtml() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         for (MockHttpServletRequestBuilder peticion : List.of(
                 get("/api/v1/plantas"), get("/api/v1/plantas/" + planta), get("/api/v1/plantas/" + planta + "/diagnostico"),
                 get("/api/v1/plantas/" + planta + "/diagnosticos"), get("/api/v1/plantas/" + UUID.randomUUID()),
@@ -386,7 +386,7 @@ class FlujoDePlantasIntegracionTest {
         mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"Nueva\",\"especie\":\"plantas-efimera\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("ESPECIE_DESCONTINUADA"));
-        String otra = crearPlanta(dueno, "Otra", "potos");
+        String otra = crearPlanta(dueno, "Otra", "helecho");
         mockMvc.perform(json(con(put("/api/v1/plantas/" + otra), dueno), "{\"apodo\":\"Otra\",\"especie\":\"plantas-efimera\"}"))
                 .andExpect(status().isConflict());
         // La existente: se consulta, se edita el apodo, se mide, y el estado sigue siendo el de su especie.
@@ -402,8 +402,8 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void eliminarUnaPlantaBorraSuHistorialYSusAccesosYAvisaAlInvitado() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
-        String sobreviviente = crearPlanta(dueno, "Queda", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
+        String sobreviviente = crearPlanta(dueno, "Queda", "helecho");
         compartir(planta, idInvitado);
         medir(dueno, planta, SALUDABLE);
         medir(dueno, planta, CRITICA);
@@ -433,8 +433,8 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void eliminarLaPropiaCuentaEliminaSusPlantasConLaMismaCascada() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
-        String deAjeno = crearPlanta(ajeno, "Del ajeno", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
+        String deAjeno = crearPlanta(ajeno, "Del ajeno", "helecho");
         compartir(planta, idInvitado);        // el invitado pierde esta
         compartir(deAjeno, idDueno);          // y el dueño, al irse, deja de ser invitado de esta
         medir(dueno, planta, SALUDABLE);
@@ -488,7 +488,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void eliminarUnaPlantaSinInvitadosNoAvisaANadie() throws Exception {
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
 
         mockMvc.perform(con(delete("/api/v1/plantas/" + planta), dueno)).andExpect(status().isNoContent());
 

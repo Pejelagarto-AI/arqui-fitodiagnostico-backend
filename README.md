@@ -102,7 +102,7 @@ La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del sec
 
 ### Firmware de la matera (fase 5)
 
-`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba; las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md). Los sensores (simulados o potenciómetros, y el plan de los sensores reales) están en [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md), decisiones D98 a D101.
+`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba, y `scripts/demo-https.sh` pone además un proxy Caddy con certificado propio en `https://<ip>:8443`, necesario para la cámara en vivo del lector de QR del front (contexto seguro y API del mismo origen); las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md). Los sensores (simulados o potenciómetros, y el plan de los sensores reales) están en [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md), decisiones D98 a D101.
 
 ### Broker MQTT para desarrollo (fase 4)
 
@@ -166,37 +166,37 @@ curl http://localhost:8080/api/v1/especies
 ```json
 [
   {
-    "nombre": "sansevieria",
+    "nombre": "atrapamoscas",
     "rangos": {
-      "humedad": { "min": 20.0, "max": 45.0, "unidad": "%" },
-      "luz": { "min": 200.0, "max": 1500.0, "unidad": "lux" },
-      "temperatura": { "min": 15.0, "max": 29.0, "unidad": "°C" }
+      "humedad": { "min": 60.0, "max": 90.0, "unidad": "%" },
+      "luz": { "min": 3000.0, "max": 20000.0, "unidad": "lux" },
+      "temperatura": { "min": 15.0, "max": 32.0, "unidad": "°C" }
     }
   }
 ]
 ```
 
-(devuelve las 5 especies del Anexo B, ordenadas por nombre; se recorta a una para el ejemplo)
+(devuelve las 5 especies del catálogo por defecto, ordenadas por nombre; se recorta a una para el ejemplo)
 
 ### `POST /api/v1/diagnosticos`
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/diagnosticos \
   -H "Content-Type: application/json" \
-  -d '{"especie":"sansevieria","humedad":15,"luz":800,"temperatura":22}'
+  -d '{"especie":"helecho","humedad":40,"luz":500,"temperatura":22}'
 ```
 
 ```json
 {
-  "especie": "sansevieria",
+  "especie": "helecho",
   "estado": "EN_RIESGO",
   "parametros": [
-    { "nombre": "humedad", "valor": 15.0, "unidad": "%", "rangoOptimo": [20.0, 45.0], "estado": "BAJO" },
-    { "nombre": "luz", "valor": 800.0, "unidad": "lux", "rangoOptimo": [200.0, 1500.0], "estado": "OPTIMO" },
-    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [15.0, 29.0], "estado": "OPTIMO" }
+    { "nombre": "humedad", "valor": 40.0, "unidad": "%", "rangoOptimo": [60.0, 85.0], "estado": "BAJO" },
+    { "nombre": "luz", "valor": 500.0, "unidad": "lux", "rangoOptimo": [150.0, 800.0], "estado": "OPTIMO" },
+    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [16.0, 26.0], "estado": "OPTIMO" }
   ],
   "recomendaciones": [
-    "Humedad del sustrato 15 % por debajo del rango óptimo 20–45 %: regar moderadamente."
+    "Humedad del sustrato 40 % por debajo del rango óptimo 60–85 %: regar moderadamente."
   ]
 }
 ```
@@ -255,15 +255,29 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 
 ## Tabla de referencia
 
-Fuente: Anexo B del enunciado del proyecto de corte.
+El catálogo por defecto tiene **exactamente cinco especies, las que tienen mascota en la OLED**: es el mínimo que exige el enunciado. Fuente: Anexo B del enunciado del proyecto de corte (suculenta y helecho). Las tres últimas son de la fase 7; sus fuentes van en la sección siguiente. Del Anexo B salieron `sansevieria`, `potos` y `lavanda`, que no tienen mascota; un administrador puede darlas de alta otra vez con `POST /api/v1/admin/especies`.
 
 | Especie | Humedad (%) | Luz (lux) | Temperatura (°C) |
 |---|---|---|---|
-| sansevieria | 20–45 | 200–1500 | 15–29 |
-| potos | 40–70 | 300–1200 | 18–30 |
 | suculenta | 10–30 | 800–2500 | 15–32 |
 | helecho | 60–85 | 150–800 | 16–26 |
-| lavanda | 25–50 | 1000–3000 | 15–30 |
+| girasol | 40–70 | 10000–50000 | 18–28 |
+| cactus | 5–25 | 20000–60000 | 15–35 |
+| atrapamoscas | 60–90 | 3000–20000 | 15–32 |
+
+### Fuentes de las especies agregadas (fase 7)
+
+Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera tenga mascota (ver [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md)). Humedad es la del sustrato, como en el resto de la tabla. Donde la fuente no da un número de sustrato, el rango es criterio propio a partir de lo que dice la fuente, y se marca así.
+
+| Especie | Rango | Fuente |
+|---|---|---|
+| girasol | temperatura 18–28 °C | Ball Australia, [cultural notes de girasol en maceta](https://ballaustralia.com/wp-content/uploads/plant_list/cultural_notes/S/Sunflower-pot-CN-2.pdf) (día 18–25 °C antes de la flor); Holmes Seed, [Sunflower Growing Guide](https://www.holmesseed.com/growers-guidebook/growing-guides/sunflower-growing-guide/) (óptimo 21–26 °C) |
+| girasol | luz 10000–50000 lux | sol pleno (las mismas fuentes); 10000 lux es luz de día indirecta y 50000 un día soleado. Criterio propio sobre "sol pleno" |
+| girasol | humedad 40–70 % | criterio propio: sustrato húmedo y drenado, sin encharcar (mismas fuentes) |
+| cactus | luz 20000–60000 lux | Arizona-Sonora Desert Museum, [Cacti in pots](https://www.desertmuseum.org/visit/sheets/1Cact_pot.pdf): mínimo 2000 pies-candela (unos 21500 lux) 12 h al día; sol pleno son 10000 pies-candela y quema tras el vidrio |
+| cactus | humedad 5–25 % | criterio propio: dejar secar el sustrato entre riegos; el exceso de agua pudre la raíz (Desert Museum; [UMN Extension, cacti and succulents](https://extension.umn.edu/house-plants/cacti-and-succulents)) |
+| cactus | temperatura 15–35 °C | criterio propio: planta de desierto con reposo fresco en invierno (Desert Museum) |
+| atrapamoscas | los tres rangos | los de la especie que ya existía en la base en vivo, para que el CSV y la base digan lo mismo. Contraste: [NDSU](https://www.ndsu.edu/pubweb/chiwonlee/plsc211/student%20papers/articles02/dhodgson/dhodgson.html) da 21–35 °C en crecimiento y humedad del aire sobre 50 %; [Iowa State Extension](https://yardandgarden.extension.iastate.edu/faq/how-does-one-care-venus-flytrap) pide varias horas de sol directo y sustrato siempre húmedo |
 
 ## Documentación
 
@@ -273,6 +287,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 - [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
 - [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
 - [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md): fase 6 (sensores físicos): puerto por magnitud, potenciómetros en el ADC1, las decisiones D98 a D101 y el plan de los sensores reales (calibración, DHT22, sonda alimentada por pin).
+- [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---
