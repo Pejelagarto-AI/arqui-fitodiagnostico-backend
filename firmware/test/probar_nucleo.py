@@ -85,6 +85,13 @@ def main():
         larga = "k" * 100
         comprobar("firma_de_flota con clave de 100", sim.firma_de_flota(larga, "fito-YUBUD6", secreto),
                   c("flota", larga, "fito-YUBUD6", secreto))
+
+        # 5. Escala del potenciometro: extremos, recorte fuera del rango util del ADC y punto medio.
+        for mv, esperado in ((100, "0.000"), (0, "0.000"), (3100, "100.000"), (3300, "100.000"),
+                             (1600, "50.000"), (850, "25.000")):
+            comprobar("escala humedad %d mV" % mv, esperado, c("escala", str(mv), "100", "3100", "0", "100"))
+        comprobar("escala luz 2350 mV", "1500.000", c("escala", "2350", "100", "3100", "0", "2000"))
+        comprobar("escala con rango vacio", "7.000", c("escala", "500", "100", "100", "7", "9"))
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 

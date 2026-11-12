@@ -13,10 +13,12 @@
 #include "nucleo/fito_hash.h"
 #include "nucleo/fito_nucleo.h"
 #include "pantalla.h"
+#include "potenciometro.h"
 #include "red.h"
 #include "registro.h"
 #include "reloj.h"
 #include "sensores.h"
+#include "sensores_compuestos.h"
 
 namespace {
 enum class Fase { Arranque, Red, Hora, Registro, Credencial, Reclamo, Operando, Fatal };
@@ -26,8 +28,19 @@ uint32_t desde = 0;              // millis() de entrada a la fase
 uint32_t proximoIntento = 0;     // para reintentos
 String token;
 time_t tokenExpira = 0;
-SensoresSimulados sensoresSimulados;
-Sensores *sensores = &sensoresSimulados;
+// Composicion de los sensores: el unico lugar que sabe que adaptador hay detras del puerto Sensores.
+// Se elige con `sensores` en local.ini. Para los sensores reales basta con otro SensorDeMagnitud aqui.
+#if FITO_SENSORES_POTENCIOMETROS
+Potenciometro potHumedad(config::PIN_POT_HUMEDAD, config::ESCALA_HUMEDAD_MIN, config::ESCALA_HUMEDAD_MAX);
+Potenciometro potLuz(config::PIN_POT_LUZ, config::ESCALA_LUZ_MIN, config::ESCALA_LUZ_MAX);
+Potenciometro potTemperatura(config::PIN_POT_TEMPERATURA, config::ESCALA_TEMPERATURA_MIN, config::ESCALA_TEMPERATURA_MAX);
+SensoresCompuestos sensoresDeLaMatera(potHumedad, potLuz, potTemperatura);
+const char *const NOMBRE_SENSORES = "potenciometros";
+#else
+SensoresSimulados sensoresDeLaMatera;
+const char *const NOMBRE_SENSORES = "simulados";
+#endif
+Sensores *sensores = &sensoresDeLaMatera;
 uint32_t proximaLectura = 0;
 uint32_t numeroDeLectura = 0;
 String ultimoEstado;
@@ -246,7 +259,10 @@ void tomarLectura() {
     }
     Lectura l = {};
     const char *descripcion = "";
-    sensores->leer(l, descripcion);
+    if (!sensores->leer(l, descripcion)) {
+        registrar("lectura descartada: %s", descripcion);
+        return;
+    }
     l.cuando = time(nullptr);
     l.n = ++numeroDeLectura;
     l.fuera = strncmp(descripcion, "fuera", 5) == 0;
@@ -273,7 +289,7 @@ void vaciarCola() {
         if (codigo == 201) {
             registrar("#%u -> HTTP 201 estado=%s (tomada %s)", (unsigned)l.n, estado.c_str(), marca);
             ultimoEstado = estado;
-            if (api::rangos().hay) sensoresSimulados.adoptarRangos(api::rangos().minimo, api::rangos().maximo);
+            if (api::rangos().hay) sensores->adoptarRangos(api::rangos().minimo, api::rangos().maximo);
             pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;
             cola::sacar();
@@ -324,6 +340,7 @@ void setup() {
     delay(300);
     Serial.println();
     registrar("firmware de la matera Fito (ESP32), 115200 baudios");
+    registrar("sensores: %s", NOMBRE_SENSORES);
     boton::iniciar();
     pantalla::iniciar();
     identidad::iniciar();

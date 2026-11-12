@@ -30,6 +30,10 @@ void fito_firma_de_flota(const char *clave, const char *serial, const char *secr
 /* base64( HMAC-SHA256( clave = secreto como texto, mensaje = reto como texto ) ). `salida` >= FITO_LARGO_FIRMA_B64. */
 void fito_respuesta_al_reto(const char *secreto, const char *reto, char *salida);
 
+/* Recta que lleva milivoltios a la magnitud: mv_min -> v_min y mv_max -> v_max. Fuera de [mv_min, mv_max] se
+ * recorta al extremo. Si mv_max <= mv_min devuelve v_min. La usa el adaptador del potenciometro. */
+float fito_escalar_mv(int mv, int mv_min, int mv_max, float v_min, float v_max);
+
 #ifdef __cplusplus
 }
 #endif

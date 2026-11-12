@@ -24,6 +24,10 @@ def entero(clave, defecto):
         raise SystemExit("[fito] %s debe ser un numero entero" % clave)
 
 
+sensores = valor("sensores", "simulados").strip().lower() or "simulados"
+if sensores not in ("simulados", "potenciometros"):
+    raise SystemExit("[fito] sensores debe ser simulados o potenciometros (dice %r)" % sensores)
+
 lineas = [
     "// GENERADO por extra_script.py desde la seccion [fito] (platformio.ini y local.ini). No editar ni versionar.",
     "#pragma once",
@@ -33,6 +37,7 @@ lineas = [
     "#define FITO_SERVIDOR %s" % literal(valor("servidor").strip()),
     "#define FITO_PUERTO_API %d" % entero("puerto_api", 8080),
     "#define FITO_PUERTO_FRONT %d" % entero("puerto_front", 5500),
+    "#define FITO_SENSORES_POTENCIOMETROS %d" % (1 if sensores == "potenciometros" else 0),
     "",
 ]
 carpeta = os.path.join(env.subst("$PROJECT_DIR"), "include")  # noqa: F821

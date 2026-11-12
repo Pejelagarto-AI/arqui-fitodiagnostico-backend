@@ -65,3 +65,9 @@ void fito_respuesta_al_reto(const char *secreto, const char *reto, char *salida)
     fito_hmac_sha256((const uint8_t *)secreto, strlen(secreto), (const uint8_t *)reto, strlen(reto), firma);
     fito_base64(firma, 32, 0, salida);
 }
+
+float fito_escalar_mv(int mv, int mv_min, int mv_max, float v_min, float v_max) {
+    if (mv_max <= mv_min || mv <= mv_min) return v_min;
+    if (mv >= mv_max) return v_max;
+    return v_min + (v_max - v_min) * (float)(mv - mv_min) / (float)(mv_max - mv_min);
+}

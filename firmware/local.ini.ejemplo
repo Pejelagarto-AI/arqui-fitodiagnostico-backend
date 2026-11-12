@@ -10,3 +10,5 @@ wifi_clave = laclavedelhotspot
 servidor = 192.168.43.105
 puerto_api = 8080
 puerto_front = 5500
+; simulados (por defecto) o potenciometros: humedad GPIO 34, luz GPIO 35, temperatura GPIO 32 (ver README).
+sensores = simulados

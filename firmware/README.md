@@ -1,6 +1,6 @@
 # Firmware de la matera (ESP32 + OLED)
 
-Gemelo real de `simulador/simulador_esp32.py --serial auto`: mismas llamadas HTTP, mismos cuerpos, mismas firmas. PlatformIO, framework Arduino. Sensores simulados por ahora (la interfaz `Sensores` deja el hueco para DHT22, sonda capacitiva y BH1750).
+Gemelo real de `simulador/simulador_esp32.py --serial auto`: mismas llamadas HTTP, mismos cuerpos, mismas firmas. PlatformIO, framework Arduino. Sensores simulados o tres potenciómetros (ver [Sensores](#sensores)); la interfaz `SensorDeMagnitud` deja el hueco para DHT22, sonda capacitiva y BH1750.
 
 ## Cableado de la OLED SSD1306 128x64 (I2C)
 
@@ -28,8 +28,41 @@ cp local.ini.ejemplo local.ini      # local.ini no se versiona
 | `wifi_ssid`, `wifi_clave` | Wi-Fi por defecto de compilación (demo con el hotspot, 2.4 GHz). Vacío: portal cautivo. Admiten espacios y signos. |
 | `servidor` | IP del portátil en esa red. |
 | `puerto_api`, `puerto_front` | 8080 y 5500. |
+| `sensores` | `simulados` (por defecto) o `potenciometros`; ver [Sensores](#sensores). |
 
 Las cadenas llegan al código por `include/config_local.h`, que genera `extra_script.py` en cada compilación (no se versiona), así que un SSID con espacios o una clave con comillas no rompen nada.
+
+## Sensores
+
+Las lecturas salen del puerto `Sensores` (`src/sensores.h`). La máquina de estados de `main.cpp` solo conoce esa interfaz; qué adaptador hay detrás se decide en un solo lugar, la composición al inicio de `main.cpp`, según `sensores` en `local.ini`:
+
+| `sensores` | Adaptador | Qué hace |
+|---|---|---|
+| `simulados` (por defecto) | `SensoresSimulados` | Caminata aleatoria centrada en el óptimo de la especie, con un 12 % de lecturas fuera de rango. |
+| `potenciometros` | `SensoresCompuestos` con tres `Potenciometro` | Cada perilla es una magnitud. |
+
+```
+Sensores (puerto)  <-  SensoresSimulados
+                   <-  SensoresCompuestos  ->  SensorDeMagnitud (puerto, una magnitud)  <-  Potenciometro
+                                                                                        <-  (DHT22, sonda capacitiva, BH1750)
+```
+
+### Cableado de los potenciómetros (10 kΩ)
+
+| Magnitud | Escala | Pata del medio | Patas de los extremos |
+|---|---|---|---|
+| Humedad | 0 a 100 % | GPIO 34 | 3V3 y GND |
+| Luz | 0 a 2000 lux | GPIO 35 | 3V3 y GND |
+| Temperatura | 0 a 50 °C | GPIO 32 | 3V3 y GND |
+
+Sin resistencias: el potenciómetro es un divisor de voltaje. Los pines son del ADC1 porque el ADC2 no lee con el Wi-Fi encendido (en S3: 4, 5 y 6; en C3: 0, 1 y 3). Cada lectura promedia 16 muestras; de 100 a 3100 mV la escala es lineal y fuera de ahí se recorta al extremo, porque el ADC no es lineal en las puntas (`fito_escalar_mv`, probada en `test/probar_nucleo.py`). Las escalas y los pines están en `src/configuracion.h`.
+
+### Conectar un sensor real
+
+1. Una clase que implemente `SensorDeMagnitud::leer(float &valor)`; devuelve `false` si el sensor no respondió y esa lectura se descarta (el servidor exige las tres magnitudes).
+2. En la composición de `main.cpp`, pasarla a `SensoresCompuestos` en lugar del `Potenciometro` de esa magnitud.
+
+Nada más cambia: ni `SensoresCompuestos`, ni la máquina de estados, ni el cliente de la API. Se pueden mezclar, por ejemplo un DHT22 para la temperatura y potenciómetros para lo demás.
 
 ## Compilar, subir, mirar
 
