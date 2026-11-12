@@ -14,8 +14,7 @@ class LectorDeEspeciesCsvTest {
     void leeLasEspeciesDelCsvTodasActivas() {
         assertThat(new LectorDeEspeciesCsv().leer())
                 .extracting(Especie::nombre)
-                .containsExactlyInAnyOrder("sansevieria", "potos", "suculenta", "helecho", "lavanda",
-                        "girasol", "cactus", "atrapamoscas");
+                .containsExactlyInAnyOrder("girasol", "cactus", "suculenta", "helecho", "atrapamoscas");
         assertThat(new LectorDeEspeciesCsv().leer()).allMatch(Especie::activa);
     }
 
@@ -25,19 +24,19 @@ class LectorDeEspeciesCsvTest {
 
         int cargadas = new SembradorDeEspecies(catalogo, catalogo, new LectorDeEspeciesCsv()).sembrarSiVacio();
 
-        assertThat(cargadas).isEqualTo(8);
-        assertThat(catalogo.buscar("sansevieria").orElseThrow().rango(Magnitud.HUMEDAD).maximo()).isEqualTo(45.0);
+        assertThat(cargadas).isEqualTo(5);
+        assertThat(catalogo.buscar("suculenta").orElseThrow().rango(Magnitud.HUMEDAD).maximo()).isEqualTo(30.0);
     }
 
     @Test
     void elSembradorNoHaceNadaSiElCatalogoYaTieneDatos() {
         EspeciesEnMemoria catalogo = new EspeciesEnMemoria();
         new SembradorDeEspecies(catalogo, catalogo, new LectorDeEspeciesCsv()).sembrarSiVacio();
-        catalogo.cambiarActivacion("potos", false);
+        catalogo.cambiarActivacion("helecho", false);
 
         int cargadas = new SembradorDeEspecies(catalogo, catalogo, new LectorDeEspeciesCsv()).sembrarSiVacio();
 
         assertThat(cargadas).isZero();
-        assertThat(catalogo.buscar("potos").orElseThrow().activa()).isFalse();
+        assertThat(catalogo.buscar("helecho").orElseThrow().activa()).isFalse();
     }
 }

@@ -107,7 +107,7 @@ class ReclamoDeDispositivoIntegracionTest {
 
     private String crearPlanta(String apodo) throws Exception {
         return leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
-                "{\"apodo\":\"" + apodo + "\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"" + apodo + "\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
     }
 
     private ResultActions fabricar(String token, String cuerpo) throws Exception {
