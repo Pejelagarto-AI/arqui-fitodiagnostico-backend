@@ -13,11 +13,11 @@
 #include "nucleo/fito_hash.h"
 #include "nucleo/fito_nucleo.h"
 #include "pantalla.h"
-#include "potenciometro.h"
 #include "red.h"
 #include "registro.h"
 #include "reloj.h"
 #include "sensores.h"
+#include "sensor_analogico.h"
 #include "sensores_compuestos.h"
 
 namespace {
@@ -31,9 +31,10 @@ time_t tokenExpira = 0;
 // Composicion de los sensores: el unico lugar que sabe que adaptador hay detras del puerto Sensores.
 // Se elige con `sensores` en local.ini. Para los sensores reales basta con otro SensorDeMagnitud aqui.
 #if FITO_SENSORES_POTENCIOMETROS
-Potenciometro potHumedad(config::PIN_POT_HUMEDAD, config::ESCALA_HUMEDAD_MIN, config::ESCALA_HUMEDAD_MAX);
-Potenciometro potLuz(config::PIN_POT_LUZ, config::ESCALA_LUZ_MIN, config::ESCALA_LUZ_MAX);
-Potenciometro potTemperatura(config::PIN_POT_TEMPERATURA, config::ESCALA_TEMPERATURA_MIN, config::ESCALA_TEMPERATURA_MAX);
+#define N_PUNTOS(t) ((int)(sizeof(t) / sizeof((t)[0])))
+SensorAnalogico potHumedad(config::PIN_HUMEDAD, config::POT_HUMEDAD, N_PUNTOS(config::POT_HUMEDAD));
+SensorAnalogico potLuz(config::PIN_LUZ, config::POT_LUZ, N_PUNTOS(config::POT_LUZ));
+SensorAnalogico potTemperatura(config::PIN_TEMPERATURA, config::POT_TEMPERATURA, N_PUNTOS(config::POT_TEMPERATURA));
 SensoresCompuestos sensoresDeLaMatera(potHumedad, potLuz, potTemperatura);
 const char *const NOMBRE_SENSORES = "potenciometros";
 #else

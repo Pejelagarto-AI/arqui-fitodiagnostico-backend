@@ -4,7 +4,7 @@
  *   arnes flota <clave> <serial> <secreto>
  *   arnes reto <secreto> <reto>
  *   arnes sha256 <texto> / hmac <clave> <texto>
- *   arnes escala <mv> <mv_min> <mv_max> <v_min> <v_max>
+ *   arnes tabla <mv> <mv:valor> [<mv:valor> ...]   (puntos en orden ascendente de mv)
  */
 #include "fito_nucleo.h"
 #include "fito_hash.h"
@@ -27,8 +27,13 @@ int main(int argc, char **argv) {
     if (argc == 4 && !strcmp(argv[1], "reto")) { fito_respuesta_al_reto(argv[2], argv[3], salida); puts(salida); return 0; }
     if (argc == 3 && !strcmp(argv[1], "sha256")) { fito_sha256((const uint8_t *)argv[2], strlen(argv[2]), b); for (int i = 0; i < 32; i++) printf("%02x", b[i]); puts(""); return 0; }
     if (argc == 4 && !strcmp(argv[1], "hmac")) { fito_hmac_sha256((const uint8_t *)argv[2], strlen(argv[2]), (const uint8_t *)argv[3], strlen(argv[3]), b); for (int i = 0; i < 32; i++) printf("%02x", b[i]); puts(""); return 0; }
-    if (argc == 7 && !strcmp(argv[1], "escala")) {
-        printf("%.3f\n", fito_escalar_mv(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), (float)atof(argv[5]), (float)atof(argv[6])));
+    if (argc >= 3 && !strcmp(argv[1], "tabla")) {
+        fito_punto_cal t[FITO_MAX_PUNTOS_CAL];
+        int n = 0;
+        for (int i = 3; i < argc && n < FITO_MAX_PUNTOS_CAL; i++, n++) {
+            if (sscanf(argv[i], "%d:%f", &t[n].mv, &t[n].valor) != 2) { fprintf(stderr, "punto invalido\n"); return 2; }
+        }
+        printf("%.3f\n", fito_interpolar_cal(atoi(argv[2]), t, n));
         return 0;
     }
     fprintf(stderr, "uso incorrecto\n");

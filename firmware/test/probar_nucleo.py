@@ -20,6 +20,9 @@ RAIZ = os.path.dirname(os.path.dirname(AQUI))
 sys.path.insert(0, os.path.join(RAIZ, "simulador"))
 import simulador_esp32 as sim  # noqa: E402
 
+sys.path.insert(0, os.path.join(RAIZ, "firmware"))
+from tabla_cal import como_c, leer_tabla  # noqa: E402
+
 CLAVE_FLOTA = "clave-de-flota-de-prueba-0123456789abcdef"
 # MAC real de la placa de Santiago (ESP32-D0WD-V3) y otras fijas.
 MACS = ["e08cfee64440", "000000000000", "ffffffffffff", "0123456789ab", "a4cf12ff0102"]
@@ -86,12 +89,44 @@ def main():
         comprobar("firma_de_flota con clave de 100", sim.firma_de_flota(larga, "fito-YUBUD6", secreto),
                   c("flota", larga, "fito-YUBUD6", secreto))
 
-        # 5. Escala del potenciometro: extremos, recorte fuera del rango util del ADC y punto medio.
+        # 5. Tabla de calibracion (SensorAnalogico). Dos puntos = la recta del potenciometro: extremos, recorte
+        # fuera del rango util del ADC y punto medio.
+        pot = ["100:0", "3100:100"]
         for mv, esperado in ((100, "0.000"), (0, "0.000"), (3100, "100.000"), (3300, "100.000"),
                              (1600, "50.000"), (850, "25.000")):
-            comprobar("escala humedad %d mV" % mv, esperado, c("escala", str(mv), "100", "3100", "0", "100"))
-        comprobar("escala luz 2350 mV", "1500.000", c("escala", "2350", "100", "3100", "0", "2000"))
-        comprobar("escala con rango vacio", "7.000", c("escala", "500", "100", "100", "7", "9"))
+            comprobar("tabla potenciometro %d mV" % mv, esperado, c("tabla", str(mv), *pot))
+        comprobar("tabla luz del potenciometro 2350 mV", "1500.000", c("tabla", "2350", "100:0", "3100:2000"))
+        # Curva descendente (sonda de humedad: al aire mucho voltaje = 0 %, en agua poco = 100 %).
+        sonda = ["1200:100", "2900:0"]
+        for mv, esperado in ((1200, "100.000"), (2900, "0.000"), (2050, "50.000"), (3200, "0.000"), (800, "100.000"),
+                             (1625, "75.000")):
+            comprobar("tabla sonda %d mV" % mv, esperado, c("tabla", str(mv), *sonda))
+        # Varios tramos, no lineal (LDR): cada tramo interpola entre sus vecinos.
+        ldr = ["150:5000", "400:2000", "1000:500", "2000:100", "2800:10", "3100:0"]
+        for mv, esperado in ((150, "5000.000"), (100, "5000.000"), (275, "3500.000"), (400, "2000.000"),
+                             (700, "1250.000"), (1500, "300.000"), (2400, "55.000"), (2950, "5.000"), (3100, "0.000"),
+                             (3300, "0.000")):
+            comprobar("tabla ldr %d mV" % mv, esperado, c("tabla", str(mv), *ldr))
+        # Casos borde: un solo punto, tabla vacia, valores negativos (temperatura).
+        comprobar("tabla de un punto", "7.000", c("tabla", "500", "100:7"))
+        comprobar("tabla vacia", "0.000", c("tabla", "500"))
+        comprobar("tabla con negativos", "-5.000", c("tabla", "1000", "0:-20", "2000:10"))
+
+        # 6. Lectura de las tablas de local.ini (tabla_cal.py, la usa extra_script.py al compilar).
+        comprobar("leer_tabla ordena", "[(1200, 100.0), (2900, 0.0)]", str(leer_tabla("cal", "2900:0, 1200:100")))
+        comprobar("leer_tabla con espacios y ;", "[(150, 5000.0), (400, 2000.5)]",
+                  str(leer_tabla("cal", " 400 : 2000.5 ; 150:5000 ")))
+        comprobar("como_c", "{{1200, 100.0f}, {2900, 0.0f}}", como_c(leer_tabla("cal", "2900:0, 1200:100")))
+        for malo, motivo in (("2900:0", "un solo punto"), ("", "vacia"), ("2900:0, 2900:5", "mV repetido"),
+                             ("2900-0, 1200:100", "sin dos puntos"), ("abc:0, 1200:100", "mV no numerico"),
+                             ("4000:0, 1200:100", "mV fuera del ADC"),
+                             (", ".join("%d:0" % (100 * i) for i in range(9)), "mas de 8 puntos")):
+            try:
+                leer_tabla("cal", malo)
+                obtenido = "aceptada"
+            except ValueError:
+                obtenido = "rechazada"
+            comprobar("leer_tabla rechaza %s" % motivo, "rechazada", obtenido)
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 

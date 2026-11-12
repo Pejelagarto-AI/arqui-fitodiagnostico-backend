@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "config_local.h"   // lo genera extra_script.py desde local.ini
+#include "nucleo/fito_nucleo.h"
 
 namespace config {
 constexpr int PIN_SDA = 21;
@@ -19,21 +20,26 @@ constexpr uint16_t TIMEOUT_HTTP_MS = 4000;
 constexpr size_t CAPACIDAD_COLA = 120;
 constexpr int MAX_ENVIOS_POR_CICLO = 6;         // al vaciar la cola, para no bloquear boton ni pantalla
 
-// Potenciometros (sensores = potenciometros en local.ini). Pines del ADC1: el ADC2 no lee con el Wi-Fi encendido.
+// Entradas de los sensores. Pines del ADC1: el ADC2 no lee con el Wi-Fi encendido. La temperatura es un
+// potenciometro (analogico) o el DHT22 (digital) en el mismo pin.
 #if CONFIG_IDF_TARGET_ESP32S3
-constexpr int PIN_POT_HUMEDAD = 4, PIN_POT_LUZ = 5, PIN_POT_TEMPERATURA = 6;
+constexpr int PIN_HUMEDAD = 4, PIN_LUZ = 5, PIN_TEMPERATURA = 6;
 #elif CONFIG_IDF_TARGET_ESP32C3
-constexpr int PIN_POT_HUMEDAD = 0, PIN_POT_LUZ = 1, PIN_POT_TEMPERATURA = 3;
+constexpr int PIN_HUMEDAD = 0, PIN_LUZ = 1, PIN_TEMPERATURA = 3;
 #else   // ESP32 clasico (esp32dev)
-constexpr int PIN_POT_HUMEDAD = 34, PIN_POT_LUZ = 35, PIN_POT_TEMPERATURA = 32;
+constexpr int PIN_HUMEDAD = 34, PIN_LUZ = 35, PIN_TEMPERATURA = 32;
 #endif
-// El ADC no es lineal en las puntas: por debajo de POT_MV_MIN es el minimo de la escala y por encima de POT_MV_MAX
-// el maximo, asi la perilla alcanza los dos extremos.
-constexpr int POT_MV_MIN = 100;
-constexpr int POT_MV_MAX = 3100;
-constexpr int POT_MUESTRAS = 16;
-// Escalas fijas, como las de un sensor real; el servidor decide si el valor esta en el optimo de la especie.
-constexpr float ESCALA_HUMEDAD_MIN = 0, ESCALA_HUMEDAD_MAX = 100;        // %
-constexpr float ESCALA_LUZ_MIN = 0, ESCALA_LUZ_MAX = 2000;               // lux
-constexpr float ESCALA_TEMPERATURA_MIN = 0, ESCALA_TEMPERATURA_MAX = 50; // grados Celsius
+constexpr int MUESTRAS_ADC = 16;                 // cada lectura analogica promedia estas muestras
+
+// Potenciometros (sensores = potenciometros): escalas fijas, como las de un sensor real; el servidor decide si el
+// valor esta en el optimo de la especie. Son tablas de dos puntos: el ADC no es lineal en las puntas, asi que
+// por debajo de 100 mV es el minimo de la escala y por encima de 3100 mV el maximo, y la perilla alcanza los dos.
+constexpr fito_punto_cal POT_HUMEDAD[] = {{100, 0}, {3100, 100}};        // %
+constexpr fito_punto_cal POT_LUZ[] = {{100, 0}, {3100, 2000}};           // lux
+constexpr fito_punto_cal POT_TEMPERATURA[] = {{100, 0}, {3100, 50}};     // grados Celsius
+
+// Sensores reales analogicos (sensores = reales): la tabla viene de cal_humedad y cal_luz en local.ini, porque
+// cada sensor fisico sale distinto. Valores por defecto en platformio.ini (provisionales hasta calibrar).
+constexpr fito_punto_cal CAL_HUMEDAD[] = FITO_CAL_HUMEDAD;
+constexpr fito_punto_cal CAL_LUZ[] = FITO_CAL_LUZ;
 }

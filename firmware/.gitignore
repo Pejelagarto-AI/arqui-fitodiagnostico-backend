@@ -2,3 +2,4 @@ local.ini
 .pio/
 include/config_local.h
 .vscode/
+__pycache__/
