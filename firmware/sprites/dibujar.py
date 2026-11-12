@@ -320,6 +320,58 @@ def lente(base, tip, ancho):
     return izq + der[::-1]
 
 
+def fronda(d, p0, p1, p2, largo, abre, decae=0.0, desde=0.2, paso=2.2):
+    """Hoja de helecho como una pluma: raquis en curva y foliolos de 1 px a los dos lados que se achican
+    hacia la punta. `abre` es el angulo de los foliolos respecto al raquis; `decae` (0..1) los dobla hacia abajo."""
+    pts = curva_q(p0, p1, p2, 40)
+    d.line(pts, fill=1, width=1)
+    acum, total = [0.0], 0.0
+    for a, b in zip(pts, pts[1:]):
+        total += math.hypot(b[0] - a[0], b[1] - a[1]); acum.append(total)
+    s = total * desde
+    while s < total - 1:
+        k = next(i for i, v in enumerate(acum) if v >= s)
+        k = min(max(k, 1), len(pts) - 1)
+        (x0, y0), (x1, y1) = pts[k - 1], pts[k]
+        n = math.hypot(x1 - x0, y1 - y0) or 1
+        tx, ty = (x1 - x0) / n, (y1 - y0) / n
+        tam = largo * (1 - 0.75 * (s / total - desde) / (1 - desde))
+        for lado in (-1, 1):
+            ang = math.radians(abre) * lado
+            dx = tx * math.cos(ang) - ty * math.sin(ang)
+            dy = ty * math.cos(ang) + tx * math.sin(ang) + decae
+            m = math.hypot(dx, dy)
+            d.line((x1, y1, x1 + dx / m * tam, y1 + dy / m * tam), fill=1)
+        s += paso
+
+
+def helecho(estado, cuadro=0):
+    """Cinco frondas que salen de la matera; la cara va en la matera, como en la planta comun."""
+    im, d = lienzo(48, 64)
+    m = (-1, 1)[cuadro]                                             # el cuadro 1 mueve las puntas y abre los foliolos
+    if estado == "saludable":
+        frondas = [((24, 46), (24, 24), (24 + m, 1), 6),
+                   ((23, 46), (16, 22), (5 + m, 6), 5), ((25, 46), (32, 22), (43 + m, 6), 5),
+                   ((22, 46), (9, 36), (1, 25 + m), 5), ((26, 46), (39, 36), (47, 25 - m), 5)]
+        abre, decae = 58 + 10 * cuadro, 0.0
+    elif estado == "riesgo":
+        frondas = [((24, 46), (25, 20), (34, 12 + m), 5),
+                   ((23, 46), (14, 18), (4, 26 + m), 5), ((25, 46), (34, 18), (44, 26 - m), 5),
+                   ((22, 46), (6, 34), (1, 46 + m), 4), ((26, 46), (42, 34), (47, 46 - m), 4)]
+        abre, decae = 55 + 8 * cuadro, 0.35
+    else:
+        frondas = [((24, 46), (22, 24), (34, 28 + m), 4),
+                   ((23, 46), (10, 28), (3, 45 + m), 4), ((25, 46), (38, 28), (45, 45 - m), 4),
+                   ((22, 46), (5, 40), (2, 58), 3)]
+        abre, decae = 45 + 6 * cuadro, 0.9
+    for p0, p1, p2, largo in frondas:
+        fronda(d, p0, p1, p2, largo, abre, decae, paso=2.2 if estado != "critico" else 3.3)
+    if estado == "critico":
+        hoja(d, (39, 62), (46, 61), 2, vena=False)                   # un foliolo en el suelo
+    matera(d, None)
+    return im
+
+
 # ---------------------------------------------------------------- animacion de exito (64x64)
 
 def matera_exito(d):
@@ -413,7 +465,7 @@ def exito(i):
 def main():
     os.makedirs(ARTE, exist_ok=True)
     for viejo in os.listdir(ARTE):
-        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_", "suculenta_")):
+        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_", "suculenta_", "helecho_")):
             os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"planta_{estado}_0", planta(estado, 0))
@@ -426,6 +478,8 @@ def main():
         guardar(f"girasol_{estado}_0", girasol(estado, 0))
         guardar(f"cactus_{estado}", cactus(estado))
         guardar(f"suculenta_{estado}_0", suculenta(estado))
+        guardar(f"helecho_{estado}_0", helecho(estado, 0))
+        guardar(f"helecho_{estado}_1", helecho(estado, 1))
     guardar("girasol_saludable_1", girasol("saludable", 1))
     guardar("suculenta_saludable_1", suculenta("saludable", inflada=True))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente

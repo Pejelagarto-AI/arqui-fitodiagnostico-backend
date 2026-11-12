@@ -108,6 +108,9 @@ const int CARNI_G[3] = {14, 7, 0};                           // abertura de la b
 const uint8_t *const GIRASOL[3] = {sprites::girasol_saludable_0, sprites::girasol_riesgo_0, sprites::girasol_critico_0};
 const uint8_t *const CACTUS[3] = {sprites::cactus_saludable, sprites::cactus_riesgo, sprites::cactus_critico};
 const uint8_t *const SUCULENTA[3] = {sprites::suculenta_saludable_0, sprites::suculenta_riesgo_0, sprites::suculenta_critico_0};
+const uint8_t *const HELECHO[3][2] = {{sprites::helecho_saludable_0, sprites::helecho_saludable_1},
+                                      {sprites::helecho_riesgo_0, sprites::helecho_riesgo_1},
+                                      {sprites::helecho_critico_0, sprites::helecho_critico_1}};
 const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
                                  sprites::exito_3, sprites::exito_4, sprites::exito_5};
 
@@ -255,15 +258,16 @@ uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cact
 uint32_t lUltimoDibujo = 0;
 
 // ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
-enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus, Suculenta };
+enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus, Suculenta, Helecho };
 struct Clave { const char *texto; Familia familia; };
 // Se busca cada texto dentro del nombre, sin mayusculas. La primera que coincide gana; sin coincidencia, la comun.
 const Clave CLAVES[] = {{"atrapamoscas", Familia::Carnivora}, {"carniv", Familia::Carnivora},
                         {"girasol", Familia::Girasol}, {"cactus", Familia::Cactus}, {"cacto", Familia::Cactus},
-                        {"suculenta", Familia::Suculenta}, {"echeveria", Familia::Suculenta}};
+                        {"suculenta", Familia::Suculenta}, {"echeveria", Familia::Suculenta},
+                        {"helecho", Familia::Helecho}};
 Familia lFamilia = Familia::Comun;
 // Cuanto se balancea cada familia respecto a la comun (el girasol mas, el cactus casi nada). Indice: Familia.
-const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f, 0.4f};
+const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f, 0.4f, 1.2f};
 // Riego: si la humedad sube al menos esto entre dos lecturas, la suculenta se infla (cae una gota y sonrie).
 constexpr float SUBIDA_RIEGO = 3.0f;
 float lHumedadPrevia = NAN;
@@ -299,6 +303,7 @@ constexpr uint32_t CACTUS_CRECE_FLOR_MS = 1500;
 const Punto CARA_SUCULENTA[3] = {{24, 36}, {24, 37}, {24, 39}};
 constexpr uint32_t SUCULENTA_RESPIRA_MS = 4500;  // saludable: se infla 500 ms cada 4,5 s
 constexpr uint32_t GOTA_MS = 500, RIEGO_MS = 1600;  // la gota cae en 500 ms; el gusto dura hasta 1,6 s
+const uint16_t HELECHO_MS[3] = {450, 700, 1100};  // cada cuanto alterna las frondas: mas lento cuanto peor esta
 
 // Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
 // En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
@@ -344,6 +349,13 @@ void pintarSuculenta(Cara c, float parpadeo, uint32_t ahora, float seno, float a
         bitmap(20, -8 + (int)((p.y - 14) * tRiego / GOTA_MS), sprites::icono_gota, 8, 8);
 }
 
+// Helecho: cinco frondas de foliolos finos que se mecen (dos cuadros que alternan) ademas del balanceo; la cara va en
+// la matera, como la planta comun. En riesgo las frondas se arquean; critico cuelgan ralas y bota un foliolo.
+void pintarHelecho(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    cuerpo(HELECHO[lNivel][(ahora / HELECHO_MS[lNivel]) % 2], seno, amp, 0);
+    caraMatera(c, parpadeo, ahora);
+}
+
 // Cactus: casi no se balancea; parpadea como todos y, saludable, le crece una flor en la punta.
 // En riesgo baja los brazos y la flor se va; critico se encoge y bota una espina.
 void pintarCactus(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
@@ -371,6 +383,8 @@ void pintarLecturas(uint32_t ahora) {
         pintarCactus(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia == Familia::Suculenta) {
         pintarSuculenta(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Helecho) {
+        pintarHelecho(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia != Familia::Carnivora) {
         cuerpo(PLANTA[lNivel], seno, amp, 0);
         caraMatera(c, parpadeo, ahora);

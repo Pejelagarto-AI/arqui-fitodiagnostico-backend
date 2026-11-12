@@ -138,7 +138,8 @@ GEO_CACTUS = (5, 5, 5, 4, 2.0, -5, 8)
 CARA_GIRASOL = [(24, 17), (28, 22), (31, 29)]
 CARA_CACTUS = [(24, 22), (24, 23), (24, 29)]
 CARA_SUCULENTA = [(24, 36), (24, 37), (24, 39)]
-FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4, "suculenta": 0.4}
+FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4, "suculenta": 0.4, "helecho": 1.2}
+HELECHO_MS = [450, 700, 1100]
 
 class Lecturas:
     def __init__(self, familia, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5"):
@@ -268,6 +269,11 @@ class Lecturas:
         if regando and tr < 500:
             o.sprite("icono_gota", 20, -8 + (y - 14) * tr // 500)
 
+    def pintar_helecho(self, o, c, parp, t, seno, amp, nivel):
+        estado = ["saludable", "riesgo", "critico"][nivel]
+        self.cuerpo(o, f"helecho_{estado}_{(t // HELECHO_MS[nivel]) % 2}", seno, amp, 0)
+        self.cara_matera(o, c, parp, t)
+
     def cara_trampa(self, o, c, parp, t, seno, amp, yo, dy, con_boca):
         self.cara_grande(o, c, parp, t, 24 + self.desv(yo, seno, amp), yo + dy, GEO_TRAMPA, con_boca)
 
@@ -299,6 +305,8 @@ class Lecturas:
             self.pintar_cactus(o, c, parp, t, seno, amp, nivel)
         elif self.familia == "suculenta":
             self.pintar_suculenta(o, c, parp, t, seno, amp, nivel)
+        elif self.familia == "helecho":
+            self.pintar_helecho(o, c, parp, t, seno, amp, nivel)
         elif not self.carn:
             self.cuerpo(o, ["planta_saludable_0", "planta_riesgo_0", "planta_critico_0"][nivel], seno, amp, 0)
             self.cara_matera(o, c, parp, t)
