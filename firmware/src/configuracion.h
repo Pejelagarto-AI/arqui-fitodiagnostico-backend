@@ -30,6 +30,7 @@ constexpr int PIN_HUMEDAD = 0, PIN_LUZ = 1, PIN_TEMPERATURA = 3;
 constexpr int PIN_HUMEDAD = 34, PIN_LUZ = 35, PIN_TEMPERATURA = 32;
 #endif
 constexpr int MUESTRAS_ADC = 16;                 // cada lectura analogica promedia estas muestras
+constexpr uint32_t DHT_INTERVALO_MS = 2000;      // el DHT22 no admite lecturas mas seguidas
 
 // Potenciometros (sensores = potenciometros): escalas fijas, como las de un sensor real; el servidor decide si el
 // valor esta en el optimo de la especie. Son tablas de dos puntos: el ADC no es lineal en las puntas, asi que
