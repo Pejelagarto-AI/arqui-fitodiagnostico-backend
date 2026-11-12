@@ -42,6 +42,7 @@ const char *const NOMBRE_SENSORES = "simulados";
 #endif
 Sensores *sensores = &sensoresDeLaMatera;
 uint32_t proximaLectura = 0;
+uint32_t proximaCalibracion = 0;
 uint32_t numeroDeLectura = 0;
 String ultimoEstado;
 bool punto = false;
@@ -252,6 +253,30 @@ void faseReclamo() {
     if (fase == Fase::Reclamo) pantalla::qr(enlaceDelQr(), identidad::codigo(), puntosReclamo);
 }
 
+// Modo calibracion (calibracion = 1 en local.ini): una linea compacta con lo que midio cada sensor antes de
+// convertir. Apagado por defecto para que el registro normal siga igual al del simulador.
+void registrarCrudos() {
+#if FITO_CALIBRACION
+    char crudos[160];
+    sensores->describirCrudos(crudos, sizeof crudos);
+    registrar("cal %s", crudos);
+#endif
+}
+
+// En modo calibracion los sensores se leen tambien fuera de OPERANDO (esperando el reclamo, sin servidor), para
+// calibrar sin tener la planta vinculada. Esas lecturas no se envian.
+void calibrarFueraDeOperando() {
+#if FITO_CALIBRACION
+    if (fase == Fase::Operando) return;
+    if (millis() < proximaCalibracion) return;
+    proximaCalibracion = millis() + config::INTERVALO_LECTURA_MS;
+    Lectura l = {};
+    const char *descripcion = "";
+    if (!sensores->leer(l, descripcion)) registrar("cal (sin enviar) %s", descripcion);
+    registrarCrudos();
+#endif
+}
+
 void tomarLectura() {
     if (!reloj::hayHora()) {
         if (!sinHoraAvisada) { registrar("sin hora valida: no se reportan lecturas"); sinHoraAvisada = true; }
@@ -259,7 +284,9 @@ void tomarLectura() {
     }
     Lectura l = {};
     const char *descripcion = "";
-    if (!sensores->leer(l, descripcion)) {
+    bool ok = sensores->leer(l, descripcion);
+    registrarCrudos();
+    if (!ok) {
         registrar("lectura descartada: %s", descripcion);
         return;
     }
@@ -340,7 +367,7 @@ void setup() {
     delay(300);
     Serial.println();
     registrar("firmware de la matera Fito (ESP32), 115200 baudios");
-    registrar("sensores: %s", NOMBRE_SENSORES);
+    registrar("sensores: %s%s", NOMBRE_SENSORES, FITO_CALIBRACION ? " (modo calibracion)" : "");
     boton::iniciar();
     pantalla::iniciar();
     identidad::iniciar();
@@ -365,6 +392,7 @@ void loop() {
         case Fase::Operando: faseOperando(); break;
         case Fase::Fatal: break;
         }
+        calibrarFueraDeOperando();
     }
     delay(10);
 }

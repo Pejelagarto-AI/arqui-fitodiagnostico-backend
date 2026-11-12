@@ -28,6 +28,10 @@ sensores = valor("sensores", "simulados").strip().lower() or "simulados"
 if sensores not in ("simulados", "potenciometros"):
     raise SystemExit("[fito] sensores debe ser simulados o potenciometros (dice %r)" % sensores)
 
+calibracion = valor("calibracion", "0").strip().lower() or "0"
+if calibracion not in ("0", "1", "no", "si"):
+    raise SystemExit("[fito] calibracion debe ser 0 o 1 (dice %r)" % calibracion)
+
 lineas = [
     "// GENERADO por extra_script.py desde la seccion [fito] (platformio.ini y local.ini). No editar ni versionar.",
     "#pragma once",
@@ -38,6 +42,7 @@ lineas = [
     "#define FITO_PUERTO_API %d" % entero("puerto_api", 8080),
     "#define FITO_PUERTO_FRONT %d" % entero("puerto_front", 5500),
     "#define FITO_SENSORES_POTENCIOMETROS %d" % (1 if sensores == "potenciometros" else 0),
+    "#define FITO_CALIBRACION %d" % (1 if calibracion in ("1", "si") else 0),
     "",
 ]
 carpeta = os.path.join(env.subst("$PROJECT_DIR"), "include")  # noqa: F821

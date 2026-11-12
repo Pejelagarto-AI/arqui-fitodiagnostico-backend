@@ -23,6 +23,9 @@ public:
     // Rangos optimos de la especie que devuelve el servidor: 0 humedad, 1 luz, 2 temperatura.
     // Por defecto se ignoran; cada adaptador decide si le sirven.
     virtual void adoptarRangos(const float minimo[3], const float maximo[3]) { (void)minimo; (void)maximo; }
+    // Modo calibracion: lo que midio cada magnitud antes de convertir y el valor convertido, de la ultima leer().
+    // Por defecto (sensores simulados) no hay nada crudo que mostrar.
+    virtual void describirCrudos(char *buf, size_t n) { snprintf(buf, n, "sin datos crudos"); }
 };
 
 // Caminata aleatoria alrededor del rango optimo del poto (como simulador/simulador_esp32.py), con una lectura

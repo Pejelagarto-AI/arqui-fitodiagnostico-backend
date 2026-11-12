@@ -12,3 +12,5 @@ puerto_api = 8080
 puerto_front = 5500
 ; simulados (por defecto) o potenciometros: humedad GPIO 34, luz GPIO 35, temperatura GPIO 32 (ver README).
 sensores = simulados
+; 1 = modo calibracion: por serie, los mV crudos de cada sensor y el valor convertido (ver CALIBRACION.md).
+calibracion = 0

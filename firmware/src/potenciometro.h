@@ -9,9 +9,11 @@ public:
     // `minimo` en un extremo de la perilla y `maximo` en el otro, en la unidad de la magnitud.
     Potenciometro(int pin, float minimo, float maximo);
     bool leer(float &valor) override;   // un potenciometro siempre responde: siempre true
+    void describirCrudo(char *buf, size_t n) override;   // "1234 mV"
 
 private:
     int pin_;
     float minimo_;
     float maximo_;
+    int ultimoMv_ = -1;
 };

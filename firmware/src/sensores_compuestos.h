@@ -11,10 +11,15 @@ public:
     bool leer(Lectura &l, const char *&descripcion) override;
     // Solo para describir la lectura (dentro del optimo o fuera); el diagnostico lo sigue haciendo el servidor.
     void adoptarRangos(const float minimo[3], const float maximo[3]) override;
+    // "humedad 2950 mV = 0.0 | luz 1210 mV = 420.0 | temperatura hr 55 % = 21.3"
+    void describirCrudos(char *buf, size_t n) override;
 
 private:
     SensorDeMagnitud *magnitudes_[3];
     float lo_[3];
     float hi_[3];
     bool hayRangos_ = false;
+    float ultimo_[3] = {0, 0, 0};
+    bool ok_[3] = {false, false, false};
+    bool leido_ = false;
 };

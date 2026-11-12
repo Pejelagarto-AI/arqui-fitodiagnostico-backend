@@ -21,13 +21,19 @@ void SensoresCompuestos::adoptarRangos(const float minimo[3], const float maximo
 bool SensoresCompuestos::leer(Lectura &l, const char *&descripcion) {
     static char buf[40];
     float v[3];
+    int falla = -1;
+    // Se leen las tres aunque una falle: el modo calibracion muestra todas, y asi se ve cual fallo.
     for (int i = 0; i < 3; i++) {
-        if (!magnitudes_[i]->leer(v[i])) {
-            snprintf(buf, sizeof buf, "falla el sensor de %s", NOMBRE[i]);
-            descripcion = buf;
-            return false;                        // el servidor exige las tres magnitudes: no se envia media lectura
-        }
-        v[i] = redondear(v[i]);
+        ok_[i] = magnitudes_[i]->leer(v[i]);
+        if (ok_[i]) v[i] = redondear(v[i]);
+        else if (falla < 0) falla = i;
+        ultimo_[i] = ok_[i] ? v[i] : 0;
+    }
+    leido_ = true;
+    if (falla >= 0) {
+        snprintf(buf, sizeof buf, "falla el sensor de %s", NOMBRE[falla]);
+        descripcion = buf;
+        return false;                            // el servidor exige las tres magnitudes: no se envia media lectura
     }
     l.humedad = v[0];
     l.luz = v[1];
@@ -44,4 +50,21 @@ bool SensoresCompuestos::leer(Lectura &l, const char *&descripcion) {
         }
     }
     return true;
+}
+
+void SensoresCompuestos::describirCrudos(char *buf, size_t n) {
+    if (!leido_) { snprintf(buf, n, "sin leer"); return; }
+    size_t usado = 0;
+    buf[0] = '\0';
+    for (int i = 0; i < 3 && usado < n; i++) {
+        char crudo[32];
+        magnitudes_[i]->describirCrudo(crudo, sizeof crudo);
+        char valor[16];
+        if (ok_[i]) snprintf(valor, sizeof valor, "%.1f", ultimo_[i]);
+        else snprintf(valor, sizeof valor, "FALLA");
+        int k = snprintf(buf + usado, n - usado, "%s%s%s%s = %s", i ? " | " : "", NOMBRE[i], crudo[0] ? " " : "",
+                         crudo, valor);
+        if (k < 0) break;
+        usado += (size_t)k;
+    }
 }
