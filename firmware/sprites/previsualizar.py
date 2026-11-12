@@ -137,7 +137,8 @@ GEO_CHICA = (4, 5, 4, 4, 2.0, -4, 7)
 GEO_CACTUS = (5, 5, 5, 4, 2.0, -5, 8)
 CARA_GIRASOL = [(24, 17), (28, 22), (31, 29)]
 CARA_CACTUS = [(24, 22), (24, 23), (24, 29)]
-FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4}
+CARA_SUCULENTA = [(24, 36), (24, 37), (24, 39)]
+FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4, "suculenta": 0.4}
 
 class Lecturas:
     def __init__(self, familia, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5"):
@@ -148,6 +149,7 @@ class Lecturas:
         self.codigo, self.hum, self.luz, self.temp = codigo, hum, luz, temp
         self.cara_nivel = -1
         self.nivel_previo, self.nivel_desde = -1, 0
+        self.regado_desde = None
         self.desde = self.hasta = CARA_NIVEL[0]
         self.t0 = 0
 
@@ -245,6 +247,27 @@ class Lecturas:
             k = min(1.0, (t - self.nivel_desde - 600) / 1500)
             self.flor_cactus(o, 24 + self.desv(4, seno, amp), 4, suave(k))
 
+    def regar(self, t):
+        self.regado_desde = t
+
+    def pintar_suculenta(self, o, c, parp, t, seno, amp, nivel):
+        x, y = CARA_SUCULENTA[nivel]
+        tr = t - self.regado_desde if self.regado_desde is not None else 10 ** 9
+        regando = tr < 1600
+        inflada = nivel == 0 and t % 4500 < 500
+        dy = 0
+        if regando and tr >= 500:
+            if nivel == 0:
+                inflada = True
+            else:
+                dy = -1 if tr < 800 else 0
+            c = (c[0], min(c[1], 0.3), max(c[2], 0.8), 0.0)
+        nombre = "suculenta_saludable_1" if inflada else ["suculenta_saludable_0", "suculenta_riesgo_0", "suculenta_critico_0"][nivel]
+        self.cuerpo(o, nombre, seno, amp, dy)
+        self.cara_grande(o, c, parp, t, x + self.desv(y, seno, amp), y + dy, GEO_CHICA, True)
+        if regando and tr < 500:
+            o.sprite("icono_gota", 20, -8 + (y - 14) * tr // 500)
+
     def cara_trampa(self, o, c, parp, t, seno, amp, yo, dy, con_boca):
         self.cara_grande(o, c, parp, t, 24 + self.desv(yo, seno, amp), yo + dy, GEO_TRAMPA, con_boca)
 
@@ -274,6 +297,8 @@ class Lecturas:
             self.pintar_girasol(o, c, parp, t, seno, amp, nivel)
         elif self.familia == "cactus":
             self.pintar_cactus(o, c, parp, t, seno, amp, nivel)
+        elif self.familia == "suculenta":
+            self.pintar_suculenta(o, c, parp, t, seno, amp, nivel)
         elif not self.carn:
             self.cuerpo(o, ["planta_saludable_0", "planta_riesgo_0", "planta_critico_0"][nivel], seno, amp, 0)
             self.cara_matera(o, c, parp, t)
@@ -385,6 +410,14 @@ def mascotas(salida):
             sim.cuadro(0)                                     # entra al nivel en t=0: a los 2.5 s la flor ya crecio
             sim.cuadro(2500).guardar(f"20_{familia}_{estado}")
         # el GIF pasa por los tres estados y vuelve a saludable (la flor del cactus vuelve a crecer)
-        gif(f"anim_{familia}", Lecturas(familia, lambda t: 0 if t < 4000 or t >= 8000 else 1 if t < 6000 else 2).cuadro, 11000)
+        sim = Lecturas(familia, lambda t: 0 if t < 4000 or t >= 8000 else 1 if t < 6000 else 2)
+        if familia == "suculenta":
+            def cuadro(t, sim=sim):
+                if t in (2000, 9000):                         # riego en saludable y al volver de critico
+                    sim.regar(t)
+                return sim.cuadro(t)
+            gif(f"anim_{familia}", cuadro, 11000)
+        else:
+            gif(f"anim_{familia}", sim.cuadro, 11000)
 
 main()

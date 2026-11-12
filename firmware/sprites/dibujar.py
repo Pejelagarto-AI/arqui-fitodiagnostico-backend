@@ -268,6 +268,58 @@ def cactus(estado):
     return im
 
 
+def suculenta(estado, inflada=False):
+    """Roseta tipo echeveria: hojas gruesas con borde negro alrededor de una hoja central lisa (la cara)."""
+    im, d = lienzo(48, 64)
+    g = 1 if inflada else 0
+    if estado == "saludable":
+        cx, cy = 24, 36
+        atras = [(200, 21), (232, 21), (270, 21), (308, 21), (340, 21)]
+        medio = [(176, 21), (214, 18), (250, 16), (290, 16), (326, 18), (4, 21)]
+        ancho, centro = 6, (9, 9)
+    elif estado == "riesgo":
+        cx, cy = 24, 37
+        atras = [(194, 21), (228, 19), (270, 17), (312, 19), (346, 21)]
+        medio = [(172, 21), (208, 18), (332, 18), (8, 21)]
+        ancho, centro = 5, (9, 9)
+    else:
+        cx, cy = 24, 39
+        atras = [(190, 18), (222, 15), (318, 15), (350, 18)]
+        medio = [(168, 19), (12, 19)]
+        ancho, centro = 3, (8, 8)
+    for capa in (atras, medio):
+        for ang, largo in capa:
+            a = math.radians(ang)
+            tip = (cx + (largo + g * 2) * math.cos(a), cy + (largo + g * 2) * math.sin(a))
+            if estado == "critico":
+                tip = (tip[0], tip[1] + 6)                            # puntas caidas
+            pts = lente((cx, cy), tip, ancho + g)
+            d.polygon(pts, fill=1, outline=0)
+    rx, ry = centro[0] + g, centro[1] + g
+    d.ellipse((cx - rx - 1, cy - ry - 1, cx + rx + 1, cy + ry + 1), fill=0)
+    d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=1)
+    if estado == "critico":
+        d.polygon(lente((38, 62), (47, 60), 2), fill=1)             # una hoja en el suelo
+    matera(d, None)
+    return im
+
+
+def lente(base, tip, ancho):
+    """Contorno de hoja() como lista de puntos (para dibujar con borde)."""
+    bx, by = base
+    tx, ty = tip
+    dx, dy = tx - bx, ty - by
+    largo = math.hypot(dx, dy)
+    px, py = -dy / largo, dx / largo
+    izq, der = [], []
+    for i in range(15):
+        t = i / 14
+        a = ancho * math.sin(math.pi * t) ** 0.7
+        izq.append((bx + dx * t + px * a, by + dy * t + py * a))
+        der.append((bx + dx * t - px * a, by + dy * t - py * a))
+    return izq + der[::-1]
+
+
 # ---------------------------------------------------------------- animacion de exito (64x64)
 
 def matera_exito(d):
@@ -361,7 +413,7 @@ def exito(i):
 def main():
     os.makedirs(ARTE, exist_ok=True)
     for viejo in os.listdir(ARTE):
-        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_")):
+        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_", "suculenta_")):
             os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"planta_{estado}_0", planta(estado, 0))
@@ -373,7 +425,9 @@ def main():
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"girasol_{estado}_0", girasol(estado, 0))
         guardar(f"cactus_{estado}", cactus(estado))
+        guardar(f"suculenta_{estado}_0", suculenta(estado))
     guardar("girasol_saludable_1", girasol("saludable", 1))
+    guardar("suculenta_saludable_1", suculenta("saludable", inflada=True))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))
 

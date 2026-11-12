@@ -107,6 +107,7 @@ const int CARNI_G[3] = {14, 7, 0};                           // abertura de la b
 // Mascotas por especie (fase 7). Cada familia tiene su cuerpo por estado y, si lo necesita, un cuadro de idle.
 const uint8_t *const GIRASOL[3] = {sprites::girasol_saludable_0, sprites::girasol_riesgo_0, sprites::girasol_critico_0};
 const uint8_t *const CACTUS[3] = {sprites::cactus_saludable, sprites::cactus_riesgo, sprites::cactus_critico};
+const uint8_t *const SUCULENTA[3] = {sprites::suculenta_saludable_0, sprites::suculenta_riesgo_0, sprites::suculenta_critico_0};
 const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
                                  sprites::exito_3, sprites::exito_4, sprites::exito_5};
 
@@ -254,14 +255,19 @@ uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cact
 uint32_t lUltimoDibujo = 0;
 
 // ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
-enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus };
+enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus, Suculenta };
 struct Clave { const char *texto; Familia familia; };
 // Se busca cada texto dentro del nombre, sin mayusculas. La primera que coincide gana; sin coincidencia, la comun.
 const Clave CLAVES[] = {{"atrapamoscas", Familia::Carnivora}, {"carniv", Familia::Carnivora},
-                        {"girasol", Familia::Girasol}, {"cactus", Familia::Cactus}, {"cacto", Familia::Cactus}};
+                        {"girasol", Familia::Girasol}, {"cactus", Familia::Cactus}, {"cacto", Familia::Cactus},
+                        {"suculenta", Familia::Suculenta}, {"echeveria", Familia::Suculenta}};
 Familia lFamilia = Familia::Comun;
 // Cuanto se balancea cada familia respecto a la comun (el girasol mas, el cactus casi nada). Indice: Familia.
-const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f};
+const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f, 0.4f};
+// Riego: si la humedad sube al menos esto entre dos lecturas, la suculenta se infla (cae una gota y sonrie).
+constexpr float SUBIDA_RIEGO = 3.0f;
+float lHumedadPrevia = NAN;
+uint32_t regadoDesde = 0;
 bool mordiendo = false;
 uint32_t mordiscoDesde = 0;
 uint32_t proximoMordisco = 0;
@@ -290,6 +296,9 @@ const Punto CARA_CACTUS[3] = {{24, 22}, {24, 23}, {24, 29}};
 constexpr int CACTUS_Y_FLOR = 4;                 // centro de la flor: 5 px sobre la punta del cuerpo (fila 9)
 constexpr uint32_t CACTUS_ESPERA_FLOR_MS = 600;  // tras volver a saludable, un respiro y la flor empieza a crecer
 constexpr uint32_t CACTUS_CRECE_FLOR_MS = 1500;
+const Punto CARA_SUCULENTA[3] = {{24, 36}, {24, 37}, {24, 39}};
+constexpr uint32_t SUCULENTA_RESPIRA_MS = 4500;  // saludable: se infla 500 ms cada 4,5 s
+constexpr uint32_t GOTA_MS = 500, RIEGO_MS = 1600;  // la gota cae en 500 ms; el gusto dura hasta 1,6 s
 
 // Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
 // En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
@@ -317,6 +326,24 @@ void florCactus(int x, int y, float k) {
     oled.drawPixel(x, y, SSD1306_BLACK);
 }
 
+// Suculenta: roseta que respira (se infla un momento cada 4,5 s si esta saludable). Al regarla cae una gota, se infla
+// (o da un saltito si no esta saludable) y sonrie aunque este en riesgo o critica.
+void pintarSuculenta(Cara c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const Punto p = CARA_SUCULENTA[lNivel];
+    const uint32_t tRiego = ahora - regadoDesde;
+    const bool regando = regadoDesde && tRiego < RIEGO_MS;
+    bool inflada = lNivel == 0 && ahora % SUCULENTA_RESPIRA_MS < 500;
+    int dy = 0;
+    if (regando && tRiego >= GOTA_MS) {
+        if (lNivel == 0) inflada = true; else dy = tRiego < GOTA_MS + 300 ? -1 : 0;
+        c.boca = max(c.boca, 0.8f); c.onda = 0; c.inclina = min(c.inclina, 0.3f);
+    }
+    cuerpo(inflada ? sprites::suculenta_saludable_1 : SUCULENTA[lNivel], seno, amp, dy);
+    caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
+    if (regando && tRiego < GOTA_MS)                                                   // la gota cae sobre la roseta
+        bitmap(20, -8 + (int)((p.y - 14) * tRiego / GOTA_MS), sprites::icono_gota, 8, 8);
+}
+
 // Cactus: casi no se balancea; parpadea como todos y, saludable, le crece una flor en la punta.
 // En riesgo baja los brazos y la flor se va; critico se encoge y bota una espina.
 void pintarCactus(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
@@ -342,6 +369,8 @@ void pintarLecturas(uint32_t ahora) {
         pintarGirasol(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia == Familia::Cactus) {
         pintarCactus(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Suculenta) {
+        pintarSuculenta(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia != Familia::Carnivora) {
         cuerpo(PLANTA[lNivel], seno, amp, 0);
         caraMatera(c, parpadeo, ahora);
@@ -613,6 +642,8 @@ void vinculada(const char *codigo) {
 
 void lecturas(const char *codigo, const Lectura &l, const char *estado, bool punto, const char *especie) {
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
+    if (!isnan(lHumedadPrevia) && l.humedad >= lHumedadPrevia + SUBIDA_RIEGO) regadoDesde = millis();
+    lHumedadPrevia = l.humedad;
     lLect = l;
     lPunto = punto;
     aAscii(codigo, lNombre, sizeof lNombre);
