@@ -10,7 +10,12 @@ wifi_clave = laclavedelhotspot
 servidor = 192.168.43.105
 puerto_api = 8080
 puerto_front = 5500
-; simulados (por defecto) o potenciometros: humedad GPIO 34, luz GPIO 35, temperatura GPIO 32 (ver README).
-sensores = simulados
+; simulados, potenciometros o reales. Pines: humedad GPIO 34 (VCC de la sonda en GPIO 33), luz GPIO 35,
+; temperatura GPIO 32 (potenciometro o DHT22). Ver README.
+sensores = reales
+; Calibracion de los sensores reales (pares mV:valor). Sin estas lineas se usan las provisionales de
+; platformio.ini. Procedimiento en CALIBRACION.md.
+; cal_humedad = 2900:0, 1200:100
+; cal_luz = 3100:0, 2800:10, 2000:100, 1000:500, 400:2000, 150:5000
 ; 1 = modo calibracion: por serie, los mV crudos de cada sensor y el valor convertido (ver CALIBRACION.md).
 calibracion = 0

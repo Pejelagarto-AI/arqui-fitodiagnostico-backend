@@ -5,6 +5,7 @@
 //                                  \-> FATAL (clave de flota mala, serial tomado, falta configuracion)
 #include <Arduino.h>
 #include <WiFi.h>
+#include "alimentado_por_pin.h"
 #include "boton.h"
 #include "cliente_api.h"
 #include "cola.h"
@@ -19,6 +20,7 @@
 #include "sensores.h"
 #include "sensor_analogico.h"
 #include "sensores_compuestos.h"
+#include "temperatura_dht22.h"
 
 namespace {
 enum class Fase { Arranque, Red, Hora, Registro, Credencial, Reclamo, Operando, Fatal };
@@ -29,17 +31,29 @@ uint32_t proximoIntento = 0;     // para reintentos
 String token;
 time_t tokenExpira = 0;
 // Composicion de los sensores: el unico lugar que sabe que adaptador hay detras del puerto Sensores.
-// Se elige con `sensores` en local.ini. Para los sensores reales basta con otro SensorDeMagnitud aqui.
-#if FITO_SENSORES_POTENCIOMETROS
+// Se elige con `sensores` en local.ini (extra_script.py ya rechaza un valor desconocido).
 #define N_PUNTOS(t) ((int)(sizeof(t) / sizeof((t)[0])))
+#if !defined(FITO_SENSORES)
+#error "Falta FITO_SENSORES en include/config_local.h: compile con PlatformIO para que extra_script.py lo genere"
+#elif FITO_SENSORES == FITO_SENSORES_POTENCIOMETROS
 SensorAnalogico potHumedad(config::PIN_HUMEDAD, config::POT_HUMEDAD, N_PUNTOS(config::POT_HUMEDAD));
 SensorAnalogico potLuz(config::PIN_LUZ, config::POT_LUZ, N_PUNTOS(config::POT_LUZ));
 SensorAnalogico potTemperatura(config::PIN_TEMPERATURA, config::POT_TEMPERATURA, N_PUNTOS(config::POT_TEMPERATURA));
 SensoresCompuestos sensoresDeLaMatera(potHumedad, potLuz, potTemperatura);
 const char *const NOMBRE_SENSORES = "potenciometros";
-#else
+#elif FITO_SENSORES == FITO_SENSORES_REALES
+// Sonda resistiva (alimentada solo al leer), LDR y DHT22. Las dos curvas analogicas vienen de local.ini.
+SensorAnalogico sonda(config::PIN_HUMEDAD, config::CAL_HUMEDAD, N_PUNTOS(config::CAL_HUMEDAD));
+AlimentadoPorPin humedadDelSustrato(sonda, config::PIN_ALIMENTACION_HUMEDAD, config::ALIMENTACION_MS);
+SensorAnalogico ldr(config::PIN_LUZ, config::CAL_LUZ, N_PUNTOS(config::CAL_LUZ));
+TemperaturaDht22 dht22(config::PIN_TEMPERATURA);
+SensoresCompuestos sensoresDeLaMatera(humedadDelSustrato, ldr, dht22);
+const char *const NOMBRE_SENSORES = "reales (sonda, LDR y DHT22)";
+#elif FITO_SENSORES == FITO_SENSORES_SIMULADOS
 SensoresSimulados sensoresDeLaMatera;
 const char *const NOMBRE_SENSORES = "simulados";
+#else
+#error "sensores en local.ini debe ser simulados, potenciometros o reales"
 #endif
 Sensores *sensores = &sensoresDeLaMatera;
 uint32_t proximaLectura = 0;

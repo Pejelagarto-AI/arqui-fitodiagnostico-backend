@@ -29,8 +29,9 @@ def entero(clave, defecto):
 
 
 sensores = valor("sensores", "simulados").strip().lower() or "simulados"
-if sensores not in ("simulados", "potenciometros"):
-    raise SystemExit("[fito] sensores debe ser simulados o potenciometros (dice %r)" % sensores)
+MODOS = ("simulados", "potenciometros", "reales")   # el orden da el numero de FITO_SENSORES
+if sensores not in MODOS:
+    raise SystemExit("[fito] sensores debe ser simulados, potenciometros o reales (dice %r)" % sensores)
 
 calibracion = valor("calibracion", "0").strip().lower() or "0"
 if calibracion not in ("0", "1", "no", "si"):
@@ -54,7 +55,10 @@ lineas = [
     "#define FITO_SERVIDOR %s" % literal(valor("servidor").strip()),
     "#define FITO_PUERTO_API %d" % entero("puerto_api", 8080),
     "#define FITO_PUERTO_FRONT %d" % entero("puerto_front", 5500),
-    "#define FITO_SENSORES_POTENCIOMETROS %d" % (1 if sensores == "potenciometros" else 0),
+    "#define FITO_SENSORES_SIMULADOS 0",
+    "#define FITO_SENSORES_POTENCIOMETROS 1",
+    "#define FITO_SENSORES_REALES 2",
+    "#define FITO_SENSORES %d" % MODOS.index(sensores),
     "#define FITO_CAL_HUMEDAD %s" % como_c(tablas["cal_humedad"]),
     "#define FITO_CAL_LUZ %s" % como_c(tablas["cal_luz"]),
     "#define FITO_CALIBRACION %d" % (1 if calibracion in ("1", "si") else 0),
