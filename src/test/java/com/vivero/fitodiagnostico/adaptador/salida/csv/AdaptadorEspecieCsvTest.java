@@ -17,15 +17,15 @@ class AdaptadorEspecieCsvTest {
     @Test
     void listaLasEspeciesDelCsvOrdenadasPorNombre() {
         assertThat(adaptador.listar()).extracting(Especie::nombre)
-                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "lavanda", "potos", "sansevieria", "suculenta");
+                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "suculenta");
     }
 
     @Test
     void buscaSinDistinguirMayusculasYDevuelveLosRangosDelCsv() {
-        Especie sansevieria = adaptador.buscar("SansEvieria").orElseThrow();
+        Especie suculenta = adaptador.buscar("SucuLenta").orElseThrow();
 
-        assertThat(sansevieria.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(20.0);
-        assertThat(sansevieria.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(45.0);
+        assertThat(suculenta.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(10.0);
+        assertThat(suculenta.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(30.0);
     }
 
     @Test
@@ -37,10 +37,10 @@ class AdaptadorEspecieCsvTest {
     @Test
     void laEscrituraSobreElCsvSiempreLanzaCatalogoSoloLectura() {
         CatalogoCsvSoloLectura soloLectura = new CatalogoCsvSoloLectura();
-        Especie potos = adaptador.buscar("potos").orElseThrow();
+        Especie helecho = adaptador.buscar("helecho").orElseThrow();
 
-        assertThatThrownBy(() -> soloLectura.guardar(potos)).isInstanceOf(CatalogoSoloLecturaException.class);
-        assertThatThrownBy(() -> soloLectura.cambiarActivacion("potos", false))
+        assertThatThrownBy(() -> soloLectura.guardar(helecho)).isInstanceOf(CatalogoSoloLecturaException.class);
+        assertThatThrownBy(() -> soloLectura.cambiarActivacion("helecho", false))
                 .isInstanceOf(CatalogoSoloLecturaException.class);
     }
 
@@ -49,11 +49,11 @@ class AdaptadorEspecieCsvTest {
         EspeciesEnMemoria espejo = new EspeciesEnMemoria();
         EspejoDeEspecies sincronizador = new EspejoDeEspecies(adaptador, espejo);
 
-        assertThat(sincronizador.sincronizar()).isEqualTo(8);
-        espejo.cambiarActivacion("potos", false);
+        assertThat(sincronizador.sincronizar()).isEqualTo(5);
+        espejo.cambiarActivacion("helecho", false);
         sincronizador.sincronizar();
 
-        assertThat(espejo.buscar("potos").orElseThrow().activa()).isTrue();
-        assertThat(espejo.listar()).hasSize(8);
+        assertThat(espejo.buscar("helecho").orElseThrow().activa()).isTrue();
+        assertThat(espejo.listar()).hasSize(5);
     }
 }

@@ -39,7 +39,7 @@ class TraspasoDeDispositivoIntegracionTest {
 
     private static final String CLAVE = "clave-larga-1";
     private static final String PREFIJO = "tras-";
-    private static final String LECTURA = "{\"marcaDeTiempo\":\"2026-11-05T10:00:00Z\",\"humedad\":55,\"luz\":700,\"temperatura\":22}";
+    private static final String LECTURA = "{\"marcaDeTiempo\":\"2026-11-05T10:00:00Z\",\"humedad\":70,\"luz\":500,\"temperatura\":22}";
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
@@ -98,7 +98,7 @@ class TraspasoDeDispositivoIntegracionTest {
 
     private String crearPlanta(String token) throws Exception {
         return leer(mockMvc.perform(json(con(post("/api/v1/plantas"), token),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
     }
 
     private void reclamar(String token, String planta) throws Exception {
@@ -142,7 +142,7 @@ class TraspasoDeDispositivoIntegracionTest {
         lectura(token).andExpect(status().isCreated()).andExpect(jsonPath("$.apodo").value("Pepa"));
 
         mockMvc.perform(json(con(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                .put("/api/v1/plantas/" + plantaA), duenoA), "{\"apodo\":\"Poti\",\"especie\":\"potos\"}"))
+                .put("/api/v1/plantas/" + plantaA), duenoA), "{\"apodo\":\"Poti\",\"especie\":\"helecho\"}"))
                 .andExpect(status().isOk());
 
         lectura(token).andExpect(status().isCreated()).andExpect(jsonPath("$.apodo").value("Poti"));

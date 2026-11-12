@@ -166,37 +166,37 @@ curl http://localhost:8080/api/v1/especies
 ```json
 [
   {
-    "nombre": "sansevieria",
+    "nombre": "atrapamoscas",
     "rangos": {
-      "humedad": { "min": 20.0, "max": 45.0, "unidad": "%" },
-      "luz": { "min": 200.0, "max": 1500.0, "unidad": "lux" },
-      "temperatura": { "min": 15.0, "max": 29.0, "unidad": "°C" }
+      "humedad": { "min": 60.0, "max": 90.0, "unidad": "%" },
+      "luz": { "min": 3000.0, "max": 20000.0, "unidad": "lux" },
+      "temperatura": { "min": 15.0, "max": 32.0, "unidad": "°C" }
     }
   }
 ]
 ```
 
-(devuelve las 5 especies del Anexo B, ordenadas por nombre; se recorta a una para el ejemplo)
+(devuelve las 5 especies del catálogo por defecto, ordenadas por nombre; se recorta a una para el ejemplo)
 
 ### `POST /api/v1/diagnosticos`
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/diagnosticos \
   -H "Content-Type: application/json" \
-  -d '{"especie":"sansevieria","humedad":15,"luz":800,"temperatura":22}'
+  -d '{"especie":"helecho","humedad":40,"luz":500,"temperatura":22}'
 ```
 
 ```json
 {
-  "especie": "sansevieria",
+  "especie": "helecho",
   "estado": "EN_RIESGO",
   "parametros": [
-    { "nombre": "humedad", "valor": 15.0, "unidad": "%", "rangoOptimo": [20.0, 45.0], "estado": "BAJO" },
-    { "nombre": "luz", "valor": 800.0, "unidad": "lux", "rangoOptimo": [200.0, 1500.0], "estado": "OPTIMO" },
-    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [15.0, 29.0], "estado": "OPTIMO" }
+    { "nombre": "humedad", "valor": 40.0, "unidad": "%", "rangoOptimo": [60.0, 85.0], "estado": "BAJO" },
+    { "nombre": "luz", "valor": 500.0, "unidad": "lux", "rangoOptimo": [150.0, 800.0], "estado": "OPTIMO" },
+    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [16.0, 26.0], "estado": "OPTIMO" }
   ],
   "recomendaciones": [
-    "Humedad del sustrato 15 % por debajo del rango óptimo 20–45 %: regar moderadamente."
+    "Humedad del sustrato 40 % por debajo del rango óptimo 60–85 %: regar moderadamente."
   ]
 }
 ```
@@ -255,15 +255,12 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 
 ## Tabla de referencia
 
-Fuente: Anexo B del enunciado del proyecto de corte (las cinco primeras filas). Las tres últimas son de la fase 7; sus fuentes van en la sección siguiente.
+El catálogo por defecto tiene **exactamente cinco especies, las que tienen mascota en la OLED**: es el mínimo que exige el enunciado. Fuente: Anexo B del enunciado del proyecto de corte (suculenta y helecho). Las tres últimas son de la fase 7; sus fuentes van en la sección siguiente. Del Anexo B salieron `sansevieria`, `potos` y `lavanda`, que no tienen mascota; un administrador puede darlas de alta otra vez con `POST /api/v1/admin/especies`.
 
 | Especie | Humedad (%) | Luz (lux) | Temperatura (°C) |
 |---|---|---|---|
-| sansevieria | 20–45 | 200–1500 | 15–29 |
-| potos | 40–70 | 300–1200 | 18–30 |
 | suculenta | 10–30 | 800–2500 | 15–32 |
 | helecho | 60–85 | 150–800 | 16–26 |
-| lavanda | 25–50 | 1000–3000 | 15–30 |
 | girasol | 40–70 | 10000–50000 | 18–28 |
 | cactus | 5–25 | 20000–60000 | 15–35 |
 | atrapamoscas | 60–90 | 3000–20000 | 15–32 |

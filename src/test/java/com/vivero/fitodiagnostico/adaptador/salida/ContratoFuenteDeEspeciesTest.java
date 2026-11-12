@@ -26,8 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * correr sin base ni archivo.
  *
  * <p>Cada subclase entrega una instancia vacía a través de los tres métodos
- * abstractos; este contrato la siembra con las especies del CSV (las cinco del
- * Anexo B y las tres de la fase 7), usando el mismo {@code SembradorDeEspecies} de producción.
+ * abstractos; este contrato la siembra con las cinco especies del CSV, usando el mismo {@code SembradorDeEspecies} de producción.
  *
  * <p>{@code @Transactional} va aquí y no solo en la subclase: Spring busca la
  * anotación en la clase que DECLARA el método de prueba, y estos métodos se
@@ -65,19 +64,19 @@ public abstract class ContratoFuenteDeEspeciesTest {
         List<Especie> especies = catalogoDeEspecies().listar();
 
         assertThat(especies).extracting(Especie::nombre)
-                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "lavanda", "potos", "sansevieria", "suculenta");
+                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "suculenta");
         assertThat(especies).allMatch(Especie::activa);
     }
 
     @Test
     public void laBusquedaEsInsensibleAMayusculas() {
-        Optional<Especie> porMinusculas = rangosPorEspecie().buscar("sansevieria");
-        Optional<Especie> porMayusculas = rangosPorEspecie().buscar("SANSEVIERIA");
+        Optional<Especie> porMinusculas = rangosPorEspecie().buscar("suculenta");
+        Optional<Especie> porMayusculas = rangosPorEspecie().buscar("SUCULENTA");
 
         assertThat(porMinusculas).isPresent();
         assertThat(porMayusculas).isPresent();
-        assertThat(porMinusculas.get().nombre()).isEqualTo("sansevieria");
-        assertThat(porMayusculas.get().nombre()).isEqualTo("sansevieria");
+        assertThat(porMinusculas.get().nombre()).isEqualTo("suculenta");
+        assertThat(porMayusculas.get().nombre()).isEqualTo("suculenta");
     }
 
     @Test
@@ -86,16 +85,16 @@ public abstract class ContratoFuenteDeEspeciesTest {
     }
 
     @Test
-    public void losRangosDeSansevieriaSonLosDelAnexoB() {
-        Especie sansevieria = rangosPorEspecie().buscar("sansevieria")
-                .orElseThrow(() -> new AssertionError("sansevieria debería existir en la referencia"));
+    public void losRangosDeSuculentaSonLosDelCsv() {
+        Especie suculenta = rangosPorEspecie().buscar("suculenta")
+                .orElseThrow(() -> new AssertionError("suculenta debería existir en la referencia"));
 
-        assertThat(sansevieria.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(20.0);
-        assertThat(sansevieria.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(45.0);
-        assertThat(sansevieria.rango(Magnitud.LUZ).minimo()).isEqualTo(200.0);
-        assertThat(sansevieria.rango(Magnitud.LUZ).maximo()).isEqualTo(1500.0);
-        assertThat(sansevieria.rango(Magnitud.TEMPERATURA).minimo()).isEqualTo(15.0);
-        assertThat(sansevieria.rango(Magnitud.TEMPERATURA).maximo()).isEqualTo(29.0);
+        assertThat(suculenta.rango(Magnitud.HUMEDAD).minimo()).isEqualTo(10.0);
+        assertThat(suculenta.rango(Magnitud.HUMEDAD).maximo()).isEqualTo(30.0);
+        assertThat(suculenta.rango(Magnitud.LUZ).minimo()).isEqualTo(800.0);
+        assertThat(suculenta.rango(Magnitud.LUZ).maximo()).isEqualTo(2500.0);
+        assertThat(suculenta.rango(Magnitud.TEMPERATURA).minimo()).isEqualTo(15.0);
+        assertThat(suculenta.rango(Magnitud.TEMPERATURA).maximo()).isEqualTo(32.0);
     }
 
     @Test
@@ -104,18 +103,18 @@ public abstract class ContratoFuenteDeEspeciesTest {
 
         assertThat(rangosPorEspecie().buscar("orquidea")).isPresent();
         assertThat(catalogoDeEspecies().listar()).extracting(Especie::nombre)
-                .contains("orquidea").hasSize(9);
+                .contains("orquidea").hasSize(6);
     }
 
     @Test
     public void guardarUnaEspecieExistenteReemplazaSusRangosSinDuplicarla() {
-        Especie editada = rangosPorEspecie().buscar("potos").orElseThrow()
-                .conRangos(especieNueva("potos").rangos());
+        Especie editada = rangosPorEspecie().buscar("cactus").orElseThrow()
+                .conRangos(especieNueva("cactus").rangos());
 
         catalogoEditable().guardar(editada);
 
-        assertThat(catalogoDeEspecies().listar()).hasSize(8);
-        assertThat(rangosPorEspecie().buscar("potos").orElseThrow().rango(Magnitud.HUMEDAD))
+        assertThat(catalogoDeEspecies().listar()).hasSize(5);
+        assertThat(rangosPorEspecie().buscar("cactus").orElseThrow().rango(Magnitud.HUMEDAD))
                 .isEqualTo(new Rango(30.0, 60.0));
     }
 
@@ -125,8 +124,8 @@ public abstract class ContratoFuenteDeEspeciesTest {
 
         Especie helecho = rangosPorEspecie().buscar("helecho").orElseThrow();
         assertThat(helecho.activa()).isFalse();
-        assertThat(catalogoDeEspecies().listar()).hasSize(8);
-        assertThat(catalogoDeEspecies().listar().stream().filter(Especie::activa)).hasSize(7);
+        assertThat(catalogoDeEspecies().listar()).hasSize(5);
+        assertThat(catalogoDeEspecies().listar().stream().filter(Especie::activa)).hasSize(4);
     }
 
     @Test
@@ -141,7 +140,7 @@ public abstract class ContratoFuenteDeEspeciesTest {
     public void cambiarLaActivacionDeUnaEspecieInexistenteNoHaceNada() {
         catalogoEditable().cambiarActivacion("fantasma", false);
 
-        assertThat(catalogoDeEspecies().listar()).hasSize(8);
+        assertThat(catalogoDeEspecies().listar()).hasSize(5);
     }
 
     @Test

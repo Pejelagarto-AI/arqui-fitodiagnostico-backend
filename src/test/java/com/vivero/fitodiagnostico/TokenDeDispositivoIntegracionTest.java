@@ -66,7 +66,7 @@ class TokenDeDispositivoIntegracionTest {
         ajeno = registrarEIniciarSesion();
         idInvitado = leer(mockMvc.perform(con(get("/api/v1/cuenta"), invitado)), "$.id");
         planta = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
         accesos.otorgar(AccesoCompartido.otorgadoAhora(UUID.fromString(planta), UUID.fromString(idInvitado)));
         // El flujo real (reto + credencial) se prueba en AutenticacionDeDispositivoIntegracionTest; aqui solo
         // importa el alcance del token, asi que se emite directo por el puerto.
@@ -141,7 +141,7 @@ class TokenDeDispositivoIntegracionTest {
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(get("/api/v1/plantas/" + planta), tokenDeDispositivo)));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/diagnostico"), tokenDeDispositivo)));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(json(con(post("/api/v1/plantas/" + planta + "/mediciones"), tokenDeDispositivo),
-                "{\"humedad\":55,\"luz\":700,\"temperatura\":22}")));
+                "{\"humedad\":70,\"luz\":500,\"temperatura\":22}")));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(get("/api/v1/cuenta"), tokenDeDispositivo)));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(put("/api/v1/plantas/" + planta), tokenDeDispositivo)));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(delete("/api/v1/plantas/" + planta), tokenDeDispositivo)));
@@ -152,7 +152,7 @@ class TokenDeDispositivoIntegracionTest {
     void unTokenDeDispositivoTampocoAbreLosEndpointsPublicos() throws Exception {
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(con(get("/api/v1/especies"), tokenDeDispositivo)));
         afirmarDenegadoConCuerpoUniforme(mockMvc.perform(json(con(post("/api/v1/diagnosticos"), tokenDeDispositivo),
-                "{\"especie\":\"potos\",\"humedad\":55,\"luz\":700,\"temperatura\":22}")));
+                "{\"especie\":\"helecho\",\"humedad\":70,\"luz\":500,\"temperatura\":22}")));
     }
 
     @Test
