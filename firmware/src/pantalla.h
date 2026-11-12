@@ -19,7 +19,7 @@ void animarEspera(uint32_t ahoraMs);                    // puntos de espera de l
 void empezarExito(uint32_t ahoraMs, const char *nombre);
 bool animarExito(uint32_t ahoraMs);                     // true mientras la animacion siga; no bloquea
 void vinculada(const char *nombre);                     // pantalla final estatica: visto + "Vinculada"
-// `especie` decide el sprite (carnivora si contiene "atrapamoscas" o "carniv"); `estado` es el del servidor.
+// `especie` decide la mascota (familiaDe en pantalla.cpp: carnivora, girasol, ... o la planta comun); `estado` es el del servidor.
 void lecturas(const char *nombre, const Lectura &l, const char *estado, bool punto, const char *especie);
 void animarLecturas(uint32_t ahoraMs);                  // alterna cuadros de la planta; solo repinta si cambia el cuadro
 void mordisco(uint32_t ahoraMs);                        // la carnivora muerde (respuesta ok del servidor)

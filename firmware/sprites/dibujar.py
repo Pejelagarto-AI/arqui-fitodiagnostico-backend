@@ -67,8 +67,9 @@ def curva_q(p0, p1, p2, n=12):
     return out
 
 
-def matera(d, cara=None, banda=False):
-    """Matera 48 de ancho: borde y 46..49, linea negra en 50, cuerpo 51..63."""
+def matera(d, cara=None, banda=False, deco=None):
+    """Matera 48 de ancho: borde y 46..49, linea negra en 50, cuerpo 51..63.
+    `deco` decora el borde sin tocar la zona de la cara (filas 53..62): "zigzag" o "puntos"."""
     d.rectangle((8, 46, 39, 49), fill=1)
     d.line((9, 50, 38, 50), fill=0)
     d.polygon([(11, 51), (36, 51), (33, 63), (14, 63)], fill=1)
@@ -76,6 +77,12 @@ def matera(d, cara=None, banda=False):
         d.line((13, 58, 34, 58), fill=0)
         for x in range(14, 34, 4):
             d.point((x, 60), fill=0)
+    if deco == "zigzag":
+        for x in range(9, 39):
+            d.point((x, 47 + (x // 2) % 2), fill=0)
+    elif deco == "puntos":
+        for x in range(10, 39, 3):
+            d.point((x, 47), fill=0); d.point((x + 1, 48), fill=0)
     if cara:
         for x in (18, 19, 28, 29):
             if cara == "cansada":
@@ -178,6 +185,56 @@ def carnivora(estado, cuadro, abertura=14):
     return im
 
 
+# ---------------------------------------------------------------- mascotas por especie (fase 7)
+# Cada familia deja el disco o el cuerpo liso donde pantalla.cpp pinta la cara (ojos, cejas y boca en negro).
+# Las coordenadas de la cara por estado viven en pantalla.cpp (FAMILIAS[]); si se mueve la cabeza aqui, se mueve alla.
+
+def petalos(d, cx, cy, r_in, r_out, n, fase, quitar=(), caida=0.0, ancho=3.2):
+    """Corona de `n` petalos; `caida` (0..1) dobla las puntas hacia abajo; `quitar` deja huecos."""
+    for i in range(n):
+        if i in quitar:
+            continue
+        a = math.radians(fase + i * 360 / n)
+        bx, by = cx + r_in * math.cos(a), cy + r_in * math.sin(a)
+        tx, ty = cx + r_out * math.cos(a), cy + r_out * math.sin(a)
+        ty += caida * (r_out - r_in) * (1 - abs(math.sin(a))) * 0.9 + caida * 2
+        hoja(d, (bx, by), (tx, ty), ancho, vena=False)
+
+
+def disco(d, cx, cy, r):
+    """Disco del girasol: un anillo negro lo separa de los petalos y adentro queda liso para la cara."""
+    d.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill=0)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=1)
+
+
+def girasol(estado, cuadro=0):
+    im, d = lienzo(48, 64)
+    if estado == "saludable":
+        cx, cy, r = 24, 17, 10
+        tallo(d, curva_q((24, 47), (24, 36), (cx, cy + 8)), 3)
+        hoja(d, (24, 40), (7, 31), 5, curva=-3)
+        hoja(d, (24, 36), (41, 28), 5, curva=3)
+        petalos(d, cx, cy, r - 1, r + 7, 12, 15 * cuadro)           # cuadro 1: corona girada medio petalo
+        disco(d, cx, cy, r)
+    elif estado == "riesgo":
+        cx, cy, r = 28, 22, 9
+        tallo(d, curva_q((24, 47), (23, 32), (cx - 2, cy + 6)), 3)
+        hoja(d, (24, 41), (8, 42), 5, curva=4)
+        hoja(d, (24, 37), (40, 40), 5, curva=-4)
+        petalos(d, cx, cy, r - 1, r + 6, 11, 8, quitar=(2, 7), caida=0.5)
+        disco(d, cx, cy, r)
+    else:
+        cx, cy, r = 31, 29, 9
+        tallo(d, curva_q((22, 47), (20, 18), (cx - 3, cy - 9)), 3)    # el tallo se arquea y la cabeza cuelga
+        hoja(d, (21, 42), (6, 46), 4, curva=2, vena=False)
+        hoja(d, (21, 38), (10, 40), 3, curva=-2, vena=False)
+        petalos(d, cx, cy, r - 1, r + 6, 10, 18, quitar=(1, 5, 8), caida=1.0, ancho=2.8)
+        disco(d, cx, cy, r)
+        hoja(d, (40, 61), (47, 62), 2, vena=False)                    # un petalo en el suelo
+    matera(d, None, deco="puntos")
+    return im
+
+
 # ---------------------------------------------------------------- animacion de exito (64x64)
 
 def matera_exito(d):
@@ -271,7 +328,7 @@ def exito(i):
 def main():
     os.makedirs(ARTE, exist_ok=True)
     for viejo in os.listdir(ARTE):
-        if viejo.startswith(("planta_", "carni_", "exito_")):
+        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_")):
             os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"planta_{estado}_0", planta(estado, 0))
@@ -280,6 +337,9 @@ def main():
     guardar("carni_cerrada", carnivora("feliz", 0, 0))
     guardar("carni_riesgo_0", carnivora("riesgo", 0))
     guardar("carni_critico_0", carnivora("critico", 0))
+    for estado in ("saludable", "riesgo", "critico"):
+        guardar(f"girasol_{estado}_0", girasol(estado, 0))
+    guardar("girasol_saludable_1", girasol("saludable", 1))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))
 

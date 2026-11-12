@@ -104,6 +104,8 @@ const uint8_t *const PLANTA[3] = {sprites::planta_saludable_0, sprites::planta_r
 const uint8_t *const CARNI_TRISTE[2] = {sprites::carni_riesgo_0, sprites::carni_critico_0};
 const uint8_t *const CARNI_BOCA[3] = {sprites::carni_abierta_0, sprites::carni_media, sprites::carni_cerrada};
 const int CARNI_G[3] = {14, 7, 0};                           // abertura de la boca de cada cuadro (la cara se ancla a ella)
+// Mascotas por especie (fase 7). Cada familia tiene su cuerpo por estado y, si lo necesita, un cuadro de idle.
+const uint8_t *const GIRASOL[3] = {sprites::girasol_saludable_0, sprites::girasol_riesgo_0, sprites::girasol_critico_0};
 const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
                                  sprites::exito_3, sprites::exito_4, sprites::exito_5};
 
@@ -195,28 +197,50 @@ void caraMatera(const Cara &c, float parpadeo, uint32_t ahora) {
     }
 }
 
-// Cara de la carnivora: ojos 5 de ancho (alto segun lo abiertos), cejas y, si esta triste, la boca.
-void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp, int yo, int dy, bool conBoca) {
+// Medidas de una cara grande (en negro sobre una zona lisa del sprite). Todo relativo al centro de los ojos.
+struct Geometria {
+    int8_t separacion;     // del centro de la cara al centro de cada ojo
+    int8_t altoOjo;        // alto del ojo abierto (ancho fijo de 5)
+    int8_t semiBoca;       // media boca en px
+    int8_t yBoca;          // fila de la boca bajo los ojos
+    float curvaBoca;       // px de curva de la sonrisa en los extremos
+    int8_t yCeja;          // fila de la ceja (negativa: encima de los ojos)
+    int8_t xLagrima;       // columna de la lagrima respecto al centro
+};
+const Geometria GEO_TRAMPA = {9, 7, 7, 2, 4.0f, -6, 13};     // la carnivora (fase 5): igual que antes, pixel a pixel
+const Geometria GEO_CHICA = {4, 5, 4, 4, 2.0f, -4, 7};       // girasol y suculenta: cabe en un disco de radio 9
+const Geometria GEO_CACTUS = {5, 5, 5, 4, 2.0f, -5, 8};      // cuerpo de 19 px de ancho
+
+// Cara grande: ojos de 5 de ancho (alto segun lo abiertos), cejas y, si `conBoca`, la boca y la lagrima.
+void caraGrande(const Cara &c, float parpadeo, uint32_t ahora, int cx, int cy, const Geometria &g, bool conBoca) {
     const float a = c.abierto * parpadeo;
-    const int h = max(1, (int)lroundf(7 * a));
-    const int cx = 24 + desv(yo, seno, amp);
+    const int h = max(1, (int)lroundf(g.altoOjo * a));
     for (int lado = -1; lado <= 1; lado += 2) {
-        const int ex = cx + 9 * lado;
-        const int top = yo + dy - h / 2;
+        const int ex = cx + g.separacion * lado;
+        const int top = cy - h / 2;
         oled.fillRoundRect(ex - 2, top, 5, h, h >= 4 ? 2 : h >= 2 ? 1 : 0, SSD1306_BLACK);
         if (h >= 5) oled.drawPixel(ex - 1, top + 1, SSD1306_WHITE);
         if (c.inclina > 0.2f) {                                   // el extremo de adentro mas alto: ceja triste
-            const int fuera = yo + dy - 6 + (int)lroundf(c.inclina), dentro = yo + dy - 6 - (int)lroundf(2 * c.inclina);
+            const int fuera = cy + g.yCeja + (int)lroundf(c.inclina), dentro = cy + g.yCeja - (int)lroundf(2 * c.inclina);
             oled.drawLine(ex + 4 * lado, fuera, ex - 3 * lado, dentro, SSD1306_BLACK);
         }
     }
     if (conBoca) {
-        for (int x = cx - 7; x <= cx + 7; x++) oled.drawPixel(x, yBoca(x, (float)cx, 7.0f, yo + 2 + dy, 4.0f, c), SSD1306_BLACK);
+        for (int x = cx - g.semiBoca; x <= cx + g.semiBoca; x++)
+            oled.drawPixel(x, yBoca(x, (float)cx, (float)g.semiBoca, cy + g.yBoca, g.curvaBoca, c), SSD1306_BLACK);
         if (caraNivel == 2) {
             const uint32_t fase = ahora % 4200;
-            if (fase < 900) { const int y = yo + dy + 3 + (int)(fase * 7 / 900); oled.drawPixel(cx + 13, y, SSD1306_BLACK); oled.drawPixel(cx + 13, y + 1, SSD1306_BLACK); }
+            if (fase < 900) {
+                const int y = cy + g.yBoca + 1 + (int)(fase * 7 / 900);
+                oled.drawPixel(cx + g.xLagrima, y, SSD1306_BLACK); oled.drawPixel(cx + g.xLagrima, y + 1, SSD1306_BLACK);
+            }
         }
     }
+}
+
+// Cara de la carnivora (fase 5) sobre la cara grande generica.
+void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp, int yo, int dy, bool conBoca) {
+    caraGrande(c, parpadeo, ahora, 24 + desv(yo, seno, amp), yo + dy, GEO_TRAMPA, conBoca);
 }
 
 // ---- estado de la pantalla de lecturas (para repintar sin que main reenvie todo) ----
@@ -224,9 +248,19 @@ Lectura lLect = {};
 char lNombre[64] = "";
 char lEstado[16] = "";
 bool lPunto = false;
-bool lCarnivora = false;
 int lNivel = 0;                         // 0 saludable, 1 en riesgo, 2 critico
+uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cactus cuenta desde aqui para la flor)
 uint32_t lUltimoDibujo = 0;
+
+// ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
+enum class Familia : uint8_t { Comun, Carnivora, Girasol };
+struct Clave { const char *texto; Familia familia; };
+// Se busca cada texto dentro del nombre, sin mayusculas. La primera que coincide gana; sin coincidencia, la comun.
+const Clave CLAVES[] = {{"atrapamoscas", Familia::Carnivora}, {"carniv", Familia::Carnivora},
+                        {"girasol", Familia::Girasol}};
+Familia lFamilia = Familia::Comun;
+// Cuanto se balancea cada familia respecto a la comun (el girasol mas, el cactus casi nada). Indice: Familia.
+const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f};
 bool mordiendo = false;
 uint32_t mordiscoDesde = 0;
 uint32_t proximoMordisco = 0;
@@ -241,6 +275,32 @@ bool contieneSinMayusculas(const char *pajar, const char *aguja) {
     return false;
 }
 
+Familia familiaDe(const char *especie) {
+    if (!especie) return Familia::Comun;
+    for (const Clave &k : CLAVES)
+        if (contieneSinMayusculas(especie, k.texto)) return k.familia;
+    return Familia::Comun;
+}
+
+// Centro de la cara de cada familia por nivel (saludable, en riesgo, critico): sigue a la cabeza del sprite.
+struct Punto { int8_t x, y; };
+const Punto CARA_GIRASOL[3] = {{24, 17}, {28, 22}, {31, 29}};
+
+// Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
+// En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
+void pintarGirasol(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const Punto p = CARA_GIRASOL[lNivel];
+    int dy = 0, mira = 0;
+    const uint8_t *bmp = GIRASOL[lNivel];
+    if (lNivel == 0) {
+        if ((ahora / 400) % 2) bmp = sprites::girasol_saludable_1;
+        dy = (int)lroundf(0.6f * sinf(6.2831853f * (ahora % 1600) / 1600.0f));
+        mira = (int)lroundf(1.5f * sinf(6.2831853f * (ahora % 5000) / 5000.0f));
+    }
+    cuerpo(bmp, seno, amp, dy);
+    caraGrande(c, parpadeo, ahora, p.x + mira + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
+}
+
 void pintarLecturas(uint32_t ahora) {
     limpiar();
     modo = Modo::Lecturas;
@@ -249,8 +309,10 @@ void pintarLecturas(uint32_t ahora) {
     const Cara c = caraEn(ahora);
     const float parpadeo = factorParpadeo(ahora);
     const float seno = sinf(6.2831853f * (ahora % PERIODO_BALANCEO_MS) / PERIODO_BALANCEO_MS);
-    const float amp = AMPLITUD[lNivel];
-    if (!lCarnivora) {
+    const float amp = AMPLITUD[lNivel] * FACTOR_BALANCEO[(int)lFamilia];
+    if (lFamilia == Familia::Girasol) {
+        pintarGirasol(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia != Familia::Carnivora) {
         cuerpo(PLANTA[lNivel], seno, amp, 0);
         caraMatera(c, parpadeo, ahora);
     } else if (lNivel > 0) {
@@ -524,7 +586,8 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
     lLect = l;
     lPunto = punto;
     aAscii(codigo, lNombre, sizeof lNombre);
-    lCarnivora = especie && (contieneSinMayusculas(especie, "atrapamoscas") || contieneSinMayusculas(especie, "carniv"));
+    lFamilia = familiaDe(especie);
+    const int nivelAntes = lNivel;
     lNivel = 0;
     const char *etiqueta = "-";
     if (estado && estado[0]) {
@@ -533,6 +596,7 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
         else etiqueta = "SALUDABLE";
     }
     strlcpy(lEstado, etiqueta, sizeof lEstado);
+    if (lNivel != nivelAntes || !lNivelDesde) lNivelDesde = millis();
     if (proximoMordisco == 0) proximoMordisco = millis() + 4000;
     pintarLecturas(millis());
 }
@@ -544,7 +608,7 @@ void animarLecturas(uint32_t ahoraMs) {
 }
 
 void mordisco(uint32_t ahoraMs) {
-    if (!lCarnivora || lNivel > 0) return;
+    if (lFamilia != Familia::Carnivora || lNivel > 0) return;
     mordiendo = true;
     mordiscoDesde = ahoraMs;
     proximoMordisco = ahoraMs + 6000 + (ahoraMs % 4000);
