@@ -24,4 +24,7 @@ private:
     bool ultimoOk_ = false;
     float temperatura_ = NAN;
     float humedadAire_ = NAN;
+    int pin_;
+    int reposo_ = -1;            // nivel de la linea de datos antes de la primera lectura: 1 = pull-up presente
+    float cruda_ = NAN;          // ultimo valor que entrego la libreria, aunque sea imposible
 };
