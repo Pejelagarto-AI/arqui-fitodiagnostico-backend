@@ -13,7 +13,9 @@
 # Requiere docker (imagen caddy:2-alpine) y, si ufw esta activo, abrir el puerto: sudo ufw allow 8443/tcp.
 set -euo pipefail
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RAIZ="${FITO_RAIZ:-$(cd "$AQUI/.." && pwd)}"
+export FITO_RAIZ="$RAIZ"
 PUERTO_API="${FITO_PUERTO_API:-8080}"
 PUERTO_FRONT="${FITO_PUERTO_FRONT:-5500}"
 PUERTO_HTTPS="${FITO_PUERTO_HTTPS:-8443}"
@@ -42,19 +44,12 @@ if [ "$ORDEN" = "parar" ]; then
   else
     echo "proxy: nada que apagar"
   fi
-  "$RAIZ/scripts/demo-lan.sh" parar
+  "$AQUI/demo-lan.sh" parar
   exit 0
 fi
 
 command -v docker >/dev/null || { echo "hace falta docker para el proxy" >&2; exit 1; }
 docker image inspect "$IMAGEN" >/dev/null 2>&1 || docker pull "$IMAGEN"
-
-# ---- backend + front: los arranca demo-lan.sh si no estan ya ----
-if ocupado "$PUERTO_API" && ocupado "$PUERTO_FRONT"; then
-  echo "backend ($PUERTO_API) y front ($PUERTO_FRONT) ya estan arriba; no los toco"
-else
-  "$RAIZ/scripts/demo-lan.sh" ${IP:+--ip "$IP"} --puerto-api "$PUERTO_API" --puerto-front "$PUERTO_FRONT"
-fi
 
 # ---- IP: la misma que detecta demo-lan.sh ----
 if [ -z "$IP" ]; then
@@ -62,6 +57,18 @@ if [ -z "$IP" ]; then
   [ -n "$IP" ] || IP="$(ip -4 -o addr show up scope global | awk '$2 !~ /^(docker|veth|br-|virbr|tun|tailscale|CloudflareWARP|warp)/ {sub(/\/.*/,"",$4); print $4; exit}')"
 fi
 [ -n "$IP" ] || { echo "no encontre una IP de red local; use --ip <ip>" >&2; exit 1; }
+
+# El backend tiene que aceptar el origen HTTPS: el navegador manda Origin https://<ip>:8443 y, detras del proxy,
+# Spring lo compara con su propio puerto 8080, asi que lo trata como CORS y sin esta lista responde 403.
+export FITO_CORS_EXTRA="https://$IP:$PUERTO_HTTPS,https://localhost:$PUERTO_HTTPS,https://127.0.0.1:$PUERTO_HTTPS"
+
+# ---- backend + front: los arranca demo-lan.sh si no estan ya ----
+if ocupado "$PUERTO_API" && ocupado "$PUERTO_FRONT"; then
+  echo "backend ($PUERTO_API) y front ($PUERTO_FRONT) ya estan arriba; no los toco."
+  echo "  OJO: si ese backend no arranco con los origenes HTTPS (FITO_CORS_EXTRA), el navegador recibira 403; en ese caso: demo-https.sh parar && demo-https.sh"
+else
+  "$AQUI/demo-lan.sh" ${IP:+--ip "$IP"} --puerto-api "$PUERTO_API" --puerto-front "$PUERTO_FRONT"
+fi
 
 if ocupado "$PUERTO_HTTPS"; then
   echo "ya hay algo en el puerto $PUERTO_HTTPS: no toco nada. Use 'demo-https.sh parar' o --puerto-https." >&2
