@@ -64,6 +64,8 @@ Sin resistencias: el potenciómetro es un divisor de voltaje. Los pines son del 
 
 Nada más cambia: ni `SensoresCompuestos`, ni la máquina de estados, ni el cliente de la API. Se pueden mezclar, por ejemplo un DHT22 para la temperatura y potenciómetros para lo demás.
 
+El plan de los sensores reales (sonda de humedad, LDR y DHT22: pines, calibración y adaptadores) está en [`docs/fase6/IMPLEMENTACION.md`](../docs/fase6/IMPLEMENTACION.md#plan-sensores-reales).
+
 ## Compilar, subir, mirar
 
 ```bash
