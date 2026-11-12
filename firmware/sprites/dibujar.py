@@ -67,8 +67,9 @@ def curva_q(p0, p1, p2, n=12):
     return out
 
 
-def matera(d, cara=None, banda=False):
-    """Matera 48 de ancho: borde y 46..49, linea negra en 50, cuerpo 51..63."""
+def matera(d, cara=None, banda=False, deco=None):
+    """Matera 48 de ancho: borde y 46..49, linea negra en 50, cuerpo 51..63.
+    `deco` decora el borde sin tocar la zona de la cara (filas 53..62): "zigzag" o "puntos"."""
     d.rectangle((8, 46, 39, 49), fill=1)
     d.line((9, 50, 38, 50), fill=0)
     d.polygon([(11, 51), (36, 51), (33, 63), (14, 63)], fill=1)
@@ -76,6 +77,12 @@ def matera(d, cara=None, banda=False):
         d.line((13, 58, 34, 58), fill=0)
         for x in range(14, 34, 4):
             d.point((x, 60), fill=0)
+    if deco == "zigzag":
+        for x in range(9, 39):
+            d.point((x, 47 + (x // 2) % 2), fill=0)
+    elif deco == "puntos":
+        for x in range(10, 39, 3):
+            d.point((x, 47), fill=0); d.point((x + 1, 48), fill=0)
     if cara:
         for x in (18, 19, 28, 29):
             if cara == "cansada":
@@ -178,6 +185,193 @@ def carnivora(estado, cuadro, abertura=14):
     return im
 
 
+# ---------------------------------------------------------------- mascotas por especie (fase 7)
+# Cada familia deja el disco o el cuerpo liso donde pantalla.cpp pinta la cara (ojos, cejas y boca en negro).
+# Las coordenadas de la cara por estado viven en pantalla.cpp (FAMILIAS[]); si se mueve la cabeza aqui, se mueve alla.
+
+def petalos(d, cx, cy, r_in, r_out, n, fase, quitar=(), caida=0.0, ancho=3.2):
+    """Corona de `n` petalos; `caida` (0..1) dobla las puntas hacia abajo; `quitar` deja huecos."""
+    for i in range(n):
+        if i in quitar:
+            continue
+        a = math.radians(fase + i * 360 / n)
+        bx, by = cx + r_in * math.cos(a), cy + r_in * math.sin(a)
+        tx, ty = cx + r_out * math.cos(a), cy + r_out * math.sin(a)
+        ty += caida * (r_out - r_in) * (1 - abs(math.sin(a))) * 0.9 + caida * 2
+        hoja(d, (bx, by), (tx, ty), ancho, vena=False)
+
+
+def disco(d, cx, cy, r):
+    """Disco del girasol: un anillo negro lo separa de los petalos y adentro queda liso para la cara."""
+    d.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill=0)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=1)
+
+
+def girasol(estado, cuadro=0):
+    im, d = lienzo(48, 64)
+    if estado == "saludable":
+        cx, cy, r = 24, 17, 10
+        tallo(d, curva_q((24, 47), (24, 36), (cx, cy + 8)), 3)
+        hoja(d, (24, 40), (7, 31), 5, curva=-3)
+        hoja(d, (24, 36), (41, 28), 5, curva=3)
+        petalos(d, cx, cy, r - 1, r + 7, 12, 15 * cuadro)           # cuadro 1: corona girada medio petalo
+        disco(d, cx, cy, r)
+    elif estado == "riesgo":
+        cx, cy, r = 28, 22, 9
+        tallo(d, curva_q((24, 47), (23, 32), (cx - 2, cy + 6)), 3)
+        hoja(d, (24, 41), (8, 42), 5, curva=4)
+        hoja(d, (24, 37), (40, 40), 5, curva=-4)
+        petalos(d, cx, cy, r - 1, r + 6, 11, 8, quitar=(2, 7), caida=0.5)
+        disco(d, cx, cy, r)
+    else:
+        cx, cy, r = 31, 29, 9
+        tallo(d, curva_q((22, 47), (20, 18), (cx - 3, cy - 9)), 3)    # el tallo se arquea y la cabeza cuelga
+        hoja(d, (21, 42), (6, 46), 4, curva=2, vena=False)
+        hoja(d, (21, 38), (10, 40), 3, curva=-2, vena=False)
+        petalos(d, cx, cy, r - 1, r + 6, 10, 18, quitar=(1, 5, 8), caida=1.0, ancho=2.8)
+        disco(d, cx, cy, r)
+        hoja(d, (40, 61), (47, 62), 2, vena=False)                    # un petalo en el suelo
+    matera(d, None, deco="puntos")
+    return im
+
+
+def cactus(estado):
+    """Cactus de columna con dos brazos; el cuerpo queda liso arriba para la cara y la flor la pinta pantalla.cpp."""
+    im, d = lienzo(48, 64)
+    if estado == "saludable":
+        top = 9
+        brazos = [((5, 16, 11, 34), (6, 28, 18, 34)), ((37, 11, 43, 30), (30, 24, 42, 30))]
+    elif estado == "riesgo":
+        top = 10
+        brazos = [((4, 30, 10, 42), (5, 30, 18, 36)), ((38, 27, 44, 39), (30, 27, 43, 33))]
+    else:
+        top = 17
+        brazos = [((3, 36, 8, 45), (4, 34, 18, 39)), ((40, 33, 45, 42), (30, 31, 44, 36))]
+    for vertical, horizontal in brazos:
+        d.rounded_rectangle(vertical, radius=3, fill=1)
+        d.rounded_rectangle(horizontal, radius=3, fill=1)
+        x = (vertical[0] + vertical[2]) // 2
+        d.line((x, vertical[1] + 3, x, vertical[3] - 4), fill=0)      # costilla del brazo
+    d.rounded_rectangle((15, top, 33, 47), radius=9, fill=1)
+    for x in (19, 24, 29):                                          # costillas del cuerpo, debajo de la cara
+        d.line((x, 37 if estado != "critico" else 41, x, 45), fill=0)
+    # espinas: pelitos de 1 px hacia afuera de la silueta
+    for y in range(top + 6, 46, 5):
+        d.point((14, y), fill=1); d.point((34, y + 2), fill=1)
+    for vertical, _ in brazos:
+        x0, y0, x1, y1 = vertical
+        for y in range(y0 + 3, y1 - 2, 5):
+            d.point((x0 - 1, y), fill=1); d.point((x1 + 1, y + 2), fill=1)
+    if estado == "critico":
+        d.line((40, 61, 43, 58), fill=1)                            # una espina caida
+    matera(d, None, deco="zigzag")
+    return im
+
+
+def suculenta(estado, inflada=False):
+    """Roseta tipo echeveria: hojas gruesas con borde negro alrededor de una hoja central lisa (la cara)."""
+    im, d = lienzo(48, 64)
+    g = 1 if inflada else 0
+    if estado == "saludable":
+        cx, cy = 24, 36
+        atras = [(200, 21), (232, 21), (270, 21), (308, 21), (340, 21)]
+        medio = [(176, 21), (214, 18), (250, 16), (290, 16), (326, 18), (4, 21)]
+        ancho, centro = 6, (9, 9)
+    elif estado == "riesgo":
+        cx, cy = 24, 37
+        atras = [(194, 21), (228, 19), (270, 17), (312, 19), (346, 21)]
+        medio = [(172, 21), (208, 18), (332, 18), (8, 21)]
+        ancho, centro = 5, (9, 9)
+    else:
+        cx, cy = 24, 39
+        atras = [(190, 18), (222, 15), (318, 15), (350, 18)]
+        medio = [(168, 19), (12, 19)]
+        ancho, centro = 3, (8, 8)
+    for capa in (atras, medio):
+        for ang, largo in capa:
+            a = math.radians(ang)
+            tip = (cx + (largo + g * 2) * math.cos(a), cy + (largo + g * 2) * math.sin(a))
+            if estado == "critico":
+                tip = (tip[0], tip[1] + 6)                            # puntas caidas
+            pts = lente((cx, cy), tip, ancho + g)
+            d.polygon(pts, fill=1, outline=0)
+    rx, ry = centro[0] + g, centro[1] + g
+    d.ellipse((cx - rx - 1, cy - ry - 1, cx + rx + 1, cy + ry + 1), fill=0)
+    d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=1)
+    if estado == "critico":
+        d.polygon(lente((38, 62), (47, 60), 2), fill=1)             # una hoja en el suelo
+    matera(d, None)
+    return im
+
+
+def lente(base, tip, ancho):
+    """Contorno de hoja() como lista de puntos (para dibujar con borde)."""
+    bx, by = base
+    tx, ty = tip
+    dx, dy = tx - bx, ty - by
+    largo = math.hypot(dx, dy)
+    px, py = -dy / largo, dx / largo
+    izq, der = [], []
+    for i in range(15):
+        t = i / 14
+        a = ancho * math.sin(math.pi * t) ** 0.7
+        izq.append((bx + dx * t + px * a, by + dy * t + py * a))
+        der.append((bx + dx * t - px * a, by + dy * t - py * a))
+    return izq + der[::-1]
+
+
+def fronda(d, p0, p1, p2, largo, abre, decae=0.0, desde=0.2, paso=2.2):
+    """Hoja de helecho como una pluma: raquis en curva y foliolos de 1 px a los dos lados que se achican
+    hacia la punta. `abre` es el angulo de los foliolos respecto al raquis; `decae` (0..1) los dobla hacia abajo."""
+    pts = curva_q(p0, p1, p2, 40)
+    d.line(pts, fill=1, width=1)
+    acum, total = [0.0], 0.0
+    for a, b in zip(pts, pts[1:]):
+        total += math.hypot(b[0] - a[0], b[1] - a[1]); acum.append(total)
+    s = total * desde
+    while s < total - 1:
+        k = next(i for i, v in enumerate(acum) if v >= s)
+        k = min(max(k, 1), len(pts) - 1)
+        (x0, y0), (x1, y1) = pts[k - 1], pts[k]
+        n = math.hypot(x1 - x0, y1 - y0) or 1
+        tx, ty = (x1 - x0) / n, (y1 - y0) / n
+        tam = largo * (1 - 0.75 * (s / total - desde) / (1 - desde))
+        for lado in (-1, 1):
+            ang = math.radians(abre) * lado
+            dx = tx * math.cos(ang) - ty * math.sin(ang)
+            dy = ty * math.cos(ang) + tx * math.sin(ang) + decae
+            m = math.hypot(dx, dy)
+            d.line((x1, y1, x1 + dx / m * tam, y1 + dy / m * tam), fill=1)
+        s += paso
+
+
+def helecho(estado, cuadro=0):
+    """Cinco frondas que salen de la matera; la cara va en la matera, como en la planta comun."""
+    im, d = lienzo(48, 64)
+    m = (-1, 1)[cuadro]                                             # el cuadro 1 mueve las puntas y abre los foliolos
+    if estado == "saludable":
+        frondas = [((24, 46), (24, 24), (24 + m, 1), 6),
+                   ((23, 46), (16, 22), (5 + m, 6), 5), ((25, 46), (32, 22), (43 + m, 6), 5),
+                   ((22, 46), (9, 36), (1, 25 + m), 5), ((26, 46), (39, 36), (47, 25 - m), 5)]
+        abre, decae = 58 + 10 * cuadro, 0.0
+    elif estado == "riesgo":
+        frondas = [((24, 46), (25, 20), (34, 12 + m), 5),
+                   ((23, 46), (14, 18), (4, 26 + m), 5), ((25, 46), (34, 18), (44, 26 - m), 5),
+                   ((22, 46), (6, 34), (1, 46 + m), 4), ((26, 46), (42, 34), (47, 46 - m), 4)]
+        abre, decae = 55 + 8 * cuadro, 0.35
+    else:
+        frondas = [((24, 46), (22, 24), (34, 28 + m), 4),
+                   ((23, 46), (10, 28), (3, 45 + m), 4), ((25, 46), (38, 28), (45, 45 - m), 4),
+                   ((22, 46), (5, 40), (2, 58), 3)]
+        abre, decae = 45 + 6 * cuadro, 0.9
+    for p0, p1, p2, largo in frondas:
+        fronda(d, p0, p1, p2, largo, abre, decae, paso=2.2 if estado != "critico" else 3.3)
+    if estado == "critico":
+        hoja(d, (39, 62), (46, 61), 2, vena=False)                   # un foliolo en el suelo
+    matera(d, None)
+    return im
+
+
 # ---------------------------------------------------------------- animacion de exito (64x64)
 
 def matera_exito(d):
@@ -271,7 +465,7 @@ def exito(i):
 def main():
     os.makedirs(ARTE, exist_ok=True)
     for viejo in os.listdir(ARTE):
-        if viejo.startswith(("planta_", "carni_", "exito_")):
+        if viejo.startswith(("planta_", "carni_", "exito_", "girasol_", "cactus_", "suculenta_", "helecho_")):
             os.remove(os.path.join(ARTE, viejo))
     for estado in ("saludable", "riesgo", "critico"):
         guardar(f"planta_{estado}_0", planta(estado, 0))
@@ -280,6 +474,14 @@ def main():
     guardar("carni_cerrada", carnivora("feliz", 0, 0))
     guardar("carni_riesgo_0", carnivora("riesgo", 0))
     guardar("carni_critico_0", carnivora("critico", 0))
+    for estado in ("saludable", "riesgo", "critico"):
+        guardar(f"girasol_{estado}_0", girasol(estado, 0))
+        guardar(f"cactus_{estado}", cactus(estado))
+        guardar(f"suculenta_{estado}_0", suculenta(estado))
+        guardar(f"helecho_{estado}_0", helecho(estado, 0))
+        guardar(f"helecho_{estado}_1", helecho(estado, 1))
+    guardar("girasol_saludable_1", girasol("saludable", 1))
+    guardar("suculenta_saludable_1", suculenta("saludable", inflada=True))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))
 

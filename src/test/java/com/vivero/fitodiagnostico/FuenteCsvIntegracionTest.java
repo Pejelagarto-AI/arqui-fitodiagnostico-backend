@@ -77,7 +77,7 @@ class FuenteCsvIntegracionTest {
     void elListadoPublicoYElDiagnosticoSueltoFuncionanLeyendoElCsv() throws Exception {
         mockMvc.perform(get("/api/v1/especies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(5));
+                .andExpect(jsonPath("$.length()").value(8));
 
         mockMvc.perform(json(post("/api/v1/diagnosticos"),
                 "{\"especie\":\"potos\",\"humedad\":55,\"luz\":700,\"temperatura\":22}"))

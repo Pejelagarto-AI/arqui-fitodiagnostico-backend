@@ -255,7 +255,7 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 
 ## Tabla de referencia
 
-Fuente: Anexo B del enunciado del proyecto de corte.
+Fuente: Anexo B del enunciado del proyecto de corte (las cinco primeras filas). Las tres últimas son de la fase 7; sus fuentes van en la sección siguiente.
 
 | Especie | Humedad (%) | Luz (lux) | Temperatura (°C) |
 |---|---|---|---|
@@ -264,6 +264,23 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 | suculenta | 10–30 | 800–2500 | 15–32 |
 | helecho | 60–85 | 150–800 | 16–26 |
 | lavanda | 25–50 | 1000–3000 | 15–30 |
+| girasol | 40–70 | 10000–50000 | 18–28 |
+| cactus | 5–25 | 20000–60000 | 15–35 |
+| atrapamoscas | 60–90 | 3000–20000 | 15–32 |
+
+### Fuentes de las especies agregadas (fase 7)
+
+Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera tenga mascota (ver [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md)). Humedad es la del sustrato, como en el resto de la tabla. Donde la fuente no da un número de sustrato, el rango es criterio propio a partir de lo que dice la fuente, y se marca así.
+
+| Especie | Rango | Fuente |
+|---|---|---|
+| girasol | temperatura 18–28 °C | Ball Australia, [cultural notes de girasol en maceta](https://ballaustralia.com/wp-content/uploads/plant_list/cultural_notes/S/Sunflower-pot-CN-2.pdf) (día 18–25 °C antes de la flor); Holmes Seed, [Sunflower Growing Guide](https://www.holmesseed.com/growers-guidebook/growing-guides/sunflower-growing-guide/) (óptimo 21–26 °C) |
+| girasol | luz 10000–50000 lux | sol pleno (las mismas fuentes); 10000 lux es luz de día indirecta y 50000 un día soleado. Criterio propio sobre "sol pleno" |
+| girasol | humedad 40–70 % | criterio propio: sustrato húmedo y drenado, sin encharcar (mismas fuentes) |
+| cactus | luz 20000–60000 lux | Arizona-Sonora Desert Museum, [Cacti in pots](https://www.desertmuseum.org/visit/sheets/1Cact_pot.pdf): mínimo 2000 pies-candela (unos 21500 lux) 12 h al día; sol pleno son 10000 pies-candela y quema tras el vidrio |
+| cactus | humedad 5–25 % | criterio propio: dejar secar el sustrato entre riegos; el exceso de agua pudre la raíz (Desert Museum; [UMN Extension, cacti and succulents](https://extension.umn.edu/house-plants/cacti-and-succulents)) |
+| cactus | temperatura 15–35 °C | criterio propio: planta de desierto con reposo fresco en invierno (Desert Museum) |
+| atrapamoscas | los tres rangos | los de la especie que ya existía en la base en vivo, para que el CSV y la base digan lo mismo. Contraste: [NDSU](https://www.ndsu.edu/pubweb/chiwonlee/plsc211/student%20papers/articles02/dhodgson/dhodgson.html) da 21–35 °C en crecimiento y humedad del aire sobre 50 %; [Iowa State Extension](https://yardandgarden.extension.iastate.edu/faq/how-does-one-care-venus-flytrap) pide varias horas de sol directo y sustrato siempre húmedo |
 
 ## Documentación
 
@@ -272,6 +289,7 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 - [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
 - [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
 - [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
+- [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

@@ -11,10 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LectorDeEspeciesCsvTest {
 
     @Test
-    void leeLasCincoEspeciesDelAnexoBTodasActivas() {
+    void leeLasEspeciesDelCsvTodasActivas() {
         assertThat(new LectorDeEspeciesCsv().leer())
                 .extracting(Especie::nombre)
-                .containsExactlyInAnyOrder("sansevieria", "potos", "suculenta", "helecho", "lavanda");
+                .containsExactlyInAnyOrder("sansevieria", "potos", "suculenta", "helecho", "lavanda",
+                        "girasol", "cactus", "atrapamoscas");
         assertThat(new LectorDeEspeciesCsv().leer()).allMatch(Especie::activa);
     }
 
@@ -24,7 +25,7 @@ class LectorDeEspeciesCsvTest {
 
         int cargadas = new SembradorDeEspecies(catalogo, catalogo, new LectorDeEspeciesCsv()).sembrarSiVacio();
 
-        assertThat(cargadas).isEqualTo(5);
+        assertThat(cargadas).isEqualTo(8);
         assertThat(catalogo.buscar("sansevieria").orElseThrow().rango(Magnitud.HUMEDAD).maximo()).isEqualTo(45.0);
     }
 

@@ -15,9 +15,9 @@ class AdaptadorEspecieCsvTest {
     private final AdaptadorEspecieCsv adaptador = new AdaptadorEspecieCsv(new LectorDeEspeciesCsv());
 
     @Test
-    void listaLasCincoEspeciesDelAnexoBOrdenadasPorNombre() {
+    void listaLasEspeciesDelCsvOrdenadasPorNombre() {
         assertThat(adaptador.listar()).extracting(Especie::nombre)
-                .containsExactly("helecho", "lavanda", "potos", "sansevieria", "suculenta");
+                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "lavanda", "potos", "sansevieria", "suculenta");
     }
 
     @Test
@@ -49,11 +49,11 @@ class AdaptadorEspecieCsvTest {
         EspeciesEnMemoria espejo = new EspeciesEnMemoria();
         EspejoDeEspecies sincronizador = new EspejoDeEspecies(adaptador, espejo);
 
-        assertThat(sincronizador.sincronizar()).isEqualTo(5);
+        assertThat(sincronizador.sincronizar()).isEqualTo(8);
         espejo.cambiarActivacion("potos", false);
         sincronizador.sincronizar();
 
         assertThat(espejo.buscar("potos").orElseThrow().activa()).isTrue();
-        assertThat(espejo.listar()).hasSize(5);
+        assertThat(espejo.listar()).hasSize(8);
     }
 }

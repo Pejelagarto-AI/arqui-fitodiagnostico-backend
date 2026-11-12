@@ -26,8 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * correr sin base ni archivo.
  *
  * <p>Cada subclase entrega una instancia vacía a través de los tres métodos
- * abstractos; este contrato la siembra con las cinco especies del Anexo B
- * leídas del CSV, usando el mismo {@code SembradorDeEspecies} de producción.
+ * abstractos; este contrato la siembra con las especies del CSV (las cinco del
+ * Anexo B y las tres de la fase 7), usando el mismo {@code SembradorDeEspecies} de producción.
  *
  * <p>{@code @Transactional} va aquí y no solo en la subclase: Spring busca la
  * anotación en la clase que DECLARA el método de prueba, y estos métodos se
@@ -61,11 +61,11 @@ public abstract class ContratoFuenteDeEspeciesTest {
     }
 
     @Test
-    public void listarDevuelveLasCincoEspeciesDelAnexoBEnOrden() {
+    public void listarDevuelveLasEspeciesDelCsvEnOrden() {
         List<Especie> especies = catalogoDeEspecies().listar();
 
         assertThat(especies).extracting(Especie::nombre)
-                .containsExactly("helecho", "lavanda", "potos", "sansevieria", "suculenta");
+                .containsExactly("atrapamoscas", "cactus", "girasol", "helecho", "lavanda", "potos", "sansevieria", "suculenta");
         assertThat(especies).allMatch(Especie::activa);
     }
 
@@ -104,7 +104,7 @@ public abstract class ContratoFuenteDeEspeciesTest {
 
         assertThat(rangosPorEspecie().buscar("orquidea")).isPresent();
         assertThat(catalogoDeEspecies().listar()).extracting(Especie::nombre)
-                .contains("orquidea").hasSize(6);
+                .contains("orquidea").hasSize(9);
     }
 
     @Test
@@ -114,7 +114,7 @@ public abstract class ContratoFuenteDeEspeciesTest {
 
         catalogoEditable().guardar(editada);
 
-        assertThat(catalogoDeEspecies().listar()).hasSize(5);
+        assertThat(catalogoDeEspecies().listar()).hasSize(8);
         assertThat(rangosPorEspecie().buscar("potos").orElseThrow().rango(Magnitud.HUMEDAD))
                 .isEqualTo(new Rango(30.0, 60.0));
     }
@@ -125,8 +125,8 @@ public abstract class ContratoFuenteDeEspeciesTest {
 
         Especie helecho = rangosPorEspecie().buscar("helecho").orElseThrow();
         assertThat(helecho.activa()).isFalse();
-        assertThat(catalogoDeEspecies().listar()).hasSize(5);
-        assertThat(catalogoDeEspecies().listar().stream().filter(Especie::activa)).hasSize(4);
+        assertThat(catalogoDeEspecies().listar()).hasSize(8);
+        assertThat(catalogoDeEspecies().listar().stream().filter(Especie::activa)).hasSize(7);
     }
 
     @Test
@@ -141,7 +141,7 @@ public abstract class ContratoFuenteDeEspeciesTest {
     public void cambiarLaActivacionDeUnaEspecieInexistenteNoHaceNada() {
         catalogoEditable().cambiarActivacion("fantasma", false);
 
-        assertThat(catalogoDeEspecies().listar()).hasSize(5);
+        assertThat(catalogoDeEspecies().listar()).hasSize(8);
     }
 
     @Test
