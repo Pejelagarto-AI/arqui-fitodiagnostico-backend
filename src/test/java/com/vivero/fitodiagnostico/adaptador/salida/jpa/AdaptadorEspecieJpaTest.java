@@ -51,10 +51,10 @@ class AdaptadorEspecieJpaTest extends ContratoFuenteDeEspeciesTest {
     }
 
     @Test
-    void despuesDeLasMigracionesLaTablaSoloTieneLasCincoEspeciesDelCsvSemilla() {
+    void despuesDeLasMigracionesLaTablaSoloTieneLasEspeciesDelCsvSemilla() {
         // V2/V3 sembraron desde SQL y V4 vació la tabla; el @BeforeEach del contrato
-        // la llenó otra vez desde el CSV: cinco filas, no diez.
-        assertThat(jpaRepository.count()).isEqualTo(5);
+        // la llenó otra vez desde el CSV: ocho filas (cinco del Anexo B y tres de la fase 7), no trece.
+        assertThat(jpaRepository.count()).isEqualTo(8);
     }
 
     @Test

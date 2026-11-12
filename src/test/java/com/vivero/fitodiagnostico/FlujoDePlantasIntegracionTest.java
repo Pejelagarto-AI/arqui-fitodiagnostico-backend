@@ -341,7 +341,7 @@ class FlujoDePlantasIntegracionTest {
 
     @Test
     void laEspecieDebeExistirYLosCamposSeValidanEnElBorde() throws Exception {
-        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"Pepa\",\"especie\":\"cactus\"}"))
+        mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"Pepa\",\"especie\":\"orquidea\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("ESPECIE_NO_SOPORTADA"));
         mockMvc.perform(json(con(post("/api/v1/plantas"), dueno), "{\"apodo\":\"\",\"especie\":\"potos\"}"))
