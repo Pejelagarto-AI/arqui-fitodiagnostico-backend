@@ -5,6 +5,7 @@
 //                                  \-> FATAL (clave de flota mala, serial tomado, falta configuracion)
 #include <Arduino.h>
 #include <WiFi.h>
+#include "alimentado_por_pin.h"
 #include "boton.h"
 #include "cliente_api.h"
 #include "cola.h"
@@ -17,6 +18,9 @@
 #include "registro.h"
 #include "reloj.h"
 #include "sensores.h"
+#include "sensor_analogico.h"
+#include "sensores_compuestos.h"
+#include "temperatura_dht22.h"
 
 namespace {
 enum class Fase { Arranque, Red, Hora, Registro, Credencial, Reclamo, Operando, Fatal };
@@ -26,9 +30,34 @@ uint32_t desde = 0;              // millis() de entrada a la fase
 uint32_t proximoIntento = 0;     // para reintentos
 String token;
 time_t tokenExpira = 0;
-SensoresSimulados sensoresSimulados;
-Sensores *sensores = &sensoresSimulados;
+// Composicion de los sensores: el unico lugar que sabe que adaptador hay detras del puerto Sensores.
+// Se elige con `sensores` en local.ini (extra_script.py ya rechaza un valor desconocido).
+#define N_PUNTOS(t) ((int)(sizeof(t) / sizeof((t)[0])))
+#if !defined(FITO_SENSORES)
+#error "Falta FITO_SENSORES en include/config_local.h: compile con PlatformIO para que extra_script.py lo genere"
+#elif FITO_SENSORES == FITO_SENSORES_POTENCIOMETROS
+SensorAnalogico potHumedad(config::PIN_HUMEDAD, config::POT_HUMEDAD, N_PUNTOS(config::POT_HUMEDAD));
+SensorAnalogico potLuz(config::PIN_LUZ, config::POT_LUZ, N_PUNTOS(config::POT_LUZ));
+SensorAnalogico potTemperatura(config::PIN_TEMPERATURA, config::POT_TEMPERATURA, N_PUNTOS(config::POT_TEMPERATURA));
+SensoresCompuestos sensoresDeLaMatera(potHumedad, potLuz, potTemperatura);
+const char *const NOMBRE_SENSORES = "potenciometros";
+#elif FITO_SENSORES == FITO_SENSORES_REALES
+// Sonda resistiva (alimentada solo al leer), LDR y DHT22. Las dos curvas analogicas vienen de local.ini.
+SensorAnalogico sonda(config::PIN_HUMEDAD, config::CAL_HUMEDAD, N_PUNTOS(config::CAL_HUMEDAD));
+AlimentadoPorPin humedadDelSustrato(sonda, config::PIN_ALIMENTACION_HUMEDAD, config::ALIMENTACION_MS);
+SensorAnalogico ldr(config::PIN_LUZ, config::CAL_LUZ, N_PUNTOS(config::CAL_LUZ));
+TemperaturaDht22 dht22(config::PIN_TEMPERATURA);
+SensoresCompuestos sensoresDeLaMatera(humedadDelSustrato, ldr, dht22);
+const char *const NOMBRE_SENSORES = "reales (sonda, LDR y DHT22)";
+#elif FITO_SENSORES == FITO_SENSORES_SIMULADOS
+SensoresSimulados sensoresDeLaMatera;
+const char *const NOMBRE_SENSORES = "simulados";
+#else
+#error "sensores en local.ini debe ser simulados, potenciometros o reales"
+#endif
+Sensores *sensores = &sensoresDeLaMatera;
 uint32_t proximaLectura = 0;
+uint32_t proximaCalibracion = 0;
 uint32_t numeroDeLectura = 0;
 String ultimoEstado;
 bool punto = false;
@@ -239,6 +268,30 @@ void faseReclamo() {
     if (fase == Fase::Reclamo) pantalla::qr(enlaceDelQr(), identidad::codigo(), puntosReclamo);
 }
 
+// Modo calibracion (calibracion = 1 en local.ini): una linea compacta con lo que midio cada sensor antes de
+// convertir. Apagado por defecto para que el registro normal siga igual al del simulador.
+void registrarCrudos() {
+#if FITO_CALIBRACION
+    char crudos[160];
+    sensores->describirCrudos(crudos, sizeof crudos);
+    registrar("cal %s", crudos);
+#endif
+}
+
+// En modo calibracion los sensores se leen tambien fuera de OPERANDO (esperando el reclamo, sin servidor), para
+// calibrar sin tener la planta vinculada. Esas lecturas no se envian.
+void calibrarFueraDeOperando() {
+#if FITO_CALIBRACION
+    if (fase == Fase::Operando) return;
+    if (millis() < proximaCalibracion) return;
+    proximaCalibracion = millis() + config::INTERVALO_LECTURA_MS;
+    Lectura l = {};
+    const char *descripcion = "";
+    if (!sensores->leer(l, descripcion)) registrar("cal (sin enviar) %s", descripcion);
+    registrarCrudos();
+#endif
+}
+
 void tomarLectura() {
     if (!reloj::hayHora()) {
         if (!sinHoraAvisada) { registrar("sin hora valida: no se reportan lecturas"); sinHoraAvisada = true; }
@@ -246,7 +299,12 @@ void tomarLectura() {
     }
     Lectura l = {};
     const char *descripcion = "";
-    sensores->leer(l, descripcion);
+    bool ok = sensores->leer(l, descripcion);
+    registrarCrudos();
+    if (!ok) {
+        registrar("lectura descartada: %s", descripcion);
+        return;
+    }
     l.cuando = time(nullptr);
     l.n = ++numeroDeLectura;
     l.fuera = strncmp(descripcion, "fuera", 5) == 0;
@@ -273,7 +331,7 @@ void vaciarCola() {
         if (codigo == 201) {
             registrar("#%u -> HTTP 201 estado=%s (tomada %s)", (unsigned)l.n, estado.c_str(), marca);
             ultimoEstado = estado;
-            if (api::rangos().hay) sensoresSimulados.adoptarRangos(api::rangos().minimo, api::rangos().maximo);
+            if (api::rangos().hay) sensores->adoptarRangos(api::rangos().minimo, api::rangos().maximo);
             pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;
             cola::sacar();
@@ -324,6 +382,7 @@ void setup() {
     delay(300);
     Serial.println();
     registrar("firmware de la matera Fito (ESP32), 115200 baudios");
+    registrar("sensores: %s%s", NOMBRE_SENSORES, FITO_CALIBRACION ? " (modo calibracion)" : "");
     boton::iniciar();
     pantalla::iniciar();
     identidad::iniciar();
@@ -348,6 +407,7 @@ void loop() {
         case Fase::Operando: faseOperando(); break;
         case Fase::Fatal: break;
         }
+        calibrarFueraDeOperando();
     }
     delay(10);
 }

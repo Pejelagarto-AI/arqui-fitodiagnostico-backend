@@ -102,7 +102,7 @@ La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del sec
 
 ### Firmware de la matera (fase 5)
 
-`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba, y `scripts/demo-https.sh` pone además un proxy Caddy con certificado propio en `https://<ip>:8443`, necesario para la cámara en vivo del lector de QR del front (contexto seguro y API del mismo origen); las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md).
+`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba, y `scripts/demo-https.sh` pone además un proxy Caddy con certificado propio en `https://<ip>:8443`, necesario para la cámara en vivo del lector de QR del front (contexto seguro y API del mismo origen); las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md). Los sensores (simulados o potenciómetros, y el plan de los sensores reales) están en [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md), decisiones D98 a D101.
 
 ### Broker MQTT para desarrollo (fase 4)
 
@@ -286,6 +286,7 @@ Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera
 - [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
 - [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
 - [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
+- [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md): fase 6 (sensores físicos): puerto por magnitud, potenciómetros en el ADC1, las decisiones D98 a D101 y el plan de los sensores reales (calibración, DHT22, sonda alimentada por pin).
 - [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 

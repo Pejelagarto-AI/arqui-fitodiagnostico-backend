@@ -65,3 +65,17 @@ void fito_respuesta_al_reto(const char *secreto, const char *reto, char *salida)
     fito_hmac_sha256((const uint8_t *)secreto, strlen(secreto), (const uint8_t *)reto, strlen(reto), firma);
     fito_base64(firma, 32, 0, salida);
 }
+
+float fito_interpolar_cal(int mv, const fito_punto_cal *tabla, int n) {
+    if (n <= 0) return 0.0f;
+    if (mv <= tabla[0].mv) return tabla[0].valor;
+    if (mv >= tabla[n - 1].mv) return tabla[n - 1].valor;
+    for (int i = 1; i < n; i++) {
+        if (mv <= tabla[i].mv) {
+            const fito_punto_cal *a = &tabla[i - 1], *b = &tabla[i];
+            if (b->mv <= a->mv) return b->valor;            /* tabla mal ordenada: no se divide por cero */
+            return a->valor + (b->valor - a->valor) * (float)(mv - a->mv) / (float)(b->mv - a->mv);
+        }
+    }
+    return tabla[n - 1].valor;
+}

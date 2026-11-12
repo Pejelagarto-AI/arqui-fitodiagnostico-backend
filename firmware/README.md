@@ -1,6 +1,6 @@
 # Firmware de la matera (ESP32 + OLED)
 
-Gemelo real de `simulador/simulador_esp32.py --serial auto`: mismas llamadas HTTP, mismos cuerpos, mismas firmas. PlatformIO, framework Arduino. Sensores simulados por ahora (la interfaz `Sensores` deja el hueco para DHT22, sonda capacitiva y BH1750).
+Gemelo real de `simulador/simulador_esp32.py --serial auto`: mismas llamadas HTTP, mismos cuerpos, mismas firmas. PlatformIO, framework Arduino. Sensores simulados, tres potenciómetros o los sensores reales: sonda de humedad, LDR y DHT22 (ver [Sensores](#sensores) y [CALIBRACION.md](CALIBRACION.md)).
 
 ## Cableado de la OLED SSD1306 128x64 (I2C)
 
@@ -28,8 +28,63 @@ cp local.ini.ejemplo local.ini      # local.ini no se versiona
 | `wifi_ssid`, `wifi_clave` | Wi-Fi por defecto de compilación (demo con el hotspot, 2.4 GHz). Vacío: portal cautivo. Admiten espacios y signos. |
 | `servidor` | IP del portátil en esa red. |
 | `puerto_api`, `puerto_front` | 8080 y 5500. |
+| `sensores` | `simulados` (por defecto), `potenciometros` o `reales`; ver [Sensores](#sensores). |
+| `calibracion` | `1`: por serie, los mV crudos de cada sensor y el valor convertido, en cualquier fase. `0` por defecto. Ver [CALIBRACION.md](CALIBRACION.md). |
+| `cal_humedad`, `cal_luz` | Tablas de calibración de la sonda y la LDR (pares `mV:valor`). Sin ellas, las provisionales de `platformio.ini`. |
 
 Las cadenas llegan al código por `include/config_local.h`, que genera `extra_script.py` en cada compilación (no se versiona), así que un SSID con espacios o una clave con comillas no rompen nada.
+
+## Sensores
+
+Las lecturas salen del puerto `Sensores` (`src/sensores.h`). La máquina de estados de `main.cpp` solo conoce esa interfaz; qué adaptador hay detrás se decide en un solo lugar, la composición al inicio de `main.cpp`, según `sensores` en `local.ini`:
+
+| `sensores` | Adaptador | Qué hace |
+|---|---|---|
+| `simulados` (por defecto) | `SensoresSimulados` | Caminata aleatoria centrada en el óptimo de la especie, con un 12 % de lecturas fuera de rango. |
+| `potenciometros` | `SensoresCompuestos` con tres `SensorAnalogico` | Cada perilla es una magnitud, con escala fija. |
+| `reales` | `SensoresCompuestos` con la sonda (`SensorAnalogico` dentro de `AlimentadoPorPin`), la LDR (`SensorAnalogico`) y `TemperaturaDht22` | Humedad del sustrato, luz y temperatura de verdad. |
+
+```
+Sensores (puerto)  <-  SensoresSimulados
+                   <-  SensoresCompuestos  ->  SensorDeMagnitud (puerto, una magnitud)  <-  SensorAnalogico (tabla mV:valor)
+                                                                                        <-  TemperaturaDht22
+                                                                                        <-  AlimentadoPorPin (decorador)
+```
+
+### Cableado de los potenciómetros (10 kΩ)
+
+| Magnitud | Escala | Pata del medio | Patas de los extremos |
+|---|---|---|---|
+| Humedad | 0 a 100 % | GPIO 34 | 3V3 y GND |
+| Luz | 0 a 2000 lux | GPIO 35 | 3V3 y GND |
+| Temperatura | 0 a 50 °C | GPIO 32 | 3V3 y GND |
+
+Sin resistencias: el potenciómetro es un divisor de voltaje. Los pines son del ADC1 porque el ADC2 no lee con el Wi-Fi encendido (en S3: 4, 5 y 6; en C3: 0, 1 y 3). Cada lectura promedia 16 muestras; de 100 a 3100 mV la escala es lineal y fuera de ahí se recorta al extremo, porque el ADC no es lineal en las puntas. Es una tabla de calibración de dos puntos (`fito_interpolar_cal`, probada en `test/probar_nucleo.py`). Las escalas y los pines están en `src/configuracion.h`.
+
+### Cableado de los sensores reales (`sensores = reales`)
+
+Todo a **3V3** (a 5 V la salida AO puede superar lo que admite el pin). Los pines DO de los módulos LM393 no se usan.
+
+| Sensor | Pin del módulo | ESP32 |
+|---|---|---|
+| Sonda de humedad (horqueta + LM393) | AO | GPIO 34 |
+| | VCC | GPIO 33 (se enciende solo al leer; también funciona en el riel de 3V3) |
+| | GND | GND |
+| Luz (LDR + LM393) | AO | GPIO 35 |
+| | VCC, GND | 3V3, GND |
+| DHT22 (AM2302, placa con pull-up) | out | GPIO 32 |
+| | +, − | 3V3, GND |
+
+En S3: 4, 5, 6 y alimentación 7; en C3: 0, 1, 3 y alimentación 4. Las tablas de calibración y el procedimiento para medirlas están en [CALIBRACION.md](CALIBRACION.md).
+
+### Conectar un sensor real
+
+1. Una clase que implemente `SensorDeMagnitud::leer(float &valor)`; devuelve `false` si el sensor no respondió y esa lectura se descarta (el servidor exige las tres magnitudes).
+2. En la composición de `main.cpp`, pasarla a `SensoresCompuestos` en lugar del `Potenciometro` de esa magnitud.
+
+Nada más cambia: ni `SensoresCompuestos`, ni la máquina de estados, ni el cliente de la API. Se pueden mezclar, por ejemplo un DHT22 para la temperatura y potenciómetros para lo demás.
+
+Un sensor que entrega un voltaje no necesita clase nueva: es un `SensorAnalogico` con otra tabla. Las decisiones de los sensores reales están en [`docs/fase6/IMPLEMENTACION.md`](../docs/fase6/IMPLEMENTACION.md).
 
 ## Compilar, subir, mirar
 
@@ -48,7 +103,7 @@ Otras placas: `-e esp32-s3-devkitc-1` o `-e esp32-c3-devkitm-1` (los pines I2C d
 python3 firmware/test/probar_nucleo.py
 ```
 
-Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto (42 comprobaciones). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
+Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (78 comprobaciones). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
 
 ## Qué muestra la OLED
 
@@ -108,6 +163,8 @@ Mantener **BOOT (GPIO 0) 5 s** con la matera operando: borra Wi-Fi, servidor y t
 - **`Failed to start stub flasher` o no conecta al subir:** `upload_speed = 115200` ya está puesto; si insiste, descomentar `upload_flags = --no-stub` en `platformio.ini`; en algunas placas hay que mantener BOOT al empezar la subida.
 - **La OLED no enciende:** revisar SDA/SCL; algunas pantallas usan `0x3D` (el firmware la encuentra solo).
 - **No conecta al hotspot:** el ESP32 solo usa 2.4 GHz; en el iPhone activar "Maximizar compatibilidad". Probar sin comillas ni caracteres raros en la clave.
+- **Tenía guardada otra red:** el Wi-Fi guardado en NVS manda sobre el de `local.ini`. Si no conecta en 20 s, la matera prueba el de `local.ini` antes de abrir el portal y, si conecta, lo guarda junto con el servidor.
+- **`dht22 sin respuesta` en el modo calibración:** el DHT22 no contesta al pulso de inicio. Revisar `+` a 3V3, `-` a GND y `out` a GPIO 32, y que los jumpers estén firmes. Mientras falle, las lecturas se descartan (el servidor exige las tres magnitudes).
 - **La matera conecta pero el celular o la matera no llegan al portátil:** `sudo ufw allow 8080/tcp && sudo ufw allow 5500/tcp`.
 - **Pantalla "Clave de flota no coincide":** `clave_flota` de `local.ini` distinta de la del backend. `demo-lan.sh` usa la de `local.ini`.
 - **Sin hora:** sin internet no hay NTP; el firmware toma la hora de la cabecera `Date` del backend en la primera respuesta.

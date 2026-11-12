@@ -3,6 +3,10 @@
 # sin pasar por la linea de comandos del compilador.
 Import("env")  # noqa: F821  (lo inyecta PlatformIO)
 import os
+import sys
+
+sys.path.insert(0, env.subst("$PROJECT_DIR"))  # noqa: F821
+from tabla_cal import como_c, leer_tabla  # noqa: E402
 
 config = env.GetProjectConfig()  # noqa: F821
 seccion = "fito"
@@ -24,6 +28,24 @@ def entero(clave, defecto):
         raise SystemExit("[fito] %s debe ser un numero entero" % clave)
 
 
+sensores = valor("sensores", "simulados").strip().lower() or "simulados"
+MODOS = ("simulados", "potenciometros", "reales")   # el orden da el numero de FITO_SENSORES
+if sensores not in MODOS:
+    raise SystemExit("[fito] sensores debe ser simulados, potenciometros o reales (dice %r)" % sensores)
+
+calibracion = valor("calibracion", "0").strip().lower() or "0"
+if calibracion not in ("0", "1", "no", "si"):
+    raise SystemExit("[fito] calibracion debe ser 0 o 1 (dice %r)" % calibracion)
+
+# Tablas de calibracion de los sensores analogicos reales (ver CALIBRACION.md). Se validan aqui para que un error
+# de tipeo detenga la compilacion en lugar de dar lecturas raras en la placa.
+tablas = {}
+for clave in ("cal_humedad", "cal_luz"):
+    try:
+        tablas[clave] = leer_tabla(clave, valor(clave))
+    except ValueError as e:
+        raise SystemExit("[fito] %s" % e)
+
 lineas = [
     "// GENERADO por extra_script.py desde la seccion [fito] (platformio.ini y local.ini). No editar ni versionar.",
     "#pragma once",
@@ -33,6 +55,13 @@ lineas = [
     "#define FITO_SERVIDOR %s" % literal(valor("servidor").strip()),
     "#define FITO_PUERTO_API %d" % entero("puerto_api", 8080),
     "#define FITO_PUERTO_FRONT %d" % entero("puerto_front", 5500),
+    "#define FITO_SENSORES_SIMULADOS 0",
+    "#define FITO_SENSORES_POTENCIOMETROS 1",
+    "#define FITO_SENSORES_REALES 2",
+    "#define FITO_SENSORES %d" % MODOS.index(sensores),
+    "#define FITO_CAL_HUMEDAD %s" % como_c(tablas["cal_humedad"]),
+    "#define FITO_CAL_LUZ %s" % como_c(tablas["cal_luz"]),
+    "#define FITO_CALIBRACION %d" % (1 if calibracion in ("1", "si") else 0),
     "",
 ]
 carpeta = os.path.join(env.subst("$PROJECT_DIR"), "include")  # noqa: F821

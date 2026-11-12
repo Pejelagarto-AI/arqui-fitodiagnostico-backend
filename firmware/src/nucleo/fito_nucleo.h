@@ -30,6 +30,21 @@ void fito_firma_de_flota(const char *clave, const char *serial, const char *secr
 /* base64( HMAC-SHA256( clave = secreto como texto, mensaje = reto como texto ) ). `salida` >= FITO_LARGO_FIRMA_B64. */
 void fito_respuesta_al_reto(const char *secreto, const char *reto, char *salida);
 
+/* Un punto de una tabla de calibracion: a `mv` milivoltios en la entrada le corresponde `valor` en la magnitud. */
+typedef struct {
+    int mv;
+    float valor;
+} fito_punto_cal;
+
+#define FITO_MAX_PUNTOS_CAL 8
+
+/* Lleva milivoltios a la magnitud con una tabla de `n` puntos ORDENADOS por mv estrictamente ascendente,
+ * interpolando en linea recta entre los dos puntos vecinos. Los valores pueden bajar (curva descendente: la LDR y
+ * la sonda dan menos voltaje con mas luz o mas agua). Por debajo del primer punto devuelve el valor del primero y
+ * por encima del ultimo el del ultimo (recorte en los extremos). n == 1 devuelve ese valor; n <= 0 devuelve 0.
+ * La usa SensorAnalogico; extra_script.py valida y ordena las tablas de local.ini. */
+float fito_interpolar_cal(int mv, const fito_punto_cal *tabla, int n);
+
 #ifdef __cplusplus
 }
 #endif
