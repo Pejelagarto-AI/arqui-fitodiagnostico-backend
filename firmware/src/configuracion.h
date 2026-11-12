@@ -21,16 +21,18 @@ constexpr size_t CAPACIDAD_COLA = 120;
 constexpr int MAX_ENVIOS_POR_CICLO = 6;         // al vaciar la cola, para no bloquear boton ni pantalla
 
 // Entradas de los sensores. Pines del ADC1: el ADC2 no lee con el Wi-Fi encendido. La temperatura es un
-// potenciometro (analogico) o el DHT22 (digital) en el mismo pin.
+// potenciometro (analogico) o el DHT22 (digital) en el mismo pin. PIN_ALIMENTACION_HUMEDAD da el VCC de la sonda
+// solo mientras se lee (AlimentadoPorPin).
 #if CONFIG_IDF_TARGET_ESP32S3
-constexpr int PIN_HUMEDAD = 4, PIN_LUZ = 5, PIN_TEMPERATURA = 6;
+constexpr int PIN_HUMEDAD = 4, PIN_LUZ = 5, PIN_TEMPERATURA = 6, PIN_ALIMENTACION_HUMEDAD = 7;
 #elif CONFIG_IDF_TARGET_ESP32C3
-constexpr int PIN_HUMEDAD = 0, PIN_LUZ = 1, PIN_TEMPERATURA = 3;
+constexpr int PIN_HUMEDAD = 0, PIN_LUZ = 1, PIN_TEMPERATURA = 3, PIN_ALIMENTACION_HUMEDAD = 4;
 #else   // ESP32 clasico (esp32dev)
-constexpr int PIN_HUMEDAD = 34, PIN_LUZ = 35, PIN_TEMPERATURA = 32;
+constexpr int PIN_HUMEDAD = 34, PIN_LUZ = 35, PIN_TEMPERATURA = 32, PIN_ALIMENTACION_HUMEDAD = 33;
 #endif
 constexpr int MUESTRAS_ADC = 16;                 // cada lectura analogica promedia estas muestras
 constexpr uint32_t DHT_INTERVALO_MS = 2000;      // el DHT22 no admite lecturas mas seguidas
+constexpr uint32_t ALIMENTACION_MS = 30;         // espera tras encender la sonda antes de leer
 
 // Potenciometros (sensores = potenciometros): escalas fijas, como las de un sensor real; el servidor decide si el
 // valor esta en el optimo de la especie. Son tablas de dos puntos: el ADC no es lineal en las puntas, asi que
