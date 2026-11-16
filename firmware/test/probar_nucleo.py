@@ -9,6 +9,7 @@ Uso:  python3 firmware/test/probar_nucleo.py
 import base64
 import hashlib
 import hmac
+import math
 import os
 import random
 import subprocess
@@ -189,6 +190,29 @@ def main():
                                    (754, "hace 12 min"), (3599, "hace 59 min"), (3600, "hace 1 h"),
                                    (7300, "hace 2 h")):
             comprobar("hace_cuanto(%d)" % segundos, esperado, c("hace", str(segundos)))
+
+        # 9. La mascota duerme y saluda (fase 11). Los numeros son los del bloque SALUDO del front (F47) y los de la
+        # planta dormida que el front calca (mascota-tiempo.js): si cambian aqui, cambian alla.
+        DY = [-2, -4, -5, -5, -4, -2, 0, 1, 0, 0, 0, 0]
+        OJOS = [1.0, 1.0, 0.5, 0.0, 0.5, 1.0, 0.5, 0.0, 0.5, 1.0, 1.0, 1.0]
+        for k in range(12):
+            for t in (50 * k, 50 * k + 25, 50 * k + 49):
+                comprobar("saludo t=%d" % t, "%d %d %.1f" % (k, DY[k], OJOS[k]), c("saludo", str(t)))
+        comprobar("saludo termina a los 600 ms", "-1", c("saludo", "600"))
+        comprobar("saludo: sube 5 px como maximo", "-5", str(min(DY)))
+        for t, esperado in ((0, 0), (749, 0), (750, -1), (1500, -1), (2249, -1), (2250, 0), (2999, 0), (3000, 0),
+                            (3750, -1), (4294967295, 0)):
+            comprobar("respira t=%d" % t, str(esperado), c("respira", str(t)))
+        # La regla entera coincide con lround(0.5 - 0.5 cos) salvo en el borde exacto.
+        for t in range(0, 3000, 10):
+            if t in (750, 2250):
+                continue
+            x = 0.5 - 0.5 * math.cos(2 * math.pi * t / 3000)
+            comprobar("respira = lround(0.5-0.5cos) en %d" % t, str(-int(x + 0.5)), c("respira", str(t)))
+        for t, esperado in ((0, 0), (999, 0), (1000, 1), (2500, 2), (3000, 0), (4294967295, 2)):
+            comprobar("zzz t=%d" % t, str(esperado), c("zzz", str(t)))
+        for ms, esperado in ((0, 0), (29, 0), (30, 1), (400, 1), (999, 1), (1000, 0), (5000, 0)):
+            comprobar("pulsacion corta %d ms" % ms, str(esperado), c("pulsacion", str(ms), "1000"))
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 

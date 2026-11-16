@@ -79,6 +79,39 @@ void fito_salud_confirmado(fito_salud_memoria *m, const uint8_t actual[FITO_N_SE
 /* "hace 45 s", "hace 3 min", "hace 2 h" (y "hace 0 s" si segundos <= 0). `salida` >= 16 bytes. */
 void fito_hace_cuanto(long segundos, char *salida, size_t n);
 
+
+/* ---- la mascota duerme y saluda (fase 11) ---- */
+
+/* Saludo: la reaccion a una pulsacion corta del boton BOOT. Calcado del bloque SALUDO del front
+ * (js/componentes/mascota-tiempo.js, F47): 12 cuadros de 50 ms. En cada cuadro el cuerpo entero (lo que esta sobre
+ * la matera) sube FITO_SALUDO_DY[i] px (negativo = arriba) y los ojos van abiertos FITO_SALUDO_OJOS[i] (el factor de
+ * parpadeo). La cara es la contenta, sin transicion. */
+#define FITO_SALUDO_CUADRO_MS 50u
+#define FITO_SALUDO_CUADROS 12
+#define FITO_SALUDO_MS (FITO_SALUDO_CUADRO_MS * FITO_SALUDO_CUADROS)
+extern const int8_t FITO_SALUDO_DY[FITO_SALUDO_CUADROS];
+extern const float FITO_SALUDO_OJOS[FITO_SALUDO_CUADROS];
+
+/* Cuadro del saludo a `t_ms` de empezado (0..11), o -1 si ya termino. */
+int fito_saludo_cuadro(uint32_t t_ms);
+
+/* Respiracion de la planta dormida: periodo de 3 s, 1 px. Sube 1 px (devuelve -1) en la mitad central del periodo,
+ * de 750 a 2249 ms; el resto devuelve 0. Es lround(0.5 - 0.5 cos(2 pi t / 3000)) con el borde en entero. */
+#define FITO_RESPIRA_MS 3000u
+#define FITO_RESPIRA_SUBE_DESDE_MS 750u
+#define FITO_RESPIRA_SUBE_HASTA_MS 2250u
+int fito_respira_dy(uint32_t ahora_ms);
+
+/* "zzz" de la planta dormida: tres cuadros de 1 s (una zeta, dos, tres) que se repiten cada 3 s, al paso de la
+ * respiracion. Devuelve 0, 1 o 2. */
+#define FITO_ZZZ_CUADRO_MS 1000u
+int fito_zzz_cuadro(uint32_t ahora_ms);
+
+/* Pulsacion del boton: corta (saludo) si se solto despues de FITO_BOTON_REBOTE_MS y antes de `tope_ms` (donde
+ * empieza la cuenta regresiva del reinicio). Devuelve 1 o 0. */
+#define FITO_BOTON_REBOTE_MS 30u
+int fito_pulsacion_corta(uint32_t sostenido_ms, uint32_t tope_ms);
+
 #ifdef __cplusplus
 }
 #endif

@@ -5,6 +5,7 @@
  *   arnes reto <secreto> <reto>
  *   arnes sha256 <texto> / hmac <clave> <texto>
  *   arnes tabla <mv> <mv:valor> [<mv:valor> ...]   (puntos en orden ascendente de mv)
+ *   arnes saludo <t_ms> / respira <ms> / zzz <ms> / pulsacion <ms> <tope_ms>   (fase 11)
  */
 #include "fito_nucleo.h"
 #include "fito_hash.h"
@@ -52,6 +53,18 @@ int main(int argc, char **argv) {
             printf("%d%s", toca, i + 1 < argc ? " " : "\n");
             if (toca && res[0]) { fito_salud_intento(&m, (uint32_t)t); if (!strcmp(res, "ok")) fito_salud_confirmado(&m, actual, (uint32_t)t); }
         }
+        return 0;
+    }
+    /* fase 11: saludo <t_ms> -> "cuadro dy ojos" (o "-1"); respira <ms>; zzz <ms>; pulsacion <ms> <tope> */
+    if (argc == 3 && !strcmp(argv[1], "saludo")) {
+        int k = fito_saludo_cuadro((uint32_t)strtoul(argv[2], NULL, 10));
+        if (k < 0) puts("-1"); else printf("%d %d %.1f\n", k, FITO_SALUDO_DY[k], FITO_SALUDO_OJOS[k]);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "respira")) { printf("%d\n", fito_respira_dy((uint32_t)strtoul(argv[2], NULL, 10))); return 0; }
+    if (argc == 3 && !strcmp(argv[1], "zzz")) { printf("%d\n", fito_zzz_cuadro((uint32_t)strtoul(argv[2], NULL, 10))); return 0; }
+    if (argc == 4 && !strcmp(argv[1], "pulsacion")) {
+        printf("%d\n", fito_pulsacion_corta((uint32_t)strtoul(argv[2], NULL, 10), (uint32_t)strtoul(argv[3], NULL, 10)));
         return 0;
     }
     if (argc == 3 && !strcmp(argv[1], "hace")) { fito_hace_cuanto(atol(argv[2]), salida, sizeof salida); puts(salida); return 0; }
