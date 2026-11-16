@@ -54,6 +54,12 @@
 #                           La conexion que publica las respuestas usa <clientId>-respuestas.
 #                           Broker anonimo + JWT en el payload: ver D83 en docs/fase4/IMPLEMENTACION.md.
 
+# Fase 10: salud de la matera (OPCIONAL, valores de la demo por defecto). Una matera sin lecturas ni reportes por mas de
+# max(3 x intervalo esperado, silencio minimo) pasa a SIN_NOTICIAS; si reporta una falla, su latido es mas lento.
+#   FITO_SALUD_INTERVALO_ESPERADO  cada cuanto manda lecturas la matera (por defecto PT5S).
+#   FITO_SALUD_SILENCIO_MINIMO     suelo del silencio tolerado (por defecto PT2M).
+#   FITO_SALUD_LATIDO_DE_FALLA     cada cuanto reporta mientras un sensor falla (por defecto PT5M; es el del firmware).
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
@@ -74,6 +80,10 @@ fitodiagnostico:
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   flota:
     clave: ${FITO_CLAVE_FLOTA:}
+  salud:
+    intervalo-esperado: ${FITO_SALUD_INTERVALO_ESPERADO:PT5S}
+    silencio-minimo: ${FITO_SALUD_SILENCIO_MINIMO:PT2M}
+    latido-de-falla: ${FITO_SALUD_LATIDO_DE_FALLA:PT5M}
   mqtt:
     habilitado: ${FITO_MQTT_HABILITADO:false}
     url: ${FITO_MQTT_URL:tcp://localhost:1883}
