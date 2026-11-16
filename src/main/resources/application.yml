@@ -54,6 +54,13 @@
 #                           La conexion que publica las respuestas usa <clientId>-respuestas.
 #                           Broker anonimo + JWT en el payload: ver D83 en docs/fase4/IMPLEMENTACION.md.
 
+# Fase 9: la planta como mascota. Todo tiene valor por defecto (ver mascota.modelo.ParametrosDeMascota y la tabla
+# de propiedades en docs/fase9/IMPLEMENTACION.md); los umbrales son provisionales hasta calibrar con la sonda real.
+#   fitodiagnostico.mascota.subida-minima-de-riego   puntos de humedad sobre la mediana para llamar riego (15)
+#   fitodiagnostico.mascota.perdida-por-hora-en-critico, ...-en-riesgo, ganancia-por-hora-saludable   (20, 5, 10)
+#   fitodiagnostico.mascota.plazo-para-confirmar-riego   plazo de "la regué" (PT15M)
+#   fitodiagnostico.mascota.tic.habilitado / tic.intervalo   tarea periódica de la mascota (true, PT1M)
+
 # Fase 10: salud de la matera (OPCIONAL, valores de la demo por defecto). Una matera sin lecturas ni reportes por mas de
 # max(3 x intervalo esperado, silencio minimo) pasa a SIN_NOTICIAS; si reporta una falla, su latido es mas lento.
 #   FITO_SALUD_INTERVALO_ESPERADO  cada cuanto manda lecturas la matera (por defecto PT5S).

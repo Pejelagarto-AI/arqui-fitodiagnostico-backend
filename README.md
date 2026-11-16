@@ -121,6 +121,7 @@ El reto y la credencial siguen por HTTP; el token viaja dentro de cada mensaje (
 |---|---|---|
 | `fito/dispositivos/{serial}/lecturas` | el chip (QoS 1) | `{token, marcaDeTiempo, humedad, luz, temperatura}` |
 | `fito/dispositivos/{serial}/respuestas` | el backend (QoS 1) | `{ok:true, id, estado, registradaEn}` o `{ok:false, error, mensaje, detalle}` |
+| `fito/dispositivos/{serial}/mascota` | el backend (QoS 1, fase 9) | `{evento, ocurridoEn, vitalidad, animo, detalle}`: cada evento de la mascota de la planta vinculada (D142) |
 
 ```bash
 # backend con MQTT (apagado por defecto; sin broker arranca igual por HTTP)
@@ -149,7 +150,8 @@ Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lectur
 | Compartir plantas (invitado) | `GET /api/v1/plantas/compartidas`, `DELETE /api/v1/plantas/compartidas/{id}` (renunciar), `POST /api/v1/invitaciones/aceptar {token}`, `POST /api/v1/invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}` (público: el visitante sin cuenta se registra y acepta en un solo paso) |
 | Solicitudes de especie | `POST/GET /api/v1/solicitudes-especie` (pedir y ver las propias); administrador: `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` (con `{"respuesta"}`; aprobar no da de alta la especie, eso es `POST /admin/especies`) |
 | Dispositivos (fase 3) | Fábrica (administrador): `POST/GET /api/v1/admin/dispositivos`. Dueño: `POST/GET /api/v1/plantas/{id}/dispositivos {serial}`, `DELETE .../dispositivos/{serial}`. Dispositivo: `POST /api/v1/dispositivos/registro {serial, secreto, firma}` (pública, solo con `FITO_CLAVE_FLOTA`), `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial {respuesta}` (públicas), `POST /api/v1/dispositivos/{serial}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`), `POST /api/v1/dispositivos/{serial}/salud {sensores: {humedad, luz, temperatura: "OK"\|"FALLA"}, detalle}` (mismo token; fase 10) |
-| Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO` y `CAMBIO_DE_ESTADO`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
+| Mascota (fase 9) | `GET /api/v1/plantas/{id}/mascota` (vitalidad, ánimo, racha, últimos eventos y "la regué" pendiente; sin lecturas 200 con `hayLecturas: false`), `GET .../mascota/eventos?pagina=0&tamano=20` (línea de tiempo), `POST .../mascota/acciones {"tipo": "ACARICIAR" \| "LA_REGUE"}` (solo el dueño; 201 o 202 si queda pendiente). Dueño e invitados leen; invitado que actúa 403; ajeno 404. Contrato en [`docs/fase9/IMPLEMENTACION.md`](docs/fase9/IMPLEMENTACION.md) |
+| Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO`, `CAMBIO_DE_ESTADO` y, desde la fase 9, `EVENTO_DE_MASCOTA`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
 
@@ -298,6 +300,7 @@ Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera
 - [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md): fase 6 (sensores físicos): puerto por magnitud, potenciómetros en el ADC1, las decisiones D98 a D101 y el plan de los sensores reales (calibración, DHT22, sonda alimentada por pin).
 - [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
 - [`docs/fase8/IMPLEMENTACION.md`](docs/fase8/IMPLEMENTACION.md): fase 8 (luz acumulada y noche): la luz se juzga por lo acumulado en 24 h, la planta duerme tras 2 h de oscuridad, campos nuevos del contrato (`periodo`, `exposicionLuminica`, `valorEvaluado`), la prueba de cambio y las decisiones D120 a D129.
+- [`docs/fase9/IMPLEMENTACION.md`](docs/fase9/IMPLEMENTACION.md): fase 9 (la planta como mascota en el servidor): contexto `mascota` que consume el historial sin tocar el dominio, vitalidad, eventos (riego, sol, desmayo, racha), ánimo, acariciar y "la regué", avisos por WebSocket y MQTT, migraciones V16 a V19 y las decisiones D130 a D149.
 - [`docs/fase10/IMPLEMENTACION.md`](docs/fase10/IMPLEMENTACION.md): fase 10 (salud de la matera): la OLED y el servidor dicen qué sensor falla ("no te siento la temperatura") o que la matera calló, `POST /api/v1/dispositivos/{serial}/salud`, `salud` y `ultimaLecturaEn` en los dispositivos, el aviso `SALUD_DE_LA_MATERA`, migraciones V20 y V21 y las decisiones D150 a D159.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 

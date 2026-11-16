@@ -245,4 +245,47 @@ class ArquitecturaTest {
         noClasses().that().resideOutsideOfPackage("..adaptador..").and().resideOutsideOfPackage("com.vivero.fitodiagnostico.config..")
             .should().dependOnClassesThat()
             .resideInAnyPackage("org.eclipse.paho..", "org.springframework.integration..");
+
+    // ------------------------------------------------------------------------------------------
+    // Fase 9: el contexto mascota (D130). La gamificación consume el diagnóstico; el diagnóstico no la conoce.
+    // ------------------------------------------------------------------------------------------
+
+    // La respuesta de sustentación hecha prueba: ni el dominio ni la aplicación del diagnóstico nombran a la mascota.
+    // Si mañana se borra el paquete mascota (y su composición y adaptadores), el diagnóstico compila igual.
+    @ArchTest
+    static final ArchRule el_nucleo_no_conoce_a_la_mascota =
+        noClasses().that().resideInAnyPackage("com.vivero.fitodiagnostico.dominio..",
+                "com.vivero.fitodiagnostico.aplicacion..")
+            .should().dependOnClassesThat().resideInAPackage("com.vivero.fitodiagnostico.mascota..");
+
+    // El modelo de la mascota son reglas puras: lee el modelo del diagnóstico y nada más (ni puertos, ni Spring).
+    @ArchTest
+    static final ArchRule el_modelo_de_la_mascota_es_puro =
+        classes().that().resideInAPackage("com.vivero.fitodiagnostico.mascota.modelo..")
+            .should().onlyDependOnClassesThat().resideInAnyPackage(
+                "com.vivero.fitodiagnostico.mascota.modelo..", "com.vivero.fitodiagnostico.dominio.modelo..", "java..");
+
+    @ArchTest
+    static final ArchRule los_puertos_de_la_mascota_son_interfaces =
+        classes().that().resideInAnyPackage("com.vivero.fitodiagnostico.mascota.puerto..")
+            .and().areTopLevelClasses()
+            .should().beInterfaces();
+
+    // Los puertos de entrada de la mascota los implementa su capa de aplicación; los de salida, un adaptador de salida.
+    @ArchTest
+    static final ArchRule los_puertos_de_entrada_de_la_mascota_los_implementa_su_aplicacion =
+        classes().that().implement(resideInAPackage("com.vivero.fitodiagnostico.mascota.puerto.entrada.."))
+            .should().resideInAPackage("com.vivero.fitodiagnostico.mascota.aplicacion..");
+
+    @ArchTest
+    static final ArchRule los_puertos_de_salida_de_la_mascota_los_implementa_un_adaptador_de_salida =
+        classes().that().implement(resideInAPackage("com.vivero.fitodiagnostico.mascota.puerto.salida.."))
+            .and().areNotInterfaces()
+            .should().resideInAPackage("..adaptador.salida..");
+
+    // La mascota no conoce adaptadores ni composición (lo mismo que la aplicación del diagnóstico).
+    @ArchTest
+    static final ArchRule la_mascota_no_depende_de_adaptadores_ni_de_la_composicion =
+        noClasses().that().resideInAPackage("com.vivero.fitodiagnostico.mascota..")
+            .should().dependOnClassesThat().resideInAnyPackage("..adaptador..", "com.vivero.fitodiagnostico.config..");
 }
