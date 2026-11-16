@@ -141,13 +141,22 @@ CARA_SUCULENTA = [(24, 36), (24, 37), (24, 39)]
 FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4, "suculenta": 0.4, "helecho": 1.2}
 HELECHO_MS = [450, 700, 1100]
 
+def hace_cuanto(segundos):
+    """Espejo de fito_hace_cuanto() del nucleo."""
+    segundos = max(0, int(segundos))
+    return "hace %d s" % segundos if segundos < 60 else "hace %d min" % (segundos // 60) if segundos < 3600 else "hace %d h" % (segundos // 3600)
+
 class Lecturas:
-    def __init__(self, familia, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5"):
+    def __init__(self, familia, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5",
+                 falla=None, buena_s=None):
         if familia is True or familia is False:            # compatibilidad: antes era "es carnivora"
             familia = "carnivora" if familia else "comun"
         self.familia = familia
         self.carn, self.nivel_en, self.mordiscos = familia == "carnivora", nivel_en, list(mordiscos)
         self.codigo, self.hum, self.luz, self.temp = codigo, hum, luz, temp
+        # Fase 10: `falla` = sensores que no responden ("humedad", "luz", "temperatura"); `buena_s` = segundos desde la
+        # ultima lectura buena en t=0 (None: todavia no hubo ninguna). Espejo de pintarAviso() en pantalla.cpp.
+        self.falla, self.buena_s = list(falla or []), buena_s
         self.cara_nivel = -1
         self.nivel_previo, self.nivel_desde = -1, 0
         self.regado_desde = None
@@ -289,8 +298,22 @@ class Lecturas:
         self.cuerpo(o, nombre, seno, amp, dy)
         self.cara_grande(o, c, parp, t, x + mira + self.desv(y, seno, amp), y + dy, GEO_CHICA, True)
 
+    def aviso(self, o, t):
+        """Espejo de pintarAviso(): "no te siento <sensor>" o "no siento mis sensores", y hace cuanto fue la ultima lectura
+        buena. Sin articulo ni tildes: caben 13 caracteres por linea."""
+        o.texto(50, 2, "no te siento" if len(self.falla) == 1 else "no siento")
+        o.texto(50, 12, self.falla[0] if len(self.falla) == 1 else "mis sensores")
+        if self.buena_s is None:
+            o.texto(50, 26, "sin lecturas")
+            o.texto(50, 36, "todavia")
+        else:
+            o.texto(50, 26, "lectura buena")
+            o.texto(50, 36, hace_cuanto(self.buena_s + t // 1000))
+
     def cuadro(self, t):
         nivel = self.nivel_en(t)
+        if self.falla and nivel < 1:           # nivelVisible(): con el aviso la mascota esta al menos preocupada
+            nivel = 1
         if nivel != self.nivel_previo:
             self.nivel_previo, self.nivel_desde = nivel, t
         self.fijar(nivel, t)
@@ -325,6 +348,11 @@ class Lecturas:
             cm = (c[0] * (0.3 if boca == 2 else 1),) + tuple(c[1:])
             self.cara_trampa(o, cm, parp, t, seno, amp, (32 - CARNI_G[boca]) // 2, dy, False)
         etiqueta = ["SALUDABLE", "EN RIESGO", "CRITICO"][nivel]
+        if self.falla:
+            self.aviso(o, t)
+            ventana_nombre(o, 50, 47, 78, self.codigo, t)
+            o.texto(50, 56, "REVISA SENSOR")
+            return o
         for i, (ic, v, u) in enumerate((("icono_gota", self.hum, "%"), ("icono_sol", self.luz, "lx"), ("icono_termometro", self.temp, "C"))):
             y = i * 15
             o.sprite(ic, 50, y + 3)
@@ -406,7 +434,25 @@ def main():
     gif("anim_carnivora_triste", Lecturas(True, lambda t: 0 if t < 1500 else 1 if t < 3500 else 2, luz="9500").cuadro, 6000)
     gif("anim_exito", cuadro_exito, 3500)
     mascotas(SALIDA)
+    avisos(SALIDA)
     print("pantallas en", SALIDA)
+
+def avisos(salida):
+    """Fase 10: "no te siento ...", lo que dice la OLED cuando el descarte de lecturas dejaria a la matera muda."""
+    def cuadro(familia, falla, buena_s, nivel=0, t=2500, hum="65", luz="1200", temp="24.5"):
+        sim = Lecturas(familia, lambda _t: nivel, falla=falla, buena_s=buena_s, hum=hum, luz=luz, temp=temp)
+        sim.cuadro(0)
+        return sim.cuadro(t)
+    cuadro("comun", ["temperatura"], 180).guardar("30_aviso_temperatura")
+    cuadro("comun", ["humedad"], 45).guardar("31_aviso_humedad")
+    cuadro("comun", ["luz"], 7300).guardar("32_aviso_luz")
+    cuadro("comun", ["humedad", "temperatura"], 720).guardar("33_aviso_dos_sensores")
+    cuadro("comun", ["humedad", "luz", "temperatura"], 720).guardar("34_aviso_tres_sensores")
+    cuadro("comun", ["temperatura"], None).guardar("35_aviso_sin_lecturas")
+    cuadro("carnivora", ["temperatura"], 180).guardar("36_aviso_carnivora")
+    cuadro("cactus", ["temperatura"], 180).guardar("37_aviso_cactus")
+    cuadro("girasol", ["temperatura"], 180, nivel=2).guardar("38_aviso_girasol_critico")
+    gif("anim_aviso", Lecturas("comun", lambda t: 0, falla=["temperatura"], buena_s=5).cuadro, 6000)
 
 def mascotas(salida):
     """Fase 7: una pantalla por familia y nivel, y un GIF de cada familia pasando por los tres estados."""

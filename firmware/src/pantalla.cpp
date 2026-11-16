@@ -1,4 +1,5 @@
 #include "pantalla.h"
+#include "nucleo/fito_nucleo.h"
 #include "configuracion.h"
 #include "registro.h"
 #include "sprites.h"
@@ -256,6 +257,12 @@ bool lPunto = false;
 int lNivel = 0;                         // 0 saludable, 1 en riesgo, 2 critico
 uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cactus cuenta desde aqui para la flor)
 uint32_t lUltimoDibujo = 0;
+// Aviso de sensores (fase 10): la matera no puede medir algo. Lo decide el firmware solo, sin esperar al servidor.
+struct AvisoDeSensores { bool activo; bool falla[3]; bool hayBuena; uint32_t buenaMs; };
+AvisoDeSensores lAviso = {};
+// El nivel que se dibuja: con el aviso la mascota esta al menos preocupada (cara y cuerpo de "en riesgo"), aunque
+// el diagnostico de la ultima lectura buena dijera saludable. El nivel real (lNivel) no cambia.
+int nivelVisible() { return lAviso.activo && lNivel < 1 ? 1 : lNivel; }
 
 // ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
 enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus, Suculenta, Helecho };
@@ -308,10 +315,10 @@ const uint16_t HELECHO_MS[3] = {450, 700, 1100};  // cada cuanto alterna las fro
 // Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
 // En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
 void pintarGirasol(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
-    const Punto p = CARA_GIRASOL[lNivel];
+    const Punto p = CARA_GIRASOL[nivelVisible()];
     int dy = 0, mira = 0;
-    const uint8_t *bmp = GIRASOL[lNivel];
-    if (lNivel == 0) {
+    const uint8_t *bmp = GIRASOL[nivelVisible()];
+    if (nivelVisible() == 0) {
         if ((ahora / 400) % 2) bmp = sprites::girasol_saludable_1;
         dy = (int)lroundf(0.6f * sinf(6.2831853f * (ahora % 1600) / 1600.0f));
         mira = (int)lroundf(1.5f * sinf(6.2831853f * (ahora % 5000) / 5000.0f));
@@ -334,16 +341,16 @@ void florCactus(int x, int y, float k) {
 // Suculenta: roseta que respira (se infla un momento cada 4,5 s si esta saludable). Al regarla cae una gota, se infla
 // (o da un saltito si no esta saludable) y sonrie aunque este en riesgo o critica.
 void pintarSuculenta(Cara c, float parpadeo, uint32_t ahora, float seno, float amp) {
-    const Punto p = CARA_SUCULENTA[lNivel];
+    const Punto p = CARA_SUCULENTA[nivelVisible()];
     const uint32_t tRiego = ahora - regadoDesde;
     const bool regando = regadoDesde && tRiego < RIEGO_MS;
-    bool inflada = lNivel == 0 && ahora % SUCULENTA_RESPIRA_MS < 500;
+    bool inflada = nivelVisible() == 0 && ahora % SUCULENTA_RESPIRA_MS < 500;
     int dy = 0;
     if (regando && tRiego >= GOTA_MS) {
-        if (lNivel == 0) inflada = true; else dy = tRiego < GOTA_MS + 300 ? -1 : 0;
+        if (nivelVisible() == 0) inflada = true; else dy = tRiego < GOTA_MS + 300 ? -1 : 0;
         c.boca = max(c.boca, 0.8f); c.onda = 0; c.inclina = min(c.inclina, 0.3f);
     }
-    cuerpo(inflada ? sprites::suculenta_saludable_1 : SUCULENTA[lNivel], seno, amp, dy);
+    cuerpo(inflada ? sprites::suculenta_saludable_1 : SUCULENTA[nivelVisible()], seno, amp, dy);
     caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
     if (regando && tRiego < GOTA_MS)                                                   // la gota cae sobre la roseta
         bitmap(20, -8 + (int)((p.y - 14) * tRiego / GOTA_MS), sprites::icono_gota, 8, 8);
@@ -352,19 +359,38 @@ void pintarSuculenta(Cara c, float parpadeo, uint32_t ahora, float seno, float a
 // Helecho: cinco frondas de foliolos finos que se mecen (dos cuadros que alternan) ademas del balanceo; la cara va en
 // la matera, como la planta comun. En riesgo las frondas se arquean; critico cuelgan ralas y bota un foliolo.
 void pintarHelecho(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
-    cuerpo(HELECHO[lNivel][(ahora / HELECHO_MS[lNivel]) % 2], seno, amp, 0);
+    cuerpo(HELECHO[nivelVisible()][(ahora / HELECHO_MS[nivelVisible()]) % 2], seno, amp, 0);
     caraMatera(c, parpadeo, ahora);
 }
 
 // Cactus: casi no se balancea; parpadea como todos y, saludable, le crece una flor en la punta.
 // En riesgo baja los brazos y la flor se va; critico se encoge y bota una espina.
 void pintarCactus(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
-    const Punto p = CARA_CACTUS[lNivel];
-    cuerpo(CACTUS[lNivel], seno, amp, 0);
+    const Punto p = CARA_CACTUS[nivelVisible()];
+    cuerpo(CACTUS[nivelVisible()], seno, amp, 0);
     caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y, GEO_CACTUS, true);
-    if (lNivel == 0 && ahora - lNivelDesde > CACTUS_ESPERA_FLOR_MS) {
+    if (nivelVisible() == 0 && ahora - lNivelDesde > CACTUS_ESPERA_FLOR_MS) {
         const float k = min(1.0f, (float)(ahora - lNivelDesde - CACTUS_ESPERA_FLOR_MS) / CACTUS_CRECE_FLOR_MS);
         florCactus(24 + desv(CACTUS_Y_FLOR, seno, amp), CACTUS_Y_FLOR, suave(k));
+    }
+}
+
+// Lo que reemplaza a los tres numeros cuando un sensor falla. Sin tildes ni articulo ("no te siento / temperatura"): la
+// frase completa cabe en la app, aqui son 13 caracteres por linea.
+void pintarAviso(uint32_t ahora) {
+    static const char *const NOMBRE_SENSOR[3] = {"humedad", "luz", "temperatura"};
+    int cuantos = 0, cual = 0;
+    for (int i = 0; i < 3; i++) if (lAviso.falla[i]) { cuantos++; cual = i; }
+    texto(50, 2, cuantos == 1 ? "no te siento" : "no siento");
+    texto(50, 12, cuantos == 1 ? NOMBRE_SENSOR[cual] : "mis sensores");
+    if (lAviso.hayBuena) {
+        char hace[16];
+        fito_hace_cuanto((long)((ahora - lAviso.buenaMs) / 1000), hace, sizeof hace);
+        texto(50, 26, "lectura buena");
+        texto(50, 36, hace);
+    } else {
+        texto(50, 26, "sin lecturas");
+        texto(50, 36, "todavia");
     }
 }
 
@@ -372,11 +398,11 @@ void pintarLecturas(uint32_t ahora) {
     limpiar();
     modo = Modo::Lecturas;
     lUltimoDibujo = ahora;
-    fijarNivel(lNivel, ahora);
+    fijarNivel(nivelVisible(), ahora);
     const Cara c = caraEn(ahora);
     const float parpadeo = factorParpadeo(ahora);
     const float seno = sinf(6.2831853f * (ahora % PERIODO_BALANCEO_MS) / PERIODO_BALANCEO_MS);
-    const float amp = AMPLITUD[lNivel] * FACTOR_BALANCEO[(int)lFamilia];
+    const float amp = AMPLITUD[nivelVisible()] * FACTOR_BALANCEO[(int)lFamilia];
     if (lFamilia == Familia::Girasol) {
         pintarGirasol(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia == Familia::Cactus) {
@@ -386,11 +412,11 @@ void pintarLecturas(uint32_t ahora) {
     } else if (lFamilia == Familia::Helecho) {
         pintarHelecho(c, parpadeo, ahora, seno, amp);
     } else if (lFamilia != Familia::Carnivora) {
-        cuerpo(PLANTA[lNivel], seno, amp, 0);
+        cuerpo(PLANTA[nivelVisible()], seno, amp, 0);
         caraMatera(c, parpadeo, ahora);
-    } else if (lNivel > 0) {
-        cuerpo(CARNI_TRISTE[lNivel - 1], seno, amp, 0);
-        caraTrampa(c, parpadeo, ahora, seno, amp, lNivel == 1 ? 25 : 30, 0, true);
+    } else if (nivelVisible() > 0) {
+        cuerpo(CARNI_TRISTE[nivelVisible() - 1], seno, amp, 0);
+        caraTrampa(c, parpadeo, ahora, seno, amp, nivelVisible() == 1 ? 25 : 30, 0, true);
     } else {
         if (!mordiendo && (int32_t)(ahora - proximoMordisco) >= 0) {          // mordisco espontaneo de vez en cuando
             mordiendo = true; mordiscoDesde = ahora;
@@ -411,7 +437,8 @@ void pintarLecturas(uint32_t ahora) {
     struct Fila { const uint8_t *icono; const char *unidad; } filas[3] = {
         {sprites::icono_gota, "%"}, {sprites::icono_sol, "lx"}, {sprites::icono_termometro, "C"}};
     snprintf(v, sizeof v, "%d", (int)roundf(lLect.humedad));
-    for (int i = 0; i < 3; i++) {
+    if (lAviso.activo) pintarAviso(ahora);
+    for (int i = 0; i < 3 && !lAviso.activo; i++) {
         if (i == 1) snprintf(v, sizeof v, "%d", (int)min(99999.0f, max(0.0f, roundf(lLect.luz))));
         if (i == 2) snprintf(v, sizeof v, "%.1f", lLect.temperatura);
         const int y = i * 15;
@@ -421,8 +448,8 @@ void pintarLecturas(uint32_t ahora) {
         if (largo < 5) texto(61 + 12 * largo + 1, y + 7, filas[i].unidad);
     }
     nombreEnVentana(0, 50, 47, 78, lNombre, ahora);
-    texto(50, 56, lEstado);
-    if (lPunto) oled.fillCircle(123, 59, 3, SSD1306_WHITE);
+    texto(50, 56, lAviso.activo ? "REVISA SENSOR" : lEstado);
+    if (lPunto && !lAviso.activo) oled.fillCircle(123, 59, 3, SSD1306_WHITE);
     listo();
 }
 
@@ -656,6 +683,7 @@ void vinculada(const char *codigo) {
 
 void lecturas(const char *codigo, const Lectura &l, const char *estado, bool punto, const char *especie) {
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
+    lAviso.activo = false;   // una lectura completa llego: los sensores responden
     if (!isnan(lHumedadPrevia) && l.humedad >= lHumedadPrevia + SUBIDA_RIEGO) regadoDesde = millis();
     lHumedadPrevia = l.humedad;
     lLect = l;
@@ -672,6 +700,20 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
     }
     strlcpy(lEstado, etiqueta, sizeof lEstado);
     if (lNivel != nivelAntes || !lNivelDesde) lNivelDesde = millis();
+    if (proximoMordisco == 0) proximoMordisco = millis() + 4000;
+    pintarLecturas(millis());
+}
+
+void sensoresFallan(const char *codigo, const char *especie, const bool falla[3], bool hayBuena, uint32_t ultimaBuenaMs) {
+    if (!lista) return;
+    for (int i = 0; i < 3; i++) lAviso.falla[i] = falla[i];
+    lAviso.hayBuena = hayBuena;
+    lAviso.buenaMs = ultimaBuenaMs;
+    const bool nuevo = !lAviso.activo;
+    lAviso.activo = true;
+    aAscii(codigo, lNombre, sizeof lNombre);
+    lFamilia = familiaDe(especie);
+    if (nuevo && !lNivelDesde) lNivelDesde = millis();
     if (proximoMordisco == 0) proximoMordisco = millis() + 4000;
     pintarLecturas(millis());
 }

@@ -45,6 +45,40 @@ typedef struct {
  * La usa SensorAnalogico; extra_script.py valida y ordena las tablas de local.ini. */
 float fito_interpolar_cal(int mv, const fito_punto_cal *tabla, int n);
 
+
+/* ---- salud de la matera (fase 10): cuando reportar al servidor que un sensor falla o se recupero ---- */
+
+#define FITO_N_SENSORES 3                       /* humedad, luz, temperatura */
+#define FITO_SALUD_LATIDO_MS 300000UL           /* mientras algo falla, un reporte cada 5 min como maximo */
+#define FITO_SALUD_ENTRE_INTENTOS_MS 10000UL    /* entre dos intentos (cambios seguidos o un envio que fallo) */
+
+/* Lo que el firmware recuerda de lo que ya le dijo al servidor. Se inicia con ceros. */
+typedef struct {
+    uint8_t enviado[FITO_N_SENSORES];   /* 1 = falla; el ultimo estado que el servidor confirmo (200) */
+    int hay_enviado;                    /* 0 hasta el primer envio confirmado */
+    uint32_t enviado_en_ms;             /* millis() de ese envio */
+    int hay_intento;                    /* 0 hasta el primer intento, haya funcionado o no */
+    uint32_t intento_en_ms;
+} fito_salud_memoria;
+
+/* ¿Toca reportar ahora? `actual[i]` es 1 si el sensor i fallo en la ultima lectura. Reglas:
+ *  - Cambio (distinto de lo ultimo confirmado; sin confirmado, cualquier falla): se reporta, pero no antes de
+ *    FITO_SALUD_ENTRE_INTENTOS_MS despues del intento anterior (un sensor que parpadea no inunda al servidor, y un
+ *    envio fallido se reintenta cada tanto).
+ *  - Sin cambio y con alguna falla: un latido cada FITO_SALUD_LATIDO_MS desde el ultimo confirmado, con el mismo
+ *    freno entre intentos.
+ *  - Todo bien y nada que corregir: nunca. Las diferencias de millis() son modulares: sirven tras el desborde. */
+int fito_salud_toca(const fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms);
+
+/* Anota que se intento enviar (antes de la llamada HTTP, para frenar los reintentos aunque falle). */
+void fito_salud_intento(fito_salud_memoria *m, uint32_t ahora_ms);
+
+/* Anota que el servidor confirmo `actual` (HTTP 200). */
+void fito_salud_confirmado(fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms);
+
+/* "hace 45 s", "hace 3 min", "hace 2 h" (y "hace 0 s" si segundos <= 0). `salida` >= 16 bytes. */
+void fito_hace_cuanto(long segundos, char *salida, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

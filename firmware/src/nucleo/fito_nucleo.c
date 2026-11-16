@@ -1,5 +1,6 @@
 #include "fito_nucleo.h"
 #include "fito_hash.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -78,4 +79,35 @@ float fito_interpolar_cal(int mv, const fito_punto_cal *tabla, int n) {
         }
     }
     return tabla[n - 1].valor;
+}
+
+static int alguna_falla(const uint8_t v[FITO_N_SENSORES]) {
+    for (int i = 0; i < FITO_N_SENSORES; i++) if (v[i]) return 1;
+    return 0;
+}
+
+int fito_salud_toca(const fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms) {
+    int cambio = m->hay_enviado ? memcmp(m->enviado, actual, FITO_N_SENSORES) != 0 : alguna_falla(actual);
+    int frenado = m->hay_intento && (uint32_t)(ahora_ms - m->intento_en_ms) < FITO_SALUD_ENTRE_INTENTOS_MS;
+    if (cambio) return !frenado;
+    if (!alguna_falla(actual)) return 0;
+    return m->hay_enviado && (uint32_t)(ahora_ms - m->enviado_en_ms) >= FITO_SALUD_LATIDO_MS && !frenado;
+}
+
+void fito_salud_intento(fito_salud_memoria *m, uint32_t ahora_ms) {
+    m->hay_intento = 1;
+    m->intento_en_ms = ahora_ms;
+}
+
+void fito_salud_confirmado(fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms) {
+    memcpy(m->enviado, actual, FITO_N_SENSORES);
+    m->hay_enviado = 1;
+    m->enviado_en_ms = ahora_ms;
+}
+
+void fito_hace_cuanto(long segundos, char *salida, size_t n) {
+    if (segundos < 0) segundos = 0;
+    if (segundos < 60) snprintf(salida, n, "hace %ld s", segundos);
+    else if (segundos < 3600) snprintf(salida, n, "hace %ld min", segundos / 60);
+    else snprintf(salida, n, "hace %ld h", segundos / 3600);
 }

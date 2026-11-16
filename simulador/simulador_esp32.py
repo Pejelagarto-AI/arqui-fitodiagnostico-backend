@@ -45,11 +45,19 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
   --duracion-caida FITO_DURACION_CAIDA     cuantos segundos dura la caida simulada (20)
   --transporte    FITO_TRANSPORTE          http | mqtt: por donde viajan las LECTURAS (http)
   --mqtt-url      FITO_MQTT_URL            broker MQTT, host:puerto o tcp://host:puerto (localhost:1883)
+  --falla         FITO_FALLA               sensor(es) que "fallan": humedad, luz, temperatura (varios con coma). Como la
+                                           placa con un DHT22 danado: descarta las lecturas y reporta la salud (fase 10)
+  --duracion-falla FITO_DURACION_FALLA     a los N s de fallar el sensor "se arregla" y reporta OK (0 = no se arregla)
 
 Transporte MQTT (fase 4): con --transporte mqtt el reto y la credencial siguen por HTTP (el chip consigue su token igual),
 pero cada lectura se publica en fito/dispositivos/{serial}/lecturas (QoS 1, clientId = serial, cleanSession=false) con
 el token DENTRO del payload, y la respuesta llega por fito/dispositivos/{serial}/respuestas. Si el broker no responde,
 la cola sin red actua igual que con HTTP. Ver simulador/README.md y docs/fase4/IMPLEMENTACION.md.
+
+Salud (fase 10): con --falla temperatura el simulador se porta como la placa con el DHT22 danado: cada ciclo
+descarta la lectura ("lectura descartada: falla el sensor de temperatura") y reporta
+POST /api/v1/dispositivos/{serial}/salud {"sensores": {...}, "detalle": "..."} cuando cambia el estado y, mientras
+dure, un latido cada 5 min como maximo (las mismas reglas de fito_salud_toca del firmware, probadas contra el C).
 
 Sin red (fase 3): si un POST falla por red o por 5xx, la lectura se guarda en la NVS (clave "pendientes") con su
 marcaDeTiempo original y se entrega en orden cuando vuelve la red, antes de seguir en vivo (ver D82).
@@ -101,7 +109,50 @@ DURACION_CAIDA_S = 20
 SIN_RED = object()                         # lo que devuelve Credencial.asegurar(esperar_red=False) sin red
 ALFABETO_DEL_SERIAL = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # sin 0/O/1/I, 32 simbolos (divide 256: sin sesgo)
 SERIAL_AUTO = "auto"
+SALUD_LATIDO_MS = 300_000                  # mientras algo falla, un reporte cada 5 min como maximo (FITO_SALUD_LATIDO_MS)
+SALUD_ENTRE_INTENTOS_MS = 10_000           # entre dos intentos de reportar (FITO_SALUD_ENTRE_INTENTOS_MS)
 INTENTOS_CON_RESPUESTA_RECHAZADA = 3       # 401 seguidos antes de rendirse (casi seguro el secreto esta mal)
+
+
+class MemoriaDeSalud:
+    """Traduccion literal de fito_salud_toca / fito_salud_intento / fito_salud_confirmado (firmware/src/nucleo).
+    `actual` es una tupla de tres booleanos (humedad, luz, temperatura): True = el sensor falla. Los tiempos son ms y la resta es modular (uint32),
+    como en C, para que el desborde de millis() no la confunda."""
+
+    def __init__(self):
+        self.enviado = None            # el ultimo estado que el servidor confirmo (None: nunca)
+        self.enviado_en = 0
+        self.intento_en = None
+
+    def toca(self, actual, ahora_ms):
+        cambio = any(actual) if self.enviado is None else tuple(self.enviado) != tuple(actual)
+        frenado = (self.intento_en is not None
+                   and (ahora_ms - self.intento_en) & 0xFFFFFFFF < SALUD_ENTRE_INTENTOS_MS)
+        if cambio:
+            return not frenado
+        if not any(actual):
+            return False
+        return (self.enviado is not None and (ahora_ms - self.enviado_en) & 0xFFFFFFFF >= SALUD_LATIDO_MS
+                and not frenado)
+
+    def intento(self, ahora_ms):
+        self.intento_en = ahora_ms
+
+    def confirmado(self, actual, ahora_ms):
+        self.enviado = tuple(actual)
+        self.enviado_en = ahora_ms
+
+
+DETALLE_DE_FALLA = {"humedad": "sonda de humedad sin respuesta", "luz": "ldr sin respuesta",
+                    "temperatura": "dht22 sin respuesta"}
+
+
+def cuerpo_de_salud(fallan):
+    """El cuerpo de POST /dispositivos/{serial}/salud para el conjunto de sensores que fallan."""
+    cuerpo = {"sensores": {c: ("FALLA" if c in fallan else "OK") for c in CAMPOS}}
+    if fallan:
+        cuerpo["detalle"] = "; ".join(DETALLE_DE_FALLA[c] for c in CAMPOS if c in fallan)
+    return json.dumps(cuerpo)
 
 
 def ahora_iso():
@@ -638,6 +689,11 @@ def construir_parser():
                    help="probabilidad de una lectura valida pero fuera del optimo (0 a 1)")
     p.add_argument("--prob-invalida", type=float, default=0.10,
                    help="probabilidad de un dato invalido (0 a 1)")
+    p.add_argument("--falla", default=env("FITO_FALLA", ""),
+                   help="sensores que fallan, separados por coma (humedad, luz, temperatura): se descartan las "
+                        "lecturas y se reporta la salud, como la placa con un sensor danado")
+    p.add_argument("--duracion-falla", type=float, default=float(env("FITO_DURACION_FALLA", "0")),
+                   help="a los N segundos de arrancar el sensor se arregla y se reporta OK (0 = nunca)")
     p.add_argument("--semilla", type=int, default=None, help="semilla del azar, para repetir una corrida")
     return p
 
@@ -719,6 +775,33 @@ def vaciar(cola, credencial, url, viejas, titulo):
     return True
 
 
+def reportar_salud(salud, fallan, url, credencial):
+    """Reporta la salud si las reglas del firmware dicen que toca. Devuelve True si reporto, False si no tocaba o no
+    se pudo (se reintenta mas tarde), o None si no hay forma de autenticarse (error fatal ya avisado)."""
+    actual = tuple(c in fallan for c in CAMPOS)
+    ahora_ms = int(time.monotonic() * 1000)
+    if not salud.toca(actual, ahora_ms):
+        return False
+    token = credencial.asegurar(esperar_red=False)
+    if token is SIN_RED:
+        return False
+    if token is None:
+        return None
+    salud.intento(ahora_ms)
+    cuerpo = cuerpo_de_salud(fallan)
+    try:
+        codigo, texto = enviar(url, token, cuerpo)
+    except (urllib.error.URLError, OSError):
+        print("[%s] salud: sin red, se reintenta" % ahora_iso(), flush=True)
+        return False
+    if codigo == 401:
+        credencial.descartar()
+    print("[%s] salud %s -> %s" % (ahora_iso(), cuerpo, describir(codigo, texto)), flush=True)
+    if codigo == 200:
+        salud.confirmado(actual, ahora_ms)
+    return codigo == 200
+
+
 def main(argv=None):
     global CAIDA, TRANSPORTE
     args = construir_parser().parse_args(argv)
@@ -732,6 +815,11 @@ def main(argv=None):
         return 2
     if args.intervalo < 0:
         print("--intervalo no puede ser negativo", file=sys.stderr)
+        return 2
+    fallan = {c.strip() for c in args.falla.split(",") if c.strip()}
+    desconocidos = fallan - set(CAMPOS)
+    if desconocidos:
+        print("--falla solo admite %s (no %s)" % (", ".join(CAMPOS), ", ".join(sorted(desconocidos))), file=sys.stderr)
         return 2
     if args.max_pendientes < 1:
         print("--max-pendientes debe ser al menos 1", file=sys.stderr)
@@ -775,6 +863,9 @@ def main(argv=None):
     sin_red = False
     proxima_prueba = 0.0     # reloj monotonico: cuando toca volver a probar la red
     enviadas = 0
+    salud = MemoriaDeSalud()
+    url_salud = base + "/api/v1/dispositivos/" + args.serial + "/salud"
+    inicio = time.monotonic()
     try:
         if cola.items:
             print("[%s] la NVS tiene %d pendientes de una ejecucion anterior: se envian primero"
@@ -792,6 +883,18 @@ def main(argv=None):
         while args.lecturas == 0 or enviadas < args.lecturas:
             if CAIDA:
                 CAIDA.anunciar()
+            fallan_ahora = fallan if not (args.duracion_falla > 0 and time.monotonic() - inicio >= args.duracion_falla) else set()
+            if fallan or salud.enviado is not None:
+                if fallan_ahora:
+                    print("[%s] lectura descartada: falla el sensor de %s" % (ahora_iso(), ", ".join(
+                        c for c in CAMPOS if c in fallan_ahora)), flush=True)
+                if reportar_salud(salud, fallan_ahora, url_salud, credencial) is None:
+                    return 1
+                if fallan_ahora:
+                    enviadas += 1
+                    if args.lecturas == 0 or enviadas < args.lecturas:
+                        dormir_atendiendo(args.intervalo)
+                    continue
             sorteo = azar.random()
             if sorteo < args.prob_invalida:
                 tipo = "INVALIDA"

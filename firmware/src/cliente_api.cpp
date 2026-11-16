@@ -154,4 +154,21 @@ int enviarLectura(const String &token, const Lectura &l, String &estado) {
     }
     return codigo;
 }
+
+int enviarSalud(const String &token, const bool falla[3], const char *detalle) {
+    static const char *const NOMBRES[3] = {"humedad", "luz", "temperatura"};
+    JsonDocument d;
+    for (int i = 0; i < 3; i++) d["sensores"][NOMBRES[i]] = falla[i] ? "FALLA" : "OK";
+    if (detalle && detalle[0]) d["detalle"] = String(detalle).substring(0, 200);   // el servidor acepta hasta 200
+    String cuerpo, resp;
+    serializeJson(d, cuerpo);
+    int codigo = post(String("/dispositivos/") + identidad::serial() + "/salud", cuerpo, token.c_str(), resp);
+    if (codigo == 200) {
+        JsonDocument r;
+        if (!deserializeJson(r, resp)) registrar("salud HTTP 200 estado=%s", (const char *)(r["estado"] | "?"));
+    } else if (codigo != SIN_RED) {
+        registrar("salud HTTP %d %s", codigo, mensajeDeError(resp).c_str());
+    }
+    return codigo;
+}
 }

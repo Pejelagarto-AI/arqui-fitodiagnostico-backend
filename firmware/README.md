@@ -103,7 +103,7 @@ Otras placas: `-e esp32-s3-devkitc-1` o `-e esp32-c3-devkitm-1` (los pines I2C d
 python3 firmware/test/probar_nucleo.py
 ```
 
-Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (78 comprobaciones). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
+Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (139 comprobaciones, con las reglas de la salud de la fase 10). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
 
 ## Qué muestra la OLED
 
@@ -117,6 +117,7 @@ El **código** de 6 caracteres (`YUBUD6`) solo aparece en la pantalla de reclamo
 | Esperando reclamo | **QR** (64x64) a la izquierda; a la derecha "Codigo", los 6 caracteres en tamaño 2 (`YUB` / `UD6`) y tres puntos de espera animados |
 | Vinculada | animación de 8 cuadros a 8 por segundo (semilla, brote, dos hojas, planta, destello, disco, visto a medias, visto en círculo); el visto se desliza a la izquierda y aparece "Vinculada" con el código. No bloquea el bucle (`pantalla::animarExito`) |
 | Operando | sprite de la planta (48x64) a la izquierda y a la derecha humedad, luz y temperatura con icono, el código y el estado del servidor (SALUDABLE / EN RIESGO / CRITICO) con un punto que parpadea en cada envío |
+| Sensor que falla (fase 10) | la mascota preocupada, "no te siento" + el sensor (o "no siento / mis sensores" si fallan dos o tres) y "lectura buena hace 3 min"; abajo el nombre y "REVISA SENSOR". Sale solo, sin esperar al servidor, y se quita con la siguiente lectura completa. Ver abajo |
 | Sin red | icono de sin red y "Sin red (N guardadas)" |
 | Error fatal | "ERROR" con icono: "Clave de flota no coincide", "Serial ya existe con otro secreto", "Falta clave de flota", "Falta el servidor" |
 | BOOT sostenido | cuenta regresiva de 5 s |
@@ -151,6 +152,15 @@ python3 firmware/sprites/previsualizar.py /ruta/salida   # pantallas completas e
 ```
 
 Retocar un cuadro a mano: editar el `.txt` (mismo ancho en todas las filas) y correr `generar.py`, sin `dibujar.py`, que sobrescribe las plantas.
+
+### Salud de la matera (fase 10)
+
+Cuando `Sensores::leer` devuelve `false` (por ejemplo, el DHT22 no responde), la lectura se descarta **y** la matera lo dice:
+
+- **OLED, sin servidor:** el aviso de la tabla de arriba. `python3 firmware/sprites/previsualizar.py` genera los cuadros sin placa (`30_aviso_temperatura.png` a `38_...` y `anim_aviso.gif`).
+- **Servidor:** `POST /api/v1/dispositivos/{serial}/salud` con `{"sensores": {"humedad": "OK", "luz": "OK", "temperatura": "FALLA"}, "detalle": "temperatura: dht22 sin respuesta ..."}` y el mismo token que las lecturas. Se envía al cambiar el estado de algún sensor y, mientras algo falle, un latido cada 5 minutos (`FITO_SALUD_LATIDO_MS`, con 10 s mínimos entre intentos: `FITO_SALUD_ENTRE_INTENTOS_MS`). Al recuperarse envía `OK` una vez. Una matera sana no reporta nada.
+
+Las reglas de cuándo reportar son `fito_salud_toca` en `src/nucleo/` (C puro) y se prueban sin placa contra el simulador. Contrato, decisiones D150 a D159 y límites en [`docs/fase10/IMPLEMENTACION.md`](../docs/fase10/IMPLEMENTACION.md). Probar sin hardware: `python3 simulador/simulador_esp32.py --serial auto --falla temperatura`.
 
 ## Reiniciar la configuración
 

@@ -23,4 +23,8 @@ const Rangos &rangos();
 
 // POST /dispositivos/{serial}/lecturas con Bearer. `estado` = diagnostico.estado si fue 201.
 int enviarLectura(const String &token, const Lectura &l, String &estado);
+
+// POST /dispositivos/{serial}/salud con Bearer (fase 10): `falla[i]` true = FALLA en humedad, luz, temperatura.
+// `detalle` puede ser vacio. 200 = el servidor lo guardo.
+int enviarSalud(const String &token, const bool falla[3], const char *detalle);
 }
