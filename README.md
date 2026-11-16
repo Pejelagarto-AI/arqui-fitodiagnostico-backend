@@ -153,7 +153,9 @@ Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lectur
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
 
-Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta, desvincula sus dispositivos (siguen existiendo, otra planta puede reclamarlos) y avisa a los invitados. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
+Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta, desvincula sus dispositivos (siguen existiendo, otra planta puede reclamarlos) y avisa a los invitados. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió en el corte 2.
+
+**Luz acumulada y noche (fase 8).** Con historial, la luz de una planta se juzga por las últimas 24 h y no por la lectura del momento: horas con al menos 100 lux y el lux promedio en ellas, con un mínimo de 6 h de luz por día. Tras 2 h de oscuridad sostenida la planta duerme (`periodo: "NOCHE"`): la luz no cuenta para el estado global ni genera recomendación. Todo diagnóstico (el de `POST /api/v1/plantas/{id}/mediciones`, el vigente, el historial y la respuesta de `POST /api/v1/dispositivos/{serial}/lecturas`) agrega `periodo`, `exposicionLuminica` (`base`: `INSTANTANEA` o `ACUMULADA`, más `horasObservadas`, `horasDeLuz`, `luxPromedioEnLuz`, `luxEfectivo` y `horasEnOscuridad`, en `null` si es instantánea) y, en cada parámetro, `valorEvaluado` (lo que se comparó con el rango; `valor` sigue siendo la lectura). La respuesta MQTT agrega `periodo`. Ningún campo existente cambió. Sin historial (la primera lectura, o `POST /api/v1/diagnosticos`) la luz se juzga al instante, como antes. Detalle en [`docs/fase8/IMPLEMENTACION.md`](docs/fase8/IMPLEMENTACION.md).
 
 Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
@@ -191,15 +193,20 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos \
   "especie": "helecho",
   "estado": "EN_RIESGO",
   "parametros": [
-    { "nombre": "humedad", "valor": 40.0, "unidad": "%", "rangoOptimo": [60.0, 85.0], "estado": "BAJO" },
-    { "nombre": "luz", "valor": 500.0, "unidad": "lux", "rangoOptimo": [150.0, 800.0], "estado": "OPTIMO" },
-    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [16.0, 26.0], "estado": "OPTIMO" }
+    { "nombre": "humedad", "valor": 40.0, "unidad": "%", "rangoOptimo": [60.0, 85.0], "estado": "BAJO", "valorEvaluado": 40.0 },
+    { "nombre": "luz", "valor": 500.0, "unidad": "lux", "rangoOptimo": [150.0, 800.0], "estado": "OPTIMO", "valorEvaluado": 500.0 },
+    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [16.0, 26.0], "estado": "OPTIMO", "valorEvaluado": 22.0 }
   ],
   "recomendaciones": [
     "Humedad del sustrato 40 % por debajo del rango óptimo 60–85 %: regar moderadamente."
-  ]
+  ],
+  "periodo": "DIA",
+  "exposicionLuminica": { "base": "INSTANTANEA", "horasObservadas": null, "horasDeLuz": null,
+                          "luxPromedioEnLuz": null, "luxEfectivo": null, "horasEnOscuridad": null }
 }
 ```
+
+`periodo`, `exposicionLuminica` y `valorEvaluado` son de la fase 8 y solo se agregaron. Este diagnóstico no tiene planta ni historial, así que la luz siempre se juzga al instante (`base: "INSTANTANEA"`) y el periodo es `DIA`. En el diagnóstico de una planta con historial, `base` es `ACUMULADA` y los números describen las últimas 24 h (ver arriba y `docs/fase8/`).
 
 Estados posibles: `SALUDABLE`, `EN_RIESGO`, `CRITICO` (regla por desviación, umbral 25 % del ancho del rango). Un parámetro dentro de rango es `OPTIMO`; fuera, `BAJO` o `ALTO`.
 
@@ -288,6 +295,7 @@ Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera
 - [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
 - [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md): fase 6 (sensores físicos): puerto por magnitud, potenciómetros en el ADC1, las decisiones D98 a D101 y el plan de los sensores reales (calibración, DHT22, sonda alimentada por pin).
 - [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
+- [`docs/fase8/IMPLEMENTACION.md`](docs/fase8/IMPLEMENTACION.md): fase 8 (luz acumulada y noche): la luz se juzga por lo acumulado en 24 h, la planta duerme tras 2 h de oscuridad, campos nuevos del contrato (`periodo`, `exposicionLuminica`, `valorEvaluado`), la prueba de cambio y las decisiones D120 a D129.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---
