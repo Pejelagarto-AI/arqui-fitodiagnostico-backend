@@ -190,6 +190,16 @@ Cada envio se registra en una linea con la respuesta del servidor. Las probabili
 del azar son configurables. `--especie` se mantiene porque el simulador necesita los rangos para inventar datos
 plausibles; el chip real mide y ya.
 
+## Salud de la matera (fase 10): `--falla`
+
+`--falla temperatura` (o `humedad`, `luz`; varias con coma) hace que el simulador se porte como la placa con un sensor dañado: en cada ciclo descarta la lectura (`lectura descartada: falla el sensor de temperatura`) y reporta `POST /api/v1/dispositivos/{serial}/salud` con las mismas reglas del firmware (al cambiar el estado y un latido cada 5 minutos mientras dure; el primer reporte sale de inmediato). `--duracion-falla 30` arregla el sensor a los 30 s: reporta `OK` y vuelve a mandar lecturas. Sirve para ver el aviso `SALUD_DE_LA_MATERA` en el front y el `salud` de `GET /plantas/{id}/dispositivos` sin hardware.
+
+```bash
+python3 simulador/simulador_esp32.py --serial auto --falla temperatura --duracion-falla 60
+```
+
+Las reglas de cuándo reportar están en `MemoriaDeSalud`, traducción literal de `fito_salud_toca` del firmware; `firmware/test/probar_nucleo.py` exige que las dos decidan lo mismo. Detalle en [`docs/fase10/IMPLEMENTACION.md`](../docs/fase10/IMPLEMENTACION.md).
+
 ## Opciones
 
 | Argumento | Variable de entorno | Por defecto |
@@ -198,6 +208,8 @@ plausibles; el chip real mide y ya.
 | `--serial` | `FITO_SERIAL` | obligatorio (el del sticker), o `auto` para la fabrica automatica |
 | `--secreto` | `FITO_SECRETO` | obligatorio (el del sticker); no se usa con `--serial auto` |
 | `--clave-flota` | `FITO_CLAVE_FLOTA` | obligatoria con `--serial auto` |
+| `--falla` | `FITO_FALLA` | ninguno; sensores que fallan (`humedad`, `luz`, `temperatura`, con coma) |
+| `--duracion-falla` | `FITO_DURACION_FALLA` | `0`: el sensor nunca se arregla |
 | `--front-url` | `FITO_FRONT_URL` | `http://localhost:5500` (enlace del sticker) |
 | `--nvs` | `FITO_NVS` | `simulador/.nvs-<serial>.json` (`.nvs-auto-<serial>.json` con `auto`) |
 | `--espera-reclamo` | `FITO_ESPERA_RECLAMO` | `5` segundos entre reintentos mientras nadie lo reclama |
