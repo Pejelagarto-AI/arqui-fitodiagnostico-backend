@@ -3,6 +3,7 @@ package com.vivero.fitodiagnostico.aplicacion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarMedicionManualPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
+import com.vivero.fitodiagnostico.avisos.MotivoDelAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -141,11 +143,15 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
 
         // RF-G1: solo si el estado cambió respecto del inmediatamente anterior (RN8).
         if (detector.huboCambio(anterior.map(DiagnosticoDePlanta::diagnostico).orElse(null), evaluado)) {
+            // Fase 12 (D171): si solo cambió porque entró o salió la noche, el aviso lo dice y el correo no sale.
+            Map<String, String> datos = new HashMap<>(Map.of(Aviso.PLANTA_ID, planta.id().toString(),
+                    Aviso.ESTADO, registro.estado().name()));
+            if (CausaDelCambioDeEstado.soloPorElPeriodo(anterior.orElseThrow().diagnostico(), evaluado)) {
+                datos.put(MotivoDelAviso.CLAVE, MotivoDelAviso.PERIODO);
+            }
             notificador.avisar(new Aviso(destinatarios, TipoDeAviso.CAMBIO_DE_ESTADO,
                     "La planta «" + planta.apodo() + "» pasó de " + anterior.orElseThrow().estado()
-                            + " a " + registro.estado() + ".",
-                    Map.of(Aviso.PLANTA_ID, planta.id().toString(),
-                            Aviso.ESTADO, registro.estado().name())));
+                            + " a " + registro.estado() + ".", datos));
         }
 
         // Fase 9 (D140): quien quiera enterarse de cada lectura, sin que este caso de uso lo conozca.
