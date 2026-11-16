@@ -9,6 +9,7 @@ import com.vivero.fitodiagnostico.mascota.modelo.AccionDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.EventoDeMascota;
+import com.vivero.fitodiagnostico.mascota.modelo.TipoDeEvento;
 import com.vivero.fitodiagnostico.mascota.puerto.salida.RepositorioAccionesDeMascota;
 import com.vivero.fitodiagnostico.mascota.puerto.salida.RepositorioEventosDeMascota;
 import com.vivero.fitodiagnostico.mascota.puerto.salida.RepositorioMascotas;
@@ -86,6 +87,13 @@ public class AdaptadorMascotaJpa implements RepositorioMascotas, RepositorioEven
     public void guardar(EventoDeMascota evento) {
         eventos.saveAndFlush(new EventoDeMascotaEntity(evento.id(), evento.plantaId(), evento.tipo(),
                 evento.ocurridoEn(), reloj.instant(), aJson(evento.detalle())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<EventoDeMascota> ultimoDeTipo(UUID plantaId, TipoDeEvento tipo) {
+        return eventos.findFirstByPlantaIdAndTipoOrderByOcurridoEnDescRegistradoEnDesc(plantaId, tipo)
+                .map(AdaptadorMascotaJpa::aModelo);
     }
 
     @Override

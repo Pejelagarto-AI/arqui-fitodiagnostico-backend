@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.mascota.modelo;
 
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -113,5 +114,42 @@ class DetectorDeSaltosDeMascotaTest {
         assertThat(detector.humedadDeReferencia(humedades(30, 31, 90, 29, 30), t0.plus(Duration.ofMinutes(4))))
                 .contains(30.0);
         assertThat(detector.humedadDeReferencia(List.of(), t0)).isEmpty();
+    }
+
+    // ---- Fase 12 (D170): el amanecer no es salir al sol ----
+
+    /** Una lectura por minuto: cada valor con su periodo. */
+    private List<LecturaReciente> luzConPeriodo(Periodo[] periodos, double... valores) {
+        List<LecturaReciente> m = new ArrayList<>();
+        for (int i = 0; i < valores.length; i++) {
+            m.add(new LecturaReciente(t0.plus(Duration.ofMinutes(i)), 40, valores[i], periodos[i]));
+        }
+        return m;
+    }
+
+    @Test
+    void laSubidaDeLuzTrasUnaNocheEsElAmanecerYNoSalioAlSol() {
+        Periodo[] p = {Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.DIA, Periodo.DIA};
+
+        assertThat(detector.sol(planta, luzConPeriodo(p, 5, 6, 5, 4, 5, 3000, 3200), null)).isEmpty();
+    }
+
+    @Test
+    void elMismoSaltoDeDiaSiEsSalirAlSol() {
+        Periodo[] p = {Periodo.DIA, Periodo.DIA, Periodo.DIA, Periodo.DIA, Periodo.DIA, Periodo.DIA, Periodo.DIA};
+
+        assertThat(detector.sol(planta, luzConPeriodo(p, 500, 520, 480, 500, 510, 3000, 3200), null)).isPresent();
+    }
+
+    @Test
+    void elAmanecerNoAfectaALaDeteccionDeRiego() {
+        Periodo[] p = {Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.NOCHE, Periodo.DIA, Periodo.DIA};
+        List<LecturaReciente> m = new ArrayList<>();
+        double[] humedad = {30, 31, 29, 30, 30, 48, 50};
+        for (int i = 0; i < humedad.length; i++) {
+            m.add(new LecturaReciente(t0.plus(Duration.ofMinutes(i)), humedad[i], 5, p[i]));
+        }
+
+        assertThat(detector.riego(planta, m, null)).isPresent();
     }
 }

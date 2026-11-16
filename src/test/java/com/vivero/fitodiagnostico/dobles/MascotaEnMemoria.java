@@ -55,6 +55,12 @@ public class MascotaEnMemoria implements RepositorioMascotas, RepositorioEventos
     }
 
     @Override
+    public java.util.Optional<EventoDeMascota> ultimoDeTipo(UUID plantaId, com.vivero.fitodiagnostico.mascota.modelo.TipoDeEvento tipo) {
+        return eventos.stream().filter(e -> e.plantaId().equals(plantaId) && e.tipo() == tipo)
+                .max(Comparator.comparing(EventoDeMascota::ocurridoEn));
+    }
+
+    @Override
     public Pagina<EventoDeMascota> de(UUID plantaId, Paginacion paginacion) {
         List<EventoDeMascota> deLaPlanta = new ArrayList<>(eventos.stream()
                 .filter(e -> e.plantaId().equals(plantaId)).toList());

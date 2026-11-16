@@ -17,10 +17,15 @@ public enum Animo {
     CON_FRIO,
     /** Temperatura ALTO. */
     CON_CALOR,
-    /** Luz BAJO. Con {@code Diagnostico.periodo()} (fase 8) de noche será DORMIDA (ver MapaDeAnimo). */
+    /** Luz BAJO de día. De noche la misma luz es {@link #DORMIDA} (fase 12, D170). */
     A_OSCURAS,
     /** Luz ALTO. */
     DESLUMBRADA,
+    /**
+     * De noche ({@code Diagnostico.periodo() == NOCHE}) y lo único que falla es la luz: la planta duerme y la cara no
+     * pide ayuda (fase 12, D170). Si falla otra cosa de noche, el ánimo es el de esa cosa.
+     */
+    DORMIDA,
     /** Vitalidad en 0 y todavía no revive. Gana sobre todo lo demás. */
     DESMAYADA,
     /** La planta nunca se midió. */

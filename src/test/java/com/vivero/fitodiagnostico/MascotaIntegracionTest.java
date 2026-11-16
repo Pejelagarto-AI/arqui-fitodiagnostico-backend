@@ -190,6 +190,23 @@ class MascotaIntegracionTest {
     }
 
     @Test
+    void lasCariciasDentroDeLosDiezSegundosRespondenConLaUltimaSinEventoNiMensaje() throws Exception {
+        String primera = leer(actuar(dueno, "ACARICIAR").andExpect(status().isCreated()), "$.id");
+
+        // Fase 12 (D172): la segunda, de inmediato, es 200 con la misma caricia.
+        actuar(dueno, "ACARICIAR").andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(primera))
+                .andExpect(jsonPath("$.estado").value("HECHA"));
+        actuar(dueno, "ACARICIAR").andExpect(status().isOk()).andExpect(jsonPath("$.id").value(primera));
+
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/mascota/eventos?tamano=5"), dueno))
+                .andExpect(jsonPath("$.total").value(1));
+        verify(vivo, org.mockito.Mockito.times(1)).publicar(org.mockito.ArgumentMatchers.any());
+        // El enfriamiento es por planta y solo del dueño: un invitado sigue recibiendo 403, no 200.
+        actuar(invitado, "ACARICIAR").andExpect(status().isForbidden());
+    }
+
+    @Test
     void unTipoDeAccionDesconocidoEs400() throws Exception {
         actuar(dueno, "ALIMENTAR").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"));

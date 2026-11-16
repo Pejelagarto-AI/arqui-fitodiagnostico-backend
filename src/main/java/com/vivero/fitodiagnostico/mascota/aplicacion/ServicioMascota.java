@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -170,11 +171,19 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
     public ResultadoDeAccion actuar(UUID solicitante, UUID plantaId, TipoDeAccion tipo) {
         Planta planta = autorizador.paraModificar(solicitante, plantaId);
         Instant ahora = reloj.instant();
-        Optional<EstadoDeMascota> estado = mascotas.de(plantaId);
+        // Con bloqueo: dos caricias a la vez de la misma planta no se cuelan las dos por el enfriamiento (D172).
+        Optional<EstadoDeMascota> estado = mascotas.paraActualizar(plantaId);
         Optional<Diagnostico> ultimo = diagnosticos.ultimoDe(plantaId).map(DiagnosticoDePlanta::diagnostico);
         EstadoDeMascota paraAvisar = estado.orElseGet(() -> EstadoDeMascota.nueva(plantaId, ahora, parametros));
 
         if (tipo == TipoDeAccion.ACARICIAR) {
+            Optional<EventoDeMascota> anterior = eventos.ultimoDeTipo(plantaId, TipoDeEvento.ACARICIADA);
+            if (anterior.isPresent() && Duration.between(anterior.get().ocurridoEn(), ahora)
+                    .compareTo(parametros.enfriamientoDeCaricia()) < 0) {
+                // Demasiado pronto: responde con la última, sin evento, sin aviso y sin mensaje a la matera.
+                return new ResultadoDeAccion(anterior.get().id(), tipo, EstadoDeAccion.HECHA,
+                        anterior.get().ocurridoEn(), null, true);
+            }
             EventoDeMascota caricia = EventoDeMascota.nuevo(plantaId, TipoDeEvento.ACARICIADA, ahora, Map.of());
             registrarYPublicar(planta, paraAvisar, ultimo, List.of(caricia));
             return new ResultadoDeAccion(caricia.id(), tipo, EstadoDeAccion.HECHA,

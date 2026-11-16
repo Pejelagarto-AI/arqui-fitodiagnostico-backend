@@ -25,7 +25,8 @@ public record ParametrosDeMascota(
         int lecturasARevisar,
         Duration enfriamientoDeEventos,
         Duration plazoParaConfirmarRiego,
-        double vitalidadCansada) {
+        double vitalidadCansada,
+        Duration enfriamientoDeCaricia) {
 
     /** Con la que nace una mascota en su primera lectura: ni llena ni en peligro. */
     public static final double VITALIDAD_INICIAL = 80;
@@ -62,14 +63,35 @@ public record ParametrosDeMascota(
     /** Con todo en rango pero menos vitalidad que esto, el ánimo es CANSADA y no FELIZ. */
     public static final double VITALIDAD_CANSADA = 30;
 
+    /** Entre dos caricias de la misma planta (fase 12, D172): las que sobran no generan evento ni mensaje. */
+    public static final Duration ENFRIAMIENTO_DE_CARICIA = Duration.ofSeconds(10);
+
     public static final ParametrosDeMascota POR_DEFECTO = new ParametrosDeMascota(
             VITALIDAD_INICIAL, VITALIDAD_AL_REVIVIR, PERDIDA_POR_HORA_EN_CRITICO, PERDIDA_POR_HORA_EN_RIESGO,
             GANANCIA_POR_HORA_SALUDABLE, TIEMPO_PARA_REVIVIR, VENTANA_SIN_LECTURAS, DURACION_DEL_DIA_DE_RACHA,
             SUBIDA_MINIMA_DE_RIEGO, FACTOR_DE_SOL, SUBIDA_MINIMA_DE_SOL, VENTANA_DE_REFERENCIA,
             MUESTRAS_MINIMAS_DE_REFERENCIA, LECTURAS_A_REVISAR, ENFRIAMIENTO_DE_EVENTOS, PLAZO_PARA_CONFIRMAR_RIEGO,
-            VITALIDAD_CANSADA);
+            VITALIDAD_CANSADA, ENFRIAMIENTO_DE_CARICIA);
+
+    /** Los diecisiete de antes de la fase 12, con el enfriamiento de caricia por defecto. */
+    public ParametrosDeMascota(double vitalidadInicial, double vitalidadAlRevivir, double perdidaPorHoraEnCritico,
+                               double perdidaPorHoraEnRiesgo, double gananciaPorHoraSaludable,
+                               Duration tiempoParaRevivir, Duration ventanaSinLecturas,
+                               Duration duracionDelDiaDeRacha, double subidaMinimaDeRiego, double factorDeSol,
+                               double subidaMinimaDeSol, Duration ventanaDeReferencia,
+                               int muestrasMinimasDeReferencia, int lecturasARevisar,
+                               Duration enfriamientoDeEventos, Duration plazoParaConfirmarRiego,
+                               double vitalidadCansada) {
+        this(vitalidadInicial, vitalidadAlRevivir, perdidaPorHoraEnCritico, perdidaPorHoraEnRiesgo,
+                gananciaPorHoraSaludable, tiempoParaRevivir, ventanaSinLecturas, duracionDelDiaDeRacha,
+                subidaMinimaDeRiego, factorDeSol, subidaMinimaDeSol, ventanaDeReferencia,
+                muestrasMinimasDeReferencia, lecturasARevisar, enfriamientoDeEventos, plazoParaConfirmarRiego,
+                vitalidadCansada, ENFRIAMIENTO_DE_CARICIA);
+    }
 
     public ParametrosDeMascota {
+        Objects.requireNonNull(enfriamientoDeCaricia);
+        exigir(!enfriamientoDeCaricia.isNegative(), "enfriamiento-de-caricia no puede ser negativo");
         Objects.requireNonNull(tiempoParaRevivir);
         Objects.requireNonNull(ventanaSinLecturas);
         Objects.requireNonNull(duracionDelDiaDeRacha);
