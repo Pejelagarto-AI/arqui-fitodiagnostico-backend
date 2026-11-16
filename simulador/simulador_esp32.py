@@ -37,7 +37,7 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
                                                                    (simulador/.nvs-<serial>.json,
                                                                     simulador/.nvs-auto-<serial>.json con auto)
   --intervalo     FITO_INTERVALO           segundos entre lecturas (5)
-  --especie       FITO_ESPECIE             especie de la planta    (potos)
+  --especie       FITO_ESPECIE             especie de la planta    (helecho)
   --lecturas      FITO_LECTURAS            cuantas enviar, 0 = sin fin (0)
   --max-pendientes FITO_MAX_PENDIENTES     tope de la cola sin red en la NVS (500)
   --espera-red    FITO_ESPERA_RED          segundos entre pruebas de red mientras no hay (10)
@@ -89,11 +89,11 @@ import mqtt_minimo   # cliente MQTT 3.1.1 minimo de este mismo directorio (fase 
 # Rangos optimos del Anexo B (src/main/resources/referencia/especies.csv):
 # especie -> (humedad_min, humedad_max, luz_min, luz_max, temp_min, temp_max)
 ESPECIES = {
-    "sansevieria": (20, 45, 200, 1500, 15, 29),
-    "potos": (40, 70, 300, 1200, 18, 30),
+    "girasol": (40, 70, 10000, 50000, 18, 28),
+    "cactus": (5, 25, 20000, 60000, 15, 35),
     "suculenta": (10, 30, 800, 2500, 15, 32),
     "helecho": (60, 85, 150, 800, 16, 26),
-    "lavanda": (25, 50, 1000, 3000, 15, 30),
+    "atrapamoscas": (60, 90, 3000, 20000, 15, 32),
 }
 
 # Limites fisicos del sensor (los mismos que valida el dominio).
@@ -670,7 +670,7 @@ def construir_parser():
     p.add_argument("--espera-reclamo", type=float, default=float(env("FITO_ESPERA_RECLAMO", str(ESPERA_RECLAMO_S))),
                    help="segundos entre reintentos mientras nadie lo reclama")
     p.add_argument("--intervalo", type=float, default=float(env("FITO_INTERVALO", "5")))
-    p.add_argument("--especie", default=env("FITO_ESPECIE", "potos"), choices=sorted(ESPECIES))
+    p.add_argument("--especie", default=env("FITO_ESPECIE", "helecho"), choices=sorted(ESPECIES))
     p.add_argument("--lecturas", type=int, default=int(env("FITO_LECTURAS", "0")),
                    help="cuantas lecturas enviar; 0 = hasta Ctrl+C")
     p.add_argument("--max-pendientes", type=int, default=int(env("FITO_MAX_PENDIENTES", str(MAX_PENDIENTES))),
