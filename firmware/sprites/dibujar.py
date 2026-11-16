@@ -223,6 +223,15 @@ def girasol(estado, cuadro=0):
         hoja(d, (24, 37), (40, 40), 5, curva=-4)
         petalos(d, cx, cy, r - 1, r + 6, 11, 8, quitar=(2, 7), caida=0.5)
         disco(d, cx, cy, r)
+    elif estado == "dormido":
+        # Fase 11: de noche la cabeza cae suave (4 px abajo, 1 a la izquierda) con la corona entera y las puntas
+        # apenas dobladas. No es el riesgo: no faltan petalos y las hojas siguen arriba.
+        cx, cy, r = 23, 21, 10
+        tallo(d, curva_q((24, 47), (25, 37), (cx, cy + 8)), 3)
+        hoja(d, (24, 40), (7, 32), 5, curva=-3)
+        hoja(d, (24, 36), (41, 30), 5, curva=3)
+        petalos(d, cx, cy, r - 1, r + 7, 12, 8, caida=0.25)
+        disco(d, cx, cy, r)
     else:
         cx, cy, r = 31, 29, 9
         tallo(d, curva_q((22, 47), (20, 18), (cx - 3, cy - 9)), 3)    # el tallo se arquea y la cabeza cuelga
@@ -481,6 +490,7 @@ def main():
         guardar(f"helecho_{estado}_0", helecho(estado, 0))
         guardar(f"helecho_{estado}_1", helecho(estado, 1))
     guardar("girasol_saludable_1", girasol("saludable", 1))
+    guardar("girasol_dormido", girasol("dormido"))
     guardar("suculenta_saludable_1", suculenta("saludable", inflada=True))
     for i in range(6):           # el visto y el anillo los traza pantalla.cpp progresivamente
         guardar(f"exito_{i}", exito(i))

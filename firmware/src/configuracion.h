@@ -16,6 +16,10 @@ constexpr uint32_t ESPERA_RECLAMO_MS = 5000;
 constexpr uint32_t ESPERA_REINTENTO_MS = 10000;
 constexpr uint32_t MARGEN_RENOVACION_S = 120;
 constexpr uint32_t BOTON_REINICIO_MS = 5000;
+// Fase 11: soltar BOOT antes de esto es una pulsacion corta (la mascota saluda). Desde aqui empieza la cuenta regresiva
+// del reinicio en la OLED, asi que nunca se confunden.
+constexpr uint32_t BOTON_CORTA_MS = 1000;
+static_assert(BOTON_CORTA_MS < BOTON_REINICIO_MS, "la pulsacion corta debe terminar antes del reinicio");
 constexpr uint16_t TIMEOUT_HTTP_MS = 4000;
 constexpr size_t CAPACIDAD_COLA = 120;
 constexpr int MAX_ENVIOS_POR_CICLO = 6;         // al vaciar la cola, para no bloquear boton ni pantalla
