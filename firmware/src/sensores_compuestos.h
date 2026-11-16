@@ -13,6 +13,9 @@ public:
     void adoptarRangos(const float minimo[3], const float maximo[3]) override;
     // "humedad 2950 mV = 0.0 | luz 1210 mV = 420.0 | temperatura hr 55 % = 21.3"
     void describirCrudos(char *buf, size_t n) override;
+    void fallas(bool falla[3]) override;
+    // "temperatura: dht22 sin respuesta (linea en reposo ALTO); luz: 4095 mV": una frase por sensor que fallo.
+    void describirFallas(char *buf, size_t n) override;
 
 private:
     SensorDeMagnitud *magnitudes_[3];

@@ -21,6 +21,10 @@ bool animarExito(uint32_t ahoraMs);                     // true mientras la anim
 void vinculada(const char *nombre);                     // pantalla final estatica: visto + "Vinculada"
 // `especie` decide la mascota (familiaDe en pantalla.cpp: carnivora, girasol, ... o la planta comun); `estado` es el del servidor.
 void lecturas(const char *nombre, const Lectura &l, const char *estado, bool punto, const char *especie);
+// Fase 10: un sensor no responde. Pinta, sin esperar al servidor, "no te siento <sensor>" (o "no siento mis sensores" con
+// dos o tres), la mascota preocupada y "hace X" desde la ultima lectura buena (`ultimaBuenaMs` es un millis()). Dura hasta
+// la siguiente pantalla::lecturas(), que es una lectura completa. `falla[i]`: 0 humedad, 1 luz, 2 temperatura.
+void sensoresFallan(const char *nombre, const char *especie, const bool falla[3], bool hayBuena, uint32_t ultimaBuenaMs);
 void animarLecturas(uint32_t ahoraMs);                  // alterna cuadros de la planta; solo repinta si cambia el cuadro
 void mordisco(uint32_t ahoraMs);                        // la carnivora muerde (respuesta ok del servidor)
 void sinRed(size_t guardadas);

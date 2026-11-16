@@ -68,3 +68,20 @@ void SensoresCompuestos::describirCrudos(char *buf, size_t n) {
         usado += (size_t)k;
     }
 }
+
+void SensoresCompuestos::fallas(bool falla[3]) {
+    for (int i = 0; i < 3; i++) falla[i] = leido_ && !ok_[i];
+}
+
+void SensoresCompuestos::describirFallas(char *buf, size_t n) {
+    size_t usado = 0;
+    if (n) buf[0] = '\0';
+    for (int i = 0; i < 3 && usado + 1 < n; i++) {
+        if (!leido_ || ok_[i]) continue;
+        char crudo[48];
+        magnitudes_[i]->describirCrudo(crudo, sizeof crudo);
+        int k = snprintf(buf + usado, n - usado, "%s%s: %s", usado ? "; " : "", NOMBRE[i], crudo[0] ? crudo : "sin lectura");
+        if (k < 0) break;
+        usado += (size_t)k;
+    }
+}

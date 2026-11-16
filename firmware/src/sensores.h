@@ -26,6 +26,11 @@ public:
     // Modo calibracion: lo que midio cada magnitud antes de convertir y el valor convertido, de la ultima leer().
     // Por defecto (sensores simulados) no hay nada crudo que mostrar.
     virtual void describirCrudos(char *buf, size_t n) { snprintf(buf, n, "sin datos crudos"); }
+    // Salud (fase 10): cual magnitud no se pudo medir en la ultima leer(): 0 humedad, 1 luz, 2 temperatura. Por defecto
+    // ninguna (los sensores simulados no fallan).
+    virtual void fallas(bool falla[3]) { for (int i = 0; i < 3; i++) falla[i] = false; }
+    // Por que fallo, para el campo "detalle" del reporte de salud ("temperatura: dht22 sin respuesta"). Vacio si nada fallo.
+    virtual void describirFallas(char *buf, size_t n) { if (n) buf[0] = '\0'; }
 };
 
 // Caminata aleatoria alrededor del rango optimo del poto (como simulador/simulador_esp32.py), con una lectura

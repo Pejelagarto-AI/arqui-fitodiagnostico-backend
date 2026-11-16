@@ -36,6 +36,25 @@ int main(int argc, char **argv) {
         printf("%.3f\n", fito_interpolar_cal(atoi(argv[2]), t, n));
         return 0;
     }
+    /* salud-guion: pasos "t=<ms>:<f|o>x3[:ok|fallo]" ... imprime 1/0 por paso (toca) y aplica el resultado:
+     * "ok" = el servidor confirmo, "fallo" = el envio fallo; sin sufijo = no se envia aunque toque (solo se consulta).
+     * Ej.: salud t=0:oof:ok t=5000:oof t=300000:oof:ok */
+    if (argc >= 3 && !strcmp(argv[1], "salud")) {
+        fito_salud_memoria m;
+        memset(&m, 0, sizeof m);
+        for (int i = 2; i < argc; i++) {
+            unsigned long t;
+            char f[8], res[8] = "";
+            if (sscanf(argv[i], "%lu:%7[^:]:%7s", &t, f, res) < 2 || strlen(f) != FITO_N_SENSORES) { fprintf(stderr, "paso invalido\n"); return 2; }
+            uint8_t actual[FITO_N_SENSORES];
+            for (int k = 0; k < FITO_N_SENSORES; k++) actual[k] = f[k] == 'f';
+            int toca = fito_salud_toca(&m, actual, (uint32_t)t);
+            printf("%d%s", toca, i + 1 < argc ? " " : "\n");
+            if (toca && res[0]) { fito_salud_intento(&m, (uint32_t)t); if (!strcmp(res, "ok")) fito_salud_confirmado(&m, actual, (uint32_t)t); }
+        }
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "hace")) { fito_hace_cuanto(atol(argv[2]), salida, sizeof salida); puts(salida); return 0; }
     fprintf(stderr, "uso incorrecto\n");
     return 2;
 }

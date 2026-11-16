@@ -127,6 +127,68 @@ def main():
             except ValueError:
                 obtenido = "rechazada"
             comprobar("leer_tabla rechaza %s" % motivo, "rechazada", obtenido)
+
+        # 7. Salud de la matera (fase 10): cuando reportar que un sensor falla. El C y la MemoriaDeSalud del simulador
+        # deben decidir igual, paso a paso, sobre los mismos guiones. Cada paso es "ms:estado:resultado" con estado de
+        # tres letras (humedad, luz, temperatura; f = falla, o = ok) y resultado ok (el servidor confirmo) o fallo.
+        def guion_python(pasos):
+            m = sim.MemoriaDeSalud()
+            salida = []
+            for ms, estado, resultado in pasos:
+                actual = tuple(ch == "f" for ch in estado)
+                toca = m.toca(actual, ms)
+                salida.append(int(toca))
+                if toca and resultado:
+                    m.intento(ms)
+                    if resultado == "ok":
+                        m.confirmado(actual, ms)
+            return " ".join(map(str, salida))
+
+        def guion_c(pasos):
+            return c("salud", *["%d:%s%s" % (ms, estado, ":" + res if res else "") for ms, estado, res in pasos])
+
+        LATIDO = 300000
+        guiones = {
+            "sin fallas nunca reporta": [(0, "ooo", "ok"), (5000, "ooo", "ok"), (LATIDO * 3, "ooo", "ok")],
+            "falla nueva: reporta una vez y espera": [(0, "ooo", "ok"), (5000, "oof", "ok"), (10000, "oof", "ok"),
+                                                      (20000, "oof", "ok")],
+            "latido a los 5 min, no antes": [(0, "oof", "ok"), (LATIDO - 1, "oof", "ok"), (LATIDO, "oof", "ok"),
+                                             (LATIDO + 5000, "oof", "ok"), (2 * LATIDO, "oof", "ok")],
+            "recuperacion reporta OK y luego calla": [(0, "oof", "ok"), (60000, "ooo", "ok"), (65000, "ooo", "ok"),
+                                                      (LATIDO * 2, "ooo", "ok")],
+            "recuperacion antes de 10 s espera al freno": [(0, "oof", "ok"), (5000, "ooo", "ok"),
+                                                           (10000, "ooo", "ok"), (10001, "ooo", "ok")],
+            "un envio fallido se reintenta cada 10 s": [(0, "oof", "fallo"), (5000, "oof", "fallo"),
+                                                        (10000, "oof", "fallo"), (20000, "oof", "ok"),
+                                                        (30000, "oof", "ok")],
+            "un latido fallido se reintenta cada 10 s": [(0, "oof", "ok"), (LATIDO, "oof", "fallo"),
+                                                         (LATIDO + 5000, "oof", "fallo"), (LATIDO + 10000, "oof", "ok"),
+                                                         (LATIDO + 20000, "oof", "ok")],
+            "cambia de uno a dos sensores": [(0, "oof", "ok"), (20000, "fof", "ok"), (40000, "fof", "ok")],
+            "parpadeo: no inunda": [(0, "oof", "ok"), (1000, "ooo", "ok"), (2000, "oof", "ok"), (11000, "ooo", "ok")],
+            "desborde de millis (uint32)": [(4294967000, "oof", "ok"), (4294967000 + 6000 - 2 ** 32, "oof", "ok"),
+                                            (4294967000 + LATIDO - 2 ** 32, "oof", "ok")],
+        }
+        for nombre, pasos in guiones.items():
+            comprobar("salud: " + nombre, guion_python(pasos), guion_c(pasos))
+        # Y los valores que importan, para que el acuerdo C = Python no sea un acuerdo sobre algo equivocado.
+        comprobar("salud: primera falla reporta", "0 1 0 0", guion_c(guiones["falla nueva: reporta una vez y espera"]))
+        comprobar("salud: latidos", "1 0 1 0 1", guion_c(guiones["latido a los 5 min, no antes"]))
+        comprobar("salud: recuperacion", "1 1 0 0", guion_c(guiones["recuperacion reporta OK y luego calla"]))
+        azar_salud = random.Random(11)
+        for i in range(40):
+            t, pasos = 0, []
+            for _ in range(60):
+                t += azar_salud.choice([500, 2000, 5000, 9000, 11000, 60000, LATIDO])
+                pasos.append((t, "".join(azar_salud.choice("ofo") for _ in range(3)),
+                              azar_salud.choice(["ok", "ok", "fallo", ""])))
+            comprobar("salud: guion al azar %d" % i, guion_python(pasos), guion_c(pasos))
+
+        # 8. "hace X" de la OLED (la hora de la ultima lectura buena).
+        for segundos, esperado in ((-5, "hace 0 s"), (0, "hace 0 s"), (59, "hace 59 s"), (60, "hace 1 min"),
+                                   (754, "hace 12 min"), (3599, "hace 59 min"), (3600, "hace 1 h"),
+                                   (7300, "hace 2 h")):
+            comprobar("hace_cuanto(%d)" % segundos, esperado, c("hace", str(segundos)))
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 

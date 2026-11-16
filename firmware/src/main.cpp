@@ -71,6 +71,12 @@ int segundosBoton = -1;
 char fatal1[24], fatal2[24], fatal3[24];
 Lectura ultima = {};
 bool hayUltima = false;
+// Salud (fase 10): que sensores fallaron en la ultima lectura, cuando fue la ultima buena y que le dijimos al servidor.
+bool fallaActual[3] = {false, false, false};
+bool hayFalla = false;
+char detalleFalla[200] = "";
+uint32_t ultimaBuenaMs = 0;
+fito_salud_memoria memoriaSalud = {};
 
 void entrar(Fase nueva) {
     fase = nueva;
@@ -96,6 +102,10 @@ String nombreAMostrar() {
 }
 
 void pintarOperando() {
+    if (hayFalla) {      // la OLED avisa por su cuenta, sin esperar al servidor
+        pantalla::sensoresFallan(nombreAMostrar().c_str(), api::especie().c_str(), fallaActual, hayUltima, ultimaBuenaMs);
+        return;
+    }
     if (!hayUltima) { pantalla::vinculada(nombreAMostrar().c_str()); return; }
     pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
 }
@@ -303,8 +313,17 @@ void tomarLectura() {
     registrarCrudos();
     if (!ok) {
         registrar("lectura descartada: %s", descripcion);
+        sensores->fallas(fallaActual);
+        sensores->describirFallas(detalleFalla, sizeof detalleFalla);
+        hayFalla = fallaActual[0] || fallaActual[1] || fallaActual[2];
+        pintarOperando();
         return;
     }
+    if (hayFalla) registrar("los sensores responden otra vez");
+    hayFalla = false;
+    for (bool &f : fallaActual) f = false;
+    detalleFalla[0] = '\0';
+    ultimaBuenaMs = millis();
     l.cuando = time(nullptr);
     l.n = ++numeroDeLectura;
     l.fuera = strncmp(descripcion, "fuera", 5) == 0;
@@ -350,12 +369,33 @@ void vaciarCola() {
     }
 }
 
+// Cuenta al servidor que un sensor falla (o que se recupero). Las reglas de cuando son de fito_salud_toca (nucleo, con
+// pruebas): al cambiar el estado y, mientras algo falle, un latido cada 5 min. La OLED ya avisó sin esperar a esto.
+void atenderSalud() {
+    uint8_t actual[FITO_N_SENSORES];
+    for (int i = 0; i < FITO_N_SENSORES; i++) actual[i] = fallaActual[i] ? 1 : 0;
+    const uint32_t ahora = millis();
+    if (!red::conectada() || !fito_salud_toca(&memoriaSalud, actual, ahora)) return;
+    if (!token.length() || (reloj::hayHora() && tokenExpira - time(nullptr) < (time_t)config::MARGEN_RENOVACION_S)) {
+        registrar("renovando credencial para reportar la salud...");
+        if (!renovarCredencial()) return;
+    }
+    fito_salud_intento(&memoriaSalud, ahora);
+    int codigo = api::enviarSalud(token, fallaActual, hayFalla ? detalleFalla : "");
+    if (codigo == 200) {
+        fito_salud_confirmado(&memoriaSalud, actual, ahora);
+    } else if (codigo == 401) {
+        registrar("salud -> HTTP 401 (token descartado, se pedira otro)");
+        token = ""; identidad::borrarToken();
+    }
+}
+
 void faseOperando() {
     uint32_t ahora = millis();
     if (exitoActivo) {                                           // animacion de exito, sin bloquear
         if (pantalla::animarExito(ahora)) return;
         exitoActivo = false;
-        if (hayUltima) pintarOperando();
+        if (hayUltima || hayFalla) pintarOperando();
     }
     pantalla::animarLecturas(ahora);
     if (punto && ahora > apagarPunto) { punto = false; if (red::conectada() && hayUltima) pintarOperando(); }
@@ -371,6 +411,8 @@ void faseOperando() {
     proximaLectura = ahora + config::INTERVALO_LECTURA_MS;
     tomarLectura();
     vaciarCola();
+    if (fase != Fase::Operando) return;
+    atenderSalud();
     if (fase != Fase::Operando) return;
     if (!red::conectada() || cola::tamano() > 1) { char b[8]; (void)b; pantalla::sinRed(cola::tamano()); }
     else pintarOperando();
