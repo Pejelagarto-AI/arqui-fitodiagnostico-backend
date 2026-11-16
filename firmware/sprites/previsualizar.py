@@ -140,6 +140,28 @@ CARA_CACTUS = [(24, 22), (24, 23), (24, 29)]
 CARA_SUCULENTA = [(24, 36), (24, 37), (24, 39)]
 FACTOR_BALANCEO = {"comun": 1.0, "carnivora": 1.0, "girasol": 1.3, "cactus": 0.4, "suculenta": 0.4, "helecho": 1.2}
 HELECHO_MS = [450, 700, 1100]
+# Fase 11: la planta dormida y el saludo. Espejo de fito_nucleo.c (fito_saludo_cuadro, fito_respira_dy, fito_zzz_cuadro)
+# y de pantalla.cpp (CARA_GIRASOL_DORMIDO, ZZZ).
+SALUDO_DY = [-2, -4, -5, -5, -4, -2, 0, 1, 0, 0, 0, 0]
+SALUDO_OJOS = [1.0, 1.0, 0.5, 0.0, 0.5, 1.0, 0.5, 0.0, 0.5, 1.0, 1.0, 1.0]
+CARA_GIRASOL_DORMIDO = (23, 21)
+ZZZ = [(37, 10, 3), (40, 5, 4), (43, 0, 5)]
+
+def saludo_cuadro(t):
+    return t // 50 if 0 <= t < 600 else -1
+
+def respira_dy(t):
+    return -1 if 750 <= t % 3000 < 2250 else 0
+
+def zzz_cuadro(t):
+    return (t // 1000) % 3
+
+def zeta(o, x, y, n):
+    o.d.rectangle((x - 1, y - 1, x + n, y + n), fill=0)
+    o.d.line((x, y, x + n - 1, y), fill=1)
+    o.d.line((x, y + n - 1, x + n - 1, y + n - 1), fill=1)
+    for i in range(1, n - 1):
+        o.d.point((x + n - 1 - i, y + i), fill=1)
 
 def hace_cuanto(segundos):
     """Espejo de fito_hace_cuanto() del nucleo."""
@@ -148,7 +170,7 @@ def hace_cuanto(segundos):
 
 class Lecturas:
     def __init__(self, familia, nivel_en, mordiscos=(), codigo="Poti", hum="65", luz="1200", temp="24.5",
-                 falla=None, buena_s=None):
+                 falla=None, buena_s=None, noche=lambda t: False, saludos=()):
         if familia is True or familia is False:            # compatibilidad: antes era "es carnivora"
             familia = "carnivora" if familia else "comun"
         self.familia = familia
@@ -157,6 +179,9 @@ class Lecturas:
         # Fase 10: `falla` = sensores que no responden ("humedad", "luz", "temperatura"); `buena_s` = segundos desde la
         # ultima lectura buena en t=0 (None: todavia no hubo ninguna). Espejo de pintarAviso() en pantalla.cpp.
         self.falla, self.buena_s = list(falla or []), buena_s
+        # Fase 11: `noche(t)` = el diagnostico dice NOCHE; `saludos` = instantes (ms) de pulsaciones cortas de BOOT.
+        self.noche, self.saludos = noche, list(saludos)
+        self.duerme, self.saluda, self.dy_extra = False, False, 0
         self.cara_nivel = -1
         self.nivel_previo, self.nivel_desde = -1, 0
         self.regado_desde = None
@@ -208,7 +233,7 @@ class Lecturas:
         for x in range(21, 27):
             y = self.boca_y(x, 23.5, 2.5, 60, 1.2, c)
             o.d.point((x, max(59, min(62, y))), fill=0)
-        if self.cara_nivel == 2:
+        if self.cara_nivel == 2 and not self.duerme:
             fase = t % 4200
             if fase < 900:
                 y = 56 + fase * 5 // 900
@@ -232,7 +257,7 @@ class Lecturas:
         if con_boca:
             for x in range(cx - semi, cx + semi + 1):
                 o.d.point((x, self.boca_y(x, cx, float(semi), cy + yb, curva, c)), fill=0)
-            if self.cara_nivel == 2:
+            if self.cara_nivel == 2 and not self.duerme:
                 fase = t % 4200
                 if fase < 900:
                     y = cy + yb + 1 + fase * 7 // 900
@@ -251,11 +276,12 @@ class Lecturas:
 
     def pintar_cactus(self, o, c, parp, t, seno, amp, nivel):
         x, y = CARA_CACTUS[nivel]
-        self.cuerpo(o, ["cactus_saludable", "cactus_riesgo", "cactus_critico"][nivel], seno, amp, 0)
-        self.cara_grande(o, c, parp, t, x + self.desv(y, seno, amp), y, GEO_CACTUS, True)
-        if nivel == 0 and t - self.nivel_desde > 600:
+        dy = self.dy_extra
+        self.cuerpo(o, ["cactus_saludable", "cactus_riesgo", "cactus_critico"][nivel], seno, amp, dy)
+        self.cara_grande(o, c, parp, t, x + self.desv(y, seno, amp), y + dy, GEO_CACTUS, True)
+        if nivel == 0 and not self.duerme and t - self.nivel_desde > 600:
             k = min(1.0, (t - self.nivel_desde - 600) / 1500)
-            self.flor_cactus(o, 24 + self.desv(4, seno, amp), 4, suave(k))
+            self.flor_cactus(o, 24 + self.desv(4, seno, amp), 4 + dy, suave(k))
 
     def regar(self, t):
         self.regado_desde = t
@@ -264,13 +290,13 @@ class Lecturas:
         x, y = CARA_SUCULENTA[nivel]
         tr = t - self.regado_desde if self.regado_desde is not None else 10 ** 9
         regando = tr < 1600
-        inflada = nivel == 0 and t % 4500 < 500
-        dy = 0
+        inflada = nivel == 0 and not self.duerme and t % 4500 < 500
+        dy = self.dy_extra
         if regando and tr >= 500:
             if nivel == 0:
                 inflada = True
             else:
-                dy = -1 if tr < 800 else 0
+                dy += -1 if tr < 800 else 0
             c = (c[0], min(c[1], 0.3), max(c[2], 0.8), 0.0)
         nombre = "suculenta_saludable_1" if inflada else ["suculenta_saludable_0", "suculenta_riesgo_0", "suculenta_critico_0"][nivel]
         self.cuerpo(o, nombre, seno, amp, dy)
@@ -280,21 +306,25 @@ class Lecturas:
 
     def pintar_helecho(self, o, c, parp, t, seno, amp, nivel):
         estado = ["saludable", "riesgo", "critico"][nivel]
-        self.cuerpo(o, f"helecho_{estado}_{(t // HELECHO_MS[nivel]) % 2}", seno, amp, 0)
+        cuadro = 0 if self.duerme else (t // HELECHO_MS[nivel]) % 2
+        self.cuerpo(o, f"helecho_{estado}_{cuadro}", seno, amp, self.dy_extra)
         self.cara_matera(o, c, parp, t)
 
     def cara_trampa(self, o, c, parp, t, seno, amp, yo, dy, con_boca):
         self.cara_grande(o, c, parp, t, 24 + self.desv(yo, seno, amp), yo + dy, GEO_TRAMPA, con_boca)
 
     def pintar_girasol(self, o, c, parp, t, seno, amp, nivel):
-        x, y = CARA_GIRASOL[nivel]
+        dormido = self.duerme and nivel == 0
+        x, y = CARA_GIRASOL_DORMIDO if dormido else CARA_GIRASOL[nivel]
         dy = mira = 0
-        nombre = ["girasol_saludable_0", "girasol_riesgo_0", "girasol_critico_0"][nivel]
-        if nivel == 0:
+        nombre = "girasol_dormido" if dormido else ["girasol_saludable_0", "girasol_riesgo_0", "girasol_critico_0"][nivel]
+        if nivel == 0 and not self.duerme:
             if (t // 400) % 2:
                 nombre = "girasol_saludable_1"
-            dy = redondear(0.6 * math.sin(2 * math.pi * (t % 1600) / 1600))
+            if not self.saluda:
+                dy = redondear(0.6 * math.sin(2 * math.pi * (t % 1600) / 1600))
             mira = redondear(1.5 * math.sin(2 * math.pi * (t % 5000) / 5000))
+        dy += self.dy_extra
         self.cuerpo(o, nombre, seno, amp, dy)
         self.cara_grande(o, c, parp, t, x + mira + self.desv(y, seno, amp), y + dy, GEO_CHICA, True)
 
@@ -316,10 +346,16 @@ class Lecturas:
             nivel = 1
         if nivel != self.nivel_previo:
             self.nivel_previo, self.nivel_desde = nivel, t
+        # Fase 11: el saludo gana; si no, de NOCHE (sin aviso) duerme. Espejo de pintarLecturas().
+        cs = next((saludo_cuadro(t - s) for s in self.saludos if saludo_cuadro(t - s) >= 0), -1)
+        self.saluda = cs >= 0
+        noche = self.noche(t)
+        self.duerme = noche and not self.falla and not self.saluda
+        self.dy_extra = SALUDO_DY[cs] if self.saluda else respira_dy(t) if self.duerme else 0
         self.fijar(nivel, t)
-        c = self.cara(t)
-        parp = self.parpadeo(t)
-        seno = math.sin(2 * math.pi * (t % 2800) / 2800)
+        c = CARA_NIVEL[0] if self.saluda else self.cara(t)
+        parp = SALUDO_OJOS[cs] if self.saluda else 0.0 if self.duerme else self.parpadeo(t)
+        seno = 0.0 if self.duerme else math.sin(2 * math.pi * (t % 2800) / 2800)
         amp = AMPLITUD[nivel] * FACTOR_BALANCEO[self.familia]
         o = Oled()
         if self.familia == "girasol":
@@ -331,18 +367,21 @@ class Lecturas:
         elif self.familia == "helecho":
             self.pintar_helecho(o, c, parp, t, seno, amp, nivel)
         elif not self.carn:
-            self.cuerpo(o, ["planta_saludable_0", "planta_riesgo_0", "planta_critico_0"][nivel], seno, amp, 0)
+            self.cuerpo(o, ["planta_saludable_0", "planta_riesgo_0", "planta_critico_0"][nivel], seno, amp, self.dy_extra)
             self.cara_matera(o, c, parp, t)
         elif nivel > 0:
-            self.cuerpo(o, ["carni_riesgo_0", "carni_critico_0"][nivel - 1], seno, amp, 0)
-            self.cara_trampa(o, c, parp, t, seno, amp, 25 if nivel == 1 else 30, 0, True)
+            self.cuerpo(o, ["carni_riesgo_0", "carni_critico_0"][nivel - 1], seno, amp, self.dy_extra)
+            self.cara_trampa(o, c, parp, t, seno, amp, 25 if nivel == 1 else 30, self.dy_extra, True)
+        elif self.duerme:
+            self.cuerpo(o, CARNI_BOCA[2], seno, amp, self.dy_extra)
+            self.cara_trampa(o, c, parp, t, seno, amp, (32 - CARNI_G[2]) // 2, self.dy_extra, False)
         else:
-            boca, dy = 0, 0
+            boca, dy = 0, self.dy_extra
             for ini in self.mordiscos:
                 if 0 <= t - ini < 460:
                     for hasta, b, d in MORDISCO:
                         if t - ini < hasta:
-                            boca, dy = b, d
+                            boca, dy = b, self.dy_extra + d
                             break
             self.cuerpo(o, CARNI_BOCA[boca], seno, amp, dy)
             cm = (c[0] * (0.3 if boca == 2 else 1),) + tuple(c[1:])
@@ -353,9 +392,15 @@ class Lecturas:
             ventana_nombre(o, 50, 47, 78, self.codigo, t)
             o.texto(50, 56, "REVISA SENSOR")
             return o
+        if self.duerme:
+            for x, y, n in ZZZ[:zzz_cuadro(t) + 1]:
+                zeta(o, x, y, n)
         for i, (ic, v, u) in enumerate((("icono_gota", self.hum, "%"), ("icono_sol", self.luz, "lx"), ("icono_termometro", self.temp, "C"))):
             y = i * 15
             o.sprite(ic, 50, y + 3)
+            if i == 1 and noche:                              # de noche la luz no cuenta: "duerme" y, chico, lo de ahora
+                o.texto(61, y + 4, "duerme")
+                continue
             o.texto(61, y, v, 2)
             if len(v) < 5:
                 o.texto(61 + 12 * len(v) + 1, y + 7, u)
@@ -435,6 +480,7 @@ def main():
     gif("anim_exito", cuadro_exito, 3500)
     mascotas(SALIDA)
     avisos(SALIDA)
+    noche_y_saludo(SALIDA)
     print("pantallas en", SALIDA)
 
 def avisos(salida):
@@ -453,6 +499,36 @@ def avisos(salida):
     cuadro("cactus", ["temperatura"], 180).guardar("37_aviso_cactus")
     cuadro("girasol", ["temperatura"], 180, nivel=2).guardar("38_aviso_girasol_critico")
     gif("anim_aviso", Lecturas("comun", lambda t: 0, falla=["temperatura"], buena_s=5).cuadro, 6000)
+
+FAMILIAS_11 = ["girasol", "cactus", "suculenta", "helecho", "carnivora", "comun"]
+T_DORMIDA = 2500        # respiracion abajo (dy 0) y zzz en su tercer cuadro: el cuadro que se compara con el front
+T_SALUDO = 2500         # el saludo empieza aqui (sin mordiscos ni parpadeos alrededor)
+
+def noche_y_saludo(salida):
+    """Fase 11: la mascota dormida por familia y estado, los 12 cuadros del saludo por familia (pantalla completa y,
+    aparte, solo el sprite de 48x64 para tools/comparar-mascotas.py del front) y GIF de cada cosa."""
+    os.makedirs(os.path.join(salida, "mascota"), exist_ok=True)
+    def solo_mascota(o, nombre):
+        o.im.crop((0, 0, 48, 64)).save(os.path.join(salida, "mascota", nombre + ".png"))
+    for familia in FAMILIAS_11:
+        for nivel, estado in enumerate(("saludable", "riesgo", "critico")):
+            sim = Lecturas(familia, lambda t, n=nivel: n, noche=lambda t: True, luz="3")
+            sim.cuadro(0)
+            o = sim.cuadro(T_DORMIDA)
+            o.guardar(f"40_dormida_{familia}_{estado}")
+            solo_mascota(o, f"dormida_{familia}_{estado}")
+        sim = Lecturas(familia, lambda t: 0, saludos=[T_SALUDO])
+        sim.cuadro(0)
+        for k in range(12):
+            o = sim.cuadro(T_SALUDO + 50 * k)
+            solo_mascota(o, f"saludo_{familia}_{k:02d}")
+            if k in (0, 3, 7):
+                o.guardar(f"41_saludo_{familia}_{k:02d}")
+        gif(f"anim_dormida_{familia}", Lecturas(familia, lambda t: 0, noche=lambda t: True, luz="3").cuadro, 6000)
+    # de noche la pulsacion la despierta un momento: saluda y se vuelve a dormir
+    gif("anim_noche_saludo", Lecturas("girasol", lambda t: 0, noche=lambda t: True, saludos=[1500, 4200], luz="3").cuadro, 6000)
+    # de dia a noche: la planta se duerme sin saltos (la cara de la transicion es la del nivel, con los ojos cerrados)
+    gif("anim_anochece", Lecturas("cactus", lambda t: 0, noche=lambda t: t >= 3000, luz="3").cuadro, 6000)
 
 def mascotas(salida):
     """Fase 7: una pantalla por familia y nivel, y un GIF de cada familia pasando por los tres estados."""

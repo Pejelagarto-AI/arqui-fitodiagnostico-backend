@@ -20,13 +20,17 @@ void empezarExito(uint32_t ahoraMs, const char *nombre);
 bool animarExito(uint32_t ahoraMs);                     // true mientras la animacion siga; no bloquea
 void vinculada(const char *nombre);                     // pantalla final estatica: visto + "Vinculada"
 // `especie` decide la mascota (familiaDe en pantalla.cpp: carnivora, girasol, ... o la planta comun); `estado` es el del servidor.
-void lecturas(const char *nombre, const Lectura &l, const char *estado, bool punto, const char *especie);
+// `noche` (fase 11): el diagnostico dijo periodo NOCHE; la mascota duerme y la fila de la luz dice "duerme".
+void lecturas(const char *nombre, const Lectura &l, const char *estado, bool punto, const char *especie, bool noche);
 // Fase 10: un sensor no responde. Pinta, sin esperar al servidor, "no te siento <sensor>" (o "no siento mis sensores" con
 // dos o tres), la mascota preocupada y "hace X" desde la ultima lectura buena (`ultimaBuenaMs` es un millis()). Dura hasta
 // la siguiente pantalla::lecturas(), que es una lectura completa. `falla[i]`: 0 humedad, 1 luz, 2 temperatura.
 void sensoresFallan(const char *nombre, const char *especie, const bool falla[3], bool hayBuena, uint32_t ultimaBuenaMs);
 void animarLecturas(uint32_t ahoraMs);                  // alterna cuadros de la planta; solo repinta si cambia el cuadro
 void mordisco(uint32_t ahoraMs);                        // la carnivora muerde (respuesta ok del servidor)
+// Fase 11: la mascota saluda (pulsacion corta de BOOT). Salto y parpadeo doble de 600 ms con la cara contenta, el
+// bloque SALUDO del front. Solo en la pantalla de lecturas; no habla con el servidor.
+void saludar(uint32_t ahoraMs);
 void sinRed(size_t guardadas);
 void error(const char *l1, const char *l2 = "", const char *l3 = "");
 void reinicio(int segundos);

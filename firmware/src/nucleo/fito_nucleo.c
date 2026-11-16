@@ -111,3 +111,25 @@ void fito_hace_cuanto(long segundos, char *salida, size_t n) {
     else if (segundos < 3600) snprintf(salida, n, "hace %ld min", segundos / 60);
     else snprintf(salida, n, "hace %ld h", segundos / 3600);
 }
+
+/* ---- la mascota duerme y saluda (fase 11) ---- */
+
+const int8_t FITO_SALUDO_DY[FITO_SALUDO_CUADROS] = {-2, -4, -5, -5, -4, -2, 0, 1, 0, 0, 0, 0};
+const float FITO_SALUDO_OJOS[FITO_SALUDO_CUADROS] = {1.0f, 1.0f, 0.5f, 0.0f, 0.5f, 1.0f, 0.5f, 0.0f, 0.5f, 1.0f, 1.0f, 1.0f};
+
+int fito_saludo_cuadro(uint32_t t_ms) {
+    return t_ms < FITO_SALUDO_MS ? (int)(t_ms / FITO_SALUDO_CUADRO_MS) : -1;
+}
+
+int fito_respira_dy(uint32_t ahora_ms) {
+    const uint32_t fase = ahora_ms % FITO_RESPIRA_MS;
+    return fase >= FITO_RESPIRA_SUBE_DESDE_MS && fase < FITO_RESPIRA_SUBE_HASTA_MS ? -1 : 0;
+}
+
+int fito_zzz_cuadro(uint32_t ahora_ms) {
+    return (int)((ahora_ms / FITO_ZZZ_CUADRO_MS) % 3u);
+}
+
+int fito_pulsacion_corta(uint32_t sostenido_ms, uint32_t tope_ms) {
+    return sostenido_ms >= FITO_BOTON_REBOTE_MS && sostenido_ms < tope_ms;
+}

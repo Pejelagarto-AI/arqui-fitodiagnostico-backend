@@ -117,7 +117,7 @@ int pedirCredencial(String &token, time_t &expira) {
     return codigo;
 }
 
-int enviarLectura(const String &token, const Lectura &l, String &estado) {
+int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche) {
     char marca[24];
     reloj::iso(l.cuando, marca, sizeof marca);
     JsonDocument d;
@@ -129,10 +129,12 @@ int enviarLectura(const String &token, const Lectura &l, String &estado) {
     serializeJson(d, cuerpo);
     int codigo = post(String("/dispositivos/") + identidad::serial() + "/lecturas", cuerpo, token.c_str(), resp);
     estado = "";
+    noche = false;
     if (codigo == 201) {
         JsonDocument r;
         if (!deserializeJson(r, resp)) {
             estado = (const char *)(r["diagnostico"]["estado"] | "");
+            noche = !strcmp(r["diagnostico"]["periodo"] | "DIA", "NOCHE");
             tomarApodo(r);
             const char *esp = r["diagnostico"]["especie"] | "";
             if (esp[0] && especieActual != esp) { especieActual = esp; registrar("especie de la planta: %s", esp); }

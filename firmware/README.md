@@ -103,7 +103,7 @@ Otras placas: `-e esp32-s3-devkitc-1` o `-e esp32-c3-devkitm-1` (los pines I2C d
 python3 firmware/test/probar_nucleo.py
 ```
 
-Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (139 comprobaciones, con las reglas de la salud de la fase 10). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
+Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (498 comprobaciones, con las reglas de la salud de la fase 10 y los números del saludo y de la planta dormida de la fase 11). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
 
 ## Qué muestra la OLED
 
@@ -120,6 +120,8 @@ El **código** de 6 caracteres (`YUBUD6`) solo aparece en la pantalla de reclamo
 | Sensor que falla (fase 10) | la mascota preocupada, "no te siento" + el sensor (o "no siento / mis sensores" si fallan dos o tres) y "lectura buena hace 3 min"; abajo el nombre y "REVISA SENSOR". Sale solo, sin esperar al servidor, y se quita con la siguiente lectura completa. Ver abajo |
 | Sin red | icono de sin red y "Sin red (N guardadas)" |
 | Error fatal | "ERROR" con icono: "Clave de flota no coincide", "Serial ya existe con otro secreto", "Falta clave de flota", "Falta el servidor" |
+| De noche (fase 11) | la mascota dormida: ojos cerrados, quieta, respira 1 px cada 3 s y flota un "zzz"; la fila de la luz dice "duerme". Ver abajo |
+| BOOT corto (fase 11) | la mascota saluda: salta 5 px y parpadea dos veces en 600 ms, con la cara contenta |
 | BOOT sostenido | cuenta regresiva de 5 s |
 
 El QR de reclamo codifica `http://<servidor>:<puerto front>/#/v/<6 caracteres>`; el front lo redirige a `#/vincular?serial=fito-<CODIGO>` (F35). Si el enlace no cabe en la versión 3, la pantalla muestra solo el código y lo avisa por serie.
@@ -162,9 +164,16 @@ Cuando `Sensores::leer` devuelve `false` (por ejemplo, el DHT22 no responde), la
 
 Las reglas de cuándo reportar son `fito_salud_toca` en `src/nucleo/` (C puro) y se prueban sin placa contra el simulador. Contrato, decisiones D150 a D159 y límites en [`docs/fase10/IMPLEMENTACION.md`](../docs/fase10/IMPLEMENTACION.md). Probar sin hardware: `python3 simulador/simulador_esp32.py --serial auto --falla temperatura`.
 
+### La planta duerme y saluda (fase 11)
+
+- **De noche.** Si el diagnóstico de la respuesta 201 trae `periodo: "NOCHE"` (fase 8 del backend: 2 h por debajo de 100 lux), la mascota duerme: ojos cerrados (1 px), sin balanceo, parpadeo ni idle, sin lágrima; el cuerpo entero sube 1 px de 750 a 2249 ms de cada 3 s; un "zzz" de tres cuadros de 1 s en la esquina de arriba a la derecha. Cada familia duerme en el cuerpo de su estado; la carnívora saludable con la trampa cerrada y el girasol saludable con la cabeza caída (`girasol_dormido`). La fila de la luz dice "duerme" en vez del número. Con el aviso de sensores no duerme.
+- **Saludo.** Pulsar BOOT y soltarlo antes de 1 s (`BOTON_CORTA_MS`): 12 cuadros de 50 ms con el salto `-2 -4 -5 -5 -4 -2 0 +1 0 0 0 0` px y los ojos `1 1 .5 0 .5 1 .5 0 .5 1 1 1`, cara contenta, también de noche (la despierta un momento). Solo en la pantalla de lecturas; no habla con el servidor. Mantenerlo más de 1 s sigue siendo la cuenta regresiva del reinicio.
+
+Los números viven en `src/nucleo/fito_nucleo.c` (con pruebas) y son los mismos del front (`mascota-tiempo.js`). `python3 firmware/sprites/previsualizar.py /ruta` genera `40_dormida_*`, `41_saludo_*`, `anim_dormida_*.gif`, `anim_noche_saludo.gif` y, en `mascota/`, los cuadros sueltos que compara `tools/comparar-mascotas.py --oled` del front. Decisiones D160 a D169 en [`docs/fase11/IMPLEMENTACION.md`](../docs/fase11/IMPLEMENTACION.md).
+
 ## Reiniciar la configuración
 
-Mantener **BOOT (GPIO 0) 5 s** con la matera operando: borra Wi-Fi, servidor y token (no la identidad) y reinicia. Para empezar de cero con otra identidad hay que borrar toda la flash (`pio run -t erase`); entonces el registro da 409 hasta reiniciar el backend de desarrollo (H2) o borrar la fila.
+Mantener **BOOT (GPIO 0) 5 s** con la matera operando (una pulsación de menos de 1 s solo hace saludar a la mascota): borra Wi-Fi, servidor y token (no la identidad) y reinicia. Para empezar de cero con otra identidad hay que borrar toda la flash (`pio run -t erase`); entonces el registro da 409 hasta reiniciar el backend de desarrollo (H2) o borrar la fila.
 
 ## Problemas comunes
 
