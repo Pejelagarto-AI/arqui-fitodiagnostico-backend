@@ -17,9 +17,11 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.time.Instant;
+import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +44,7 @@ class SaludDeDispositivoIntegracionTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EmisorTokenDispositivoPort emisor;
+    @Autowired private com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos accesos;
 
     private String dueno;
     private String planta;
@@ -61,6 +64,8 @@ class SaludDeDispositivoIntegracionTest {
     void limpiar() {
         jdbc.update("delete from dispositivo where serial like 'esp32-%'");
         jdbc.update("delete from diagnostico_planta where planta_id in (select p.id from planta p "
+                + "join usuario u on u.id = p.dueno_id where u.correo like 'sal-%')");
+        jdbc.update("delete from acceso_compartido where planta_id in (select p.id from planta p "
                 + "join usuario u on u.id = p.dueno_id where u.correo like 'sal-%')");
         jdbc.update("delete from planta where dueno_id in (select id from usuario where correo like 'sal-%')");
         jdbc.update("delete from usuario_rol where usuario_id in (select id from usuario where correo like 'sal-%')");
@@ -128,6 +133,43 @@ class SaludDeDispositivoIntegracionTest {
                 .andExpect(jsonPath("$[0].salud.sensores.humedad").value("OK"))
                 .andExpect(jsonPath("$[0].salud.detalle").value("dht22 sin respuesta"))
                 .andExpect(jsonPath("$[0].salud.mensaje").value("no te siento la temperatura"))
+                .andExpect(jsonPath("$[0].ultimaLecturaEn").doesNotExist());
+    }
+
+    @Test
+    void elInvitadoLeeLaSaludDeLaMateraYNoPuedeReclamarNiDesvincular() throws Exception {
+        String invitado = registrarEIniciarSesion();
+        String idInvitado = leer(mockMvc.perform(con(get("/api/v1/cuenta"), invitado)), "$.id");
+        accesos.otorgar(AccesoCompartido.otorgadoAhora(UUID.fromString(planta), UUID.fromString(idInvitado)));
+        salud(tokenDelDispositivo, TEMPERATURA_FALLA).andExpect(status().isOk());
+
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/dispositivos"), invitado))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].serial").value("esp32-sal"))
+                .andExpect(jsonPath("$[0].salud.estado").value("FALLA"))
+                .andExpect(jsonPath("$[0].salud.mensaje").value("no te siento la temperatura"));
+        mockMvc.perform(con(delete("/api/v1/plantas/" + planta + "/dispositivos/esp32-sal"), invitado))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(json(con(post("/api/v1/plantas/" + planta + "/dispositivos"), invitado),
+                "{\"serial\":\"esp32-sal\"}")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void desvincularBorraLaSaludYAlReclamarDeNuevoNoArrastraElEstadoViejo() throws Exception {
+        salud(tokenDelDispositivo, TEMPERATURA_FALLA).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select count(*) from dispositivo_salud where serial = 'esp32-sal'",
+                Integer.class)).isEqualTo(1);
+
+        mockMvc.perform(con(delete("/api/v1/plantas/" + planta + "/dispositivos/esp32-sal"), dueno))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("select count(*) from dispositivo_salud where serial = 'esp32-sal'",
+                Integer.class)).isZero();
+
+        mockMvc.perform(json(con(post("/api/v1/plantas/" + planta + "/dispositivos"), dueno),
+                "{\"serial\":\"esp32-sal\"}")).andExpect(status().isCreated());
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/dispositivos"), dueno))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].salud").doesNotExist())
                 .andExpect(jsonPath("$[0].ultimaLecturaEn").doesNotExist());
     }
 

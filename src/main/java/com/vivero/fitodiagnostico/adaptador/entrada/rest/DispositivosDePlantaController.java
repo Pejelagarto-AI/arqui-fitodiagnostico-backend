@@ -26,8 +26,9 @@ import java.util.UUID;
 /**
  * Adaptador de entrada de la PERSONA para los dispositivos de su planta: reclamar por serial, ver cuáles
  * tiene y cuándo se conectaron por última vez, y desvincular. El dueño nunca ve ni copia una credencial:
- * el dispositivo la pide solo (ver {@code AutenticacionDeDispositivoController}). Solo el dueño: un invitado
- * recibe 403 y un ajeno 404, igual que en los demás endpoints de la planta.
+ * el dispositivo la pide solo (ver {@code AutenticacionDeDispositivoController}). Reclamar y desvincular son solo del
+ * dueño (un invitado recibe 403). Desde la fase 12 (D173) el invitado puede LEER la lista, con la salud de cada matera,
+ * igual que lee la planta; un ajeno recibe 404 en todo, como en los demás endpoints de la planta.
  */
 @RestController
 @RequestMapping("/api/v1/plantas/{plantaId}/dispositivos")

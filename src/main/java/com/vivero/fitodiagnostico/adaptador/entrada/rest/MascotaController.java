@@ -60,7 +60,8 @@ public class MascotaController {
     }
 
     /**
-     * 201 con ACARICIAR (ya pasó). 202 con LA_REGUE pendiente (se resolverá después), o 201 si el sensor ya lo
+     * 201 con ACARICIAR (ya pasó), o 200 con la última caricia si llegó antes de que pasaran 10 s (D172: sin evento ni
+     * mensaje). 202 con LA_REGUE pendiente (se resolverá después), o 201 si el sensor ya lo
      * había confirmado. Un tipo desconocido o ausente, 400 PARAMETRO_INVALIDO.
      */
     @PostMapping("/acciones")
@@ -68,7 +69,8 @@ public class MascotaController {
                                                            @RequestBody SolicitudAccionDeMascota solicitud) {
         ResultadoDeAccion resultado = acciones.actuar(IdentidadDelSolicitante.id(autenticacion), plantaId,
                 tipoDe(solicitud));
-        HttpStatus estado = resultado.estado() == EstadoDeAccion.PENDIENTE ? HttpStatus.ACCEPTED : HttpStatus.CREATED;
+        HttpStatus estado = resultado.repetida() ? HttpStatus.OK
+                : resultado.estado() == EstadoDeAccion.PENDIENTE ? HttpStatus.ACCEPTED : HttpStatus.CREATED;
         return ResponseEntity.status(estado).body(RespuestaAccionDeMascota.desde(resultado));
     }
 

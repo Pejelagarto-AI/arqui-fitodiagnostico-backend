@@ -226,7 +226,8 @@ class ReclamoDeDispositivoIntegracionTest {
         reclamar(ajeno, planta, serial).andExpect(status().isNotFound());
         mockMvc.perform(json(post("/api/v1/plantas/" + planta + "/dispositivos"), "{\"serial\":\"x\"}"))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/dispositivos"), invitado)).andExpect(status().isForbidden());
+        // Fase 12 (D173): el invitado lee los dispositivos (solo lectura); reclamar y desvincular siguen siendo del dueño.
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/dispositivos"), invitado)).andExpect(status().isOk());
         mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/dispositivos"), ajeno)).andExpect(status().isNotFound());
         mockMvc.perform(con(delete("/api/v1/plantas/" + planta + "/dispositivos/" + serial), invitado))
                 .andExpect(status().isForbidden());

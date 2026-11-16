@@ -67,6 +67,13 @@
 #   FITO_SALUD_SILENCIO_MINIMO     suelo del silencio tolerado (por defecto PT2M).
 #   FITO_SALUD_LATIDO_DE_FALLA     cada cuanto reporta mientras un sensor falla (por defecto PT5M; es el del firmware).
 
+# Fase 12: retención de las lecturas crudas (D176). Una matera a 5 s genera unas 17 000 lecturas al día; las crudas se
+# guardan 30 días y de cada hora que se va queda un resumen (resumen_luz_hora) para siempre.
+#   FITO_HISTORIAL_RETENCION_CRUDAS      cuánto se guardan las lecturas crudas (por defecto P30D; mínimo PT48H).
+#   FITO_HISTORIAL_RETENCION_HABILITADA  "false" apaga la tarea diaria (por defecto true).
+#   FITO_HISTORIAL_RETENCION_CRON        cuándo corre (por defecto "0 30 3 * * *", 3:30 a. m.).
+#   fitodiagnostico.mascota.enfriamiento-de-caricia   segundos mínimos entre dos caricias de una planta (PT10S, D172).
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.

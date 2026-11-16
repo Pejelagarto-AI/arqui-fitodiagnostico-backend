@@ -3,7 +3,9 @@ package com.vivero.fitodiagnostico.mascota.modelo;
 import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
+import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
 import org.junit.jupiter.api.Test;
@@ -82,5 +84,46 @@ class MapaDeAnimoDeMascotaTest {
     void desmayadaGanaSobreTodoYSinDiagnosticoNoHayDatos() {
         assertThat(mapa.de(diagnostico(optimo(Magnitud.HUMEDAD)), conVitalidad(0, true)).animo()).isEqualTo(Animo.DESMAYADA);
         assertThat(mapa.de(Optional.empty(), Optional.empty()).animo()).isEqualTo(Animo.SIN_DATOS);
+    }
+
+    // ---- Fase 12 (D170): la mascota conoce la noche ----
+
+    private Optional<Diagnostico> deNoche(ResultadoParametro... parametros) {
+        return Optional.of(new Diagnostico(null, null, EstadoGlobal.SALUDABLE, List.of(parametros), List.of(),
+                Instant.now(), Periodo.NOCHE, new ExposicionLuminica(24, 9, 800, 700, 3)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"BAJO, 10", "ALTO, 80"})
+    void deNocheSiLoUnicoQueFallaEsLaLuzDuerme(Clasificacion direccion, double valor) {
+        MapaDeAnimo.Resultado r = mapa.de(deNoche(optimo(Magnitud.HUMEDAD), fuera(Magnitud.LUZ, direccion, valor),
+                optimo(Magnitud.TEMPERATURA)), conVitalidad(80, false));
+
+        assertThat(r.animo()).isEqualTo(Animo.DORMIDA);
+        assertThat(r.causa()).isEmpty();
+    }
+
+    @Test
+    void deNocheSiFallaOtraCosaGanaEsaAunqueLaLuzSeDesvieMas() {
+        MapaDeAnimo.Resultado r = mapa.de(deNoche(fuera(Magnitud.HUMEDAD, Clasificacion.BAJO, 28),
+                fuera(Magnitud.LUZ, Clasificacion.BAJO, -500)), conVitalidad(80, false));
+
+        assertThat(r.animo()).isEqualTo(Animo.SEDIENTA);
+        assertThat(r.causa()).hasValueSatisfying(c -> assertThat(c.magnitud()).isEqualTo(Magnitud.HUMEDAD));
+    }
+
+    @Test
+    void deNocheConTodoEnRangoSigueSiendoFelizYDeDiaLaLuzBajaSigueSiendoAOscuras() {
+        assertThat(mapa.de(deNoche(optimo(Magnitud.LUZ)), conVitalidad(80, false)).animo()).isEqualTo(Animo.FELIZ);
+        assertThat(mapa.de(diagnostico(fuera(Magnitud.LUZ, Clasificacion.BAJO, 10)), conVitalidad(80, false)).animo())
+                .isEqualTo(Animo.A_OSCURAS);
+    }
+
+    @Test
+    void desmayadaDeNocheTampocoCulpaALaLuz() {
+        MapaDeAnimo.Resultado r = mapa.de(deNoche(fuera(Magnitud.LUZ, Clasificacion.BAJO, 10)), conVitalidad(0, true));
+
+        assertThat(r.animo()).isEqualTo(Animo.DESMAYADA);
+        assertThat(r.causa()).isEmpty();
     }
 }

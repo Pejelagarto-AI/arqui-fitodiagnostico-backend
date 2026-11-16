@@ -1,5 +1,7 @@
 package com.vivero.fitodiagnostico.mascota.modelo;
 
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
@@ -38,20 +40,21 @@ public final class DetectorDeSaltos {
     /** REGADA si la humedad del sustrato saltó y se sostuvo. */
     public Optional<EventoDeMascota> riego(UUID plantaId, List<LecturaReciente> muestras, Instant ultimaRegadaEn) {
         return detectar(muestras, LecturaReciente::humedad, mediana -> mediana + parametros.subidaMinimaDeRiego(),
-                ultimaRegadaEn)
+                ultimaRegadaEn, false)
                 .map(s -> EventoDeMascota.nuevo(plantaId, TipoDeEvento.REGADA, s.candidata().tomadaEn(),
                         detalle(s, "humedad")));
     }
 
     /**
-     * SALIO_AL_SOL si la luz saltó y se sostuvo. Día/noche: el diagnóstico ya trae {@code periodo} (fase 8, D121), pero
-     * {@link LecturaReciente} todavía no lo copia. Al consumirlo, aquí se descarta el salto del amanecer: un salto con periodo DIA en la candidata y NOCHE
-     * en la referencia es la mañana, no la matera que alguien sacó al balcón.
+     * SALIO_AL_SOL si la luz saltó y se sostuvo. Fase 12 (D170): se descarta el salto del amanecer. Si la candidata es
+     * de periodo DIA y más de la mitad de las lecturas de la referencia eran NOCHE, la subida es la mañana y no la
+     * matera que alguien sacó al balcón. Sin reloj no se distingue una lámpara encendida en la noche de un amanecer:
+     * cuenta como amanecer.
      */
     public Optional<EventoDeMascota> sol(UUID plantaId, List<LecturaReciente> muestras, Instant ultimoSolEn) {
         return detectar(muestras, LecturaReciente::luz,
                 mediana -> Math.max(mediana * parametros.factorDeSol(), mediana + parametros.subidaMinimaDeSol()),
-                ultimoSolEn)
+                ultimoSolEn, true)
                 .map(s -> EventoDeMascota.nuevo(plantaId, TipoDeEvento.SALIO_AL_SOL, s.candidata().tomadaEn(),
                         detalle(s, "luz")));
     }
@@ -69,7 +72,8 @@ public final class DetectorDeSaltos {
                          ToDoubleFunction<LecturaReciente> valor) { }
 
     private Optional<Salto> detectar(List<LecturaReciente> muestras, ToDoubleFunction<LecturaReciente> valor,
-                                     DoubleUnaryOperator umbralSobre, Instant ultimoDelMismoTipo) {
+                                     DoubleUnaryOperator umbralSobre, Instant ultimoDelMismoTipo,
+                                     boolean descartarAmanecer) {
         List<LecturaReciente> ordenadas = muestras.stream().sorted(Comparator.comparing(LecturaReciente::tomadaEn)).toList();
         int n = ordenadas.size();
         if (n < parametros.muestrasMinimasDeReferencia() + 2) {
@@ -79,10 +83,13 @@ public final class DetectorDeSaltos {
         LecturaReciente candidata = ordenadas.get(n - 2);
         LecturaReciente previa = ordenadas.get(n - 3);
         Instant desde = candidata.tomadaEn().minus(parametros.ventanaDeReferencia());
-        List<Double> referencia = ordenadas.subList(0, n - 2).stream()
-                .filter(m -> !m.tomadaEn().isBefore(desde))
-                .map(valor::applyAsDouble).toList();
+        List<LecturaReciente> deLaVentana = ordenadas.subList(0, n - 2).stream()
+                .filter(m -> !m.tomadaEn().isBefore(desde)).toList();
+        List<Double> referencia = deLaVentana.stream().map(valor::applyAsDouble).toList();
         if (referencia.size() < parametros.muestrasMinimasDeReferencia()) {
+            return Optional.empty();
+        }
+        if (descartarAmanecer && esAmanecer(candidata, deLaVentana)) {
             return Optional.empty();
         }
         double mediana = Mediana.de(referencia);
@@ -95,6 +102,12 @@ public final class DetectorDeSaltos {
         return salto && enfriado
                 ? Optional.of(new Salto(candidata, confirmacion, mediana, umbral, valor))
                 : Optional.empty();
+    }
+
+    /** Candidata de DIA tras una referencia que era sobre todo NOCHE (D170). */
+    private static boolean esAmanecer(LecturaReciente candidata, List<LecturaReciente> referencia) {
+        long deNoche = referencia.stream().filter(m -> m.periodo() == Periodo.NOCHE).count();
+        return candidata.periodo() == Periodo.DIA && deNoche * 2 > referencia.size();
     }
 
     private static Map<String, String> detalle(Salto s, String magnitud) {

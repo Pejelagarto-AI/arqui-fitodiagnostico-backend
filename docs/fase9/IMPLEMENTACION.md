@@ -242,8 +242,8 @@ Los umbrales de arriba son razonados, no medidos. Para fijarlos:
 ## Límites
 
 - Los umbrales son provisionales (sección anterior).
-- La mascota todavía no consume el día y la noche: de noche puede salir A_OSCURAS y el amanecer puede dar un SALIO_AL_SOL. `Diagnostico.periodo()` ya existe (fase 8, D121); falta copiarlo en `LecturaReciente` y usarlo en los dos puntos marcados (D135). Se dejó fuera a propósito: el pedido de esta fase era no implementar día/noche.
-- Acariciar no tiene límite de frecuencia: alguien que toque mil veces genera mil eventos y mil mensajes MQTT. Si molesta, un enfriamiento de unos segundos en `ServicioMascota.actuar`.
+- La mascota todavía no consume el día y la noche: de noche puede salir A_OSCURAS y el amanecer puede dar un SALIO_AL_SOL. `Diagnostico.periodo()` ya existe (fase 8, D121); falta copiarlo en `LecturaReciente` y usarlo en los dos puntos marcados (D135). Se dejó fuera a propósito: el pedido de esta fase era no implementar día/noche. **Resuelto en D170** (fase 12: `DORMIDA` y el amanecer no es sol).
+- Acariciar no tiene límite de frecuencia: alguien que toque mil veces genera mil eventos y mil mensajes MQTT. Si molesta, un enfriamiento de unos segundos en `ServicioMascota.actuar`. **Resuelto en D172** (fase 12: una caricia por planta cada 10 s, las que sobran responden 200).
 - La primera fila de una mascota la crean sin bloqueo dos lecturas simultáneas de la misma planta; la segunda fallaría por clave duplicada y se perdería su paso (queda en el log). Un chip manda en serie, así que no se espera.
 - La vitalidad de la consulta tiene hasta un minuto de atraso (el tic, D146).
 - Con lecturas cada 5 s la ventana efectiva de la mediana son las últimas 60 lecturas, unos 5 minutos, no una hora (D148).

@@ -33,6 +33,11 @@ public class SaludEnMemoria implements RepositorioDeSalud, AvisadorDeSalud {
     }
 
     @Override
+    public void eliminar(String serial) {
+        filas.remove(serial);
+    }
+
+    @Override
     public void avisar(Aviso aviso) {
         avisos.add(aviso);
     }

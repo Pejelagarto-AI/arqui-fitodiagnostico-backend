@@ -44,6 +44,12 @@ public class AdaptadorSaludJpa implements RepositorioDeSalud {
         return jpa.findAllById(seriales).stream().map(AdaptadorSaludJpa::aDominio).toList();
     }
 
+    @Override
+    @Transactional
+    public void eliminar(String serial) {
+        jpa.deleteAllByIdInBatch(List.of(serial));
+    }
+
     private static SaludDelDispositivo aDominio(DispositivoSaludEntity e) {
         return new SaludDelDispositivo(e.getSerial(), e.getEstado(), Map.of(SensorDeMatera.HUMEDAD, e.getHumedad(),
                 SensorDeMatera.LUZ, e.getLuz(), SensorDeMatera.TEMPERATURA, e.getTemperatura()), e.getDetalle(),

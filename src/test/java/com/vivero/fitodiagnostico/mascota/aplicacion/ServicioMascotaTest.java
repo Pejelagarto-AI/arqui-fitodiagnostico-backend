@@ -151,6 +151,44 @@ class ServicioMascotaTest {
     }
 
     @Test
+    void lasCariciasDeLaMismaPlantaSeEnfriandiezSegundosYLasQueSobranDevuelvenLaUltima() {
+        lectura(45, 700, 22);
+        int avisosAntes = mascota.publicados.size();
+
+        ResultadoDeAccion primera = servicio.actuar(dueno, planta.id(), TipoDeAccion.ACARICIAR);
+        reloj.avanzar(Duration.ofSeconds(9));
+        ResultadoDeAccion sobrante = servicio.actuar(dueno, planta.id(), TipoDeAccion.ACARICIAR);
+        reloj.avanzar(Duration.ofSeconds(1));   // 10 s justos desde la primera: ya cuenta
+        ResultadoDeAccion segunda = servicio.actuar(dueno, planta.id(), TipoDeAccion.ACARICIAR);
+
+        assertThat(primera.repetida()).isFalse();
+        assertThat(sobrante.repetida()).isTrue();
+        assertThat(sobrante.id()).isEqualTo(primera.id());                // la última, no un evento nuevo
+        assertThat(sobrante.creadaEn()).isEqualTo(primera.creadaEn());
+        assertThat(sobrante.estado()).isEqualTo(EstadoDeAccion.HECHA);
+        assertThat(segunda.repetida()).isFalse();
+        assertThat(segunda.id()).isNotEqualTo(primera.id());
+        assertThat(mascota.tiposDe(planta.id())).containsExactly(TipoDeEvento.ACARICIADA, TipoDeEvento.ACARICIADA);
+        assertThat(mascota.publicados).hasSize(avisosAntes + 2);          // la sobrante no avisa a nadie ni a la matera
+    }
+
+    @Test
+    void elEnfriamientoDeLaCariciaSeConfiguraYNoAplicaAOtraPlanta() {
+        ParametrosDeMascota sinEspera = new ParametrosDeMascota(80, 20, 20, 5, 10, Duration.ofMinutes(10),
+                Duration.ofHours(2), Duration.ofHours(24), 15, 2.0, 2000, Duration.ofHours(1), 3, 60,
+                Duration.ofMinutes(30), Duration.ofMinutes(15), 30, Duration.ZERO);
+        ServicioMascota libre = new ServicioMascota(mundo.plantas, mundo.accesos, mundo.diagnosticos, mundo.dispositivos,
+                new PoliticaDeAcceso(), mascota, mascota, mascota, mascota, sinEspera, reloj);
+        lectura(45, 700, 22);
+
+        libre.actuar(dueno, planta.id(), TipoDeAccion.ACARICIAR);
+        ResultadoDeAccion otra = libre.actuar(dueno, planta.id(), TipoDeAccion.ACARICIAR);
+
+        assertThat(otra.repetida()).isFalse();
+        assertThat(mascota.tiposDe(planta.id())).containsExactly(TipoDeEvento.ACARICIADA, TipoDeEvento.ACARICIADA);
+    }
+
+    @Test
     void laRegueQuedaPendienteYElSensorLaConfirma() {
         for (int i = 0; i < 4; i++) {
             lectura(32, 700, 22);

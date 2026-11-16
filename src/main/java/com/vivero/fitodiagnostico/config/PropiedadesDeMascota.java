@@ -30,13 +30,14 @@ public class PropiedadesDeMascota {
     private Duration enfriamientoDeEventos = ParametrosDeMascota.ENFRIAMIENTO_DE_EVENTOS;
     private Duration plazoParaConfirmarRiego = ParametrosDeMascota.PLAZO_PARA_CONFIRMAR_RIEGO;
     private double vitalidadCansada = ParametrosDeMascota.VITALIDAD_CANSADA;
+    private Duration enfriamientoDeCaricia = ParametrosDeMascota.ENFRIAMIENTO_DE_CARICIA;
 
     ParametrosDeMascota aParametros() {
         return new ParametrosDeMascota(vitalidadInicial, vitalidadAlRevivir, perdidaPorHoraEnCritico,
                 perdidaPorHoraEnRiesgo, gananciaPorHoraSaludable, tiempoParaRevivir, ventanaSinLecturas,
                 duracionDelDiaDeRacha, subidaMinimaDeRiego, factorDeSol, subidaMinimaDeSol, ventanaDeReferencia,
                 muestrasMinimasDeReferencia, lecturasARevisar, enfriamientoDeEventos, plazoParaConfirmarRiego,
-                vitalidadCansada);
+                vitalidadCansada, enfriamientoDeCaricia);
     }
 
     public double getVitalidadInicial() { return vitalidadInicial; }
@@ -73,4 +74,6 @@ public class PropiedadesDeMascota {
     public void setPlazoParaConfirmarRiego(Duration v) { this.plazoParaConfirmarRiego = v; }
     public double getVitalidadCansada() { return vitalidadCansada; }
     public void setVitalidadCansada(double v) { this.vitalidadCansada = v; }
+    public Duration getEnfriamientoDeCaricia() { return enfriamientoDeCaricia; }
+    public void setEnfriamientoDeCaricia(Duration v) { this.enfriamientoDeCaricia = v; }
 }

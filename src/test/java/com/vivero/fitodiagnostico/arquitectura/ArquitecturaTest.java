@@ -288,4 +288,23 @@ class ArquitecturaTest {
     static final ArchRule la_mascota_no_depende_de_adaptadores_ni_de_la_composicion =
         noClasses().that().resideInAPackage("com.vivero.fitodiagnostico.mascota..")
             .should().dependOnClassesThat().resideInAnyPackage("..adaptador..", "com.vivero.fitodiagnostico.config..");
+
+    // Fase 12: los paquetes nuevos fuera del dominio (la retención del historial y el motivo de los avisos) son puertos y
+    // constantes: no conocen adaptadores ni la composición.
+    @ArchTest
+    static final ArchRule historial_y_avisos_no_dependen_de_adaptadores_ni_de_la_composicion =
+        noClasses().that().resideInAnyPackage("com.vivero.fitodiagnostico.historial..",
+                        "com.vivero.fitodiagnostico.avisos..")
+            .should().dependOnClassesThat().resideInAnyPackage("..adaptador..", "com.vivero.fitodiagnostico.config..");
+
+    // Quien implementa el puerto de salida de la retención es un adaptador de salida; el de entrada, la aplicación.
+    @ArchTest
+    static final ArchRule el_almacen_del_historial_lo_implementa_un_adaptador_de_salida =
+        classes().that().implement(simpleName("AlmacenDeHistorial")).and().areNotInterfaces()
+            .should().resideInAPackage("..adaptador.salida..");
+
+    @ArchTest
+    static final ArchRule la_poda_del_historial_la_implementa_la_aplicacion =
+        classes().that().implement(simpleName("PodarHistorialPort")).and().areNotInterfaces()
+            .should().resideInAPackage("..aplicacion..");
 }
