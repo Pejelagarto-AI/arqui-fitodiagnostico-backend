@@ -20,12 +20,14 @@ import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeLuzAcumulada;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -48,6 +50,9 @@ import java.util.UUID;
  * 24 h ({@link ReglaDeLuzAcumulada#VENTANA}) por el puerto {@link RepositorioDiagnosticos}
  * y se los entrega al evaluador. Solo los trae: no cuenta horas ni compara lux, eso
  * lo decide el dominio.
+ *
+ * <p>Fase 9: después de guardar y avisar, entrega el registro a los {@link ObservadorDeMediciones} que la
+ * composición haya conectado (hoy, la mascota). Este servicio no sabe quiénes son (D140).
  */
 @Service
 public class ServicioMediciones implements RegistrarMedicionManualPort, RegistrarLecturaPort {
@@ -60,11 +65,21 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
     private final Notificador notificador;
     private final AutorizadorDePlantas autorizador;
     private final Clock reloj;
+    private final List<ObservadorDeMediciones> observadores;
 
+    /** Sin observadores: el caso de uso tal como era antes de la fase 9 (lo usan las pruebas de aplicación). */
     public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
                               RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
                               DetectorDeCambioDeEstado detector, Notificador notificador,
                               PoliticaDeAcceso politica, Clock reloj) {
+        this(plantas, accesos, diagnosticos, evaluador, detector, notificador, politica, reloj, List.of());
+    }
+
+    @Autowired
+    public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
+                              RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
+                              DetectorDeCambioDeEstado detector, Notificador notificador,
+                              PoliticaDeAcceso politica, Clock reloj, List<ObservadorDeMediciones> observadores) {
         this.plantas = plantas;
         this.accesos = accesos;
         this.diagnosticos = diagnosticos;
@@ -73,6 +88,7 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         this.notificador = notificador;
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
         this.reloj = reloj;
+        this.observadores = List.copyOf(observadores);
     }
 
     /**
@@ -130,6 +146,11 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
                             + " a " + registro.estado() + ".",
                     Map.of(Aviso.PLANTA_ID, planta.id().toString(),
                             Aviso.ESTADO, registro.estado().name())));
+        }
+
+        // Fase 9 (D140): quien quiera enterarse de cada lectura, sin que este caso de uso lo conozca.
+        for (ObservadorDeMediciones observador : observadores) {
+            observador.alRegistrar(registro);
         }
         return registro;
     }
