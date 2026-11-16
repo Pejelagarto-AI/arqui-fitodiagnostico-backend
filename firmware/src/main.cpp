@@ -60,6 +60,7 @@ uint32_t proximaLectura = 0;
 uint32_t proximaCalibracion = 0;
 uint32_t numeroDeLectura = 0;
 String ultimoEstado;
+bool ultimaNoche = false;                // fase 11: el periodo del ultimo diagnostico (NOCHE = la mascota duerme)
 bool punto = false;
 uint32_t apagarPunto = 0;
 bool sinRedMostrada = false;
@@ -107,7 +108,7 @@ void pintarOperando() {
         return;
     }
     if (!hayUltima) { pantalla::vinculada(nombreAMostrar().c_str()); return; }
-    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
+    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str(), ultimaNoche);
 }
 
 void empezarExito() {
@@ -130,10 +131,12 @@ void redibujar() {
     }
 }
 
-// El boton BOOT: cuenta regresiva en la OLED, a los 5 s borra red y token (no la identidad) y reinicia.
+// El boton BOOT: cuenta regresiva en la OLED, a los 5 s borra red y token (no la identidad) y reinicia. Una pulsacion
+// corta hace saludar a la mascota (fase 11); no habla con el servidor.
 void atenderBoton() {
-    bool cumplido;
-    uint32_t ms = boton::ciclo(cumplido);
+    bool cumplido, corta;
+    uint32_t ms = boton::ciclo(cumplido, corta);
+    if (corta) { registrar("BOOT corto: la mascota saluda"); pantalla::saludar(millis()); }
     if (cumplido) {
         registrar("BOOT sostenido 5 s: se borran Wi-Fi, servidor y token (la identidad se conserva). Reiniciando.");
         pantalla::mensaje("Wi-Fi borrado", "Reiniciando...");
@@ -142,7 +145,7 @@ void atenderBoton() {
         delay(800);
         ESP.restart();
     }
-    if (ms >= 1000) {
+    if (ms >= config::BOTON_CORTA_MS) {
         int restan = (int)((config::BOTON_REINICIO_MS - ms) / 1000) + 1;
         if (restan != segundosBoton) { segundosBoton = restan; pantalla::reinicio(restan); }
     } else if (segundosBoton != -1) {
@@ -344,12 +347,14 @@ void vaciarCola() {
         }
         const Lectura &l = cola::frente();
         String estado;
-        int codigo = api::enviarLectura(token, l, estado);
+        bool noche = false;
+        int codigo = api::enviarLectura(token, l, estado, noche);
         char marca[24];
         reloj::iso(l.cuando, marca, sizeof marca);
         if (codigo == 201) {
-            registrar("#%u -> HTTP 201 estado=%s (tomada %s)", (unsigned)l.n, estado.c_str(), marca);
+            registrar("#%u -> HTTP 201 estado=%s%s (tomada %s)", (unsigned)l.n, estado.c_str(), noche ? " NOCHE" : "", marca);
             ultimoEstado = estado;
+            ultimaNoche = noche;
             if (api::rangos().hay) sensores->adoptarRangos(api::rangos().minimo, api::rangos().maximo);
             pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;

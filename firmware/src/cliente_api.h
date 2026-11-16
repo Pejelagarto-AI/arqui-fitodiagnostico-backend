@@ -21,8 +21,9 @@ struct Rangos { bool hay; float minimo[3]; float maximo[3]; };
 const String &especie();
 const Rangos &rangos();
 
-// POST /dispositivos/{serial}/lecturas con Bearer. `estado` = diagnostico.estado si fue 201.
-int enviarLectura(const String &token, const Lectura &l, String &estado);
+// POST /dispositivos/{serial}/lecturas con Bearer. `estado` = diagnostico.estado si fue 201; `noche` = true si
+// diagnostico.periodo es "NOCHE" (fase 8 del backend; sin el campo, un servidor viejo, es de dia).
+int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche);
 
 // POST /dispositivos/{serial}/salud con Bearer (fase 10): `falla[i]` true = FALLA en humedad, luz, temperatura.
 // `detalle` puede ser vacio. 200 = el servidor lo guardo.
