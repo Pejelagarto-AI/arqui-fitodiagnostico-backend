@@ -127,7 +127,7 @@ fabrica".
 Salida de ejemplo:
 
 ```
-simulador fito-7K2M9Q -> http://localhost:8080/api/v1/dispositivos/fito-7K2M9Q/lecturas (especie potos, cada 3.0 s, NVS simulador/.nvs-fito-7K2M9Q.json)
+simulador fito-7K2M9Q -> http://localhost:8080/api/v1/dispositivos/fito-7K2M9Q/lecturas (especie helecho, cada 3.0 s, NVS simulador/.nvs-fito-7K2M9Q.json)
 [2026-11-03T21:50:05Z] esperando reclamo del serial fito-7K2M9Q... (reintento en 5 s)
 [2026-11-03T21:50:10Z] esperando reclamo del serial fito-7K2M9Q... (reintento en 5 s)
 [2026-11-03T21:50:15Z] credencial obtenida para la planta a7915510 (vence 2026-11-03T22:50:15.956636349Z)
@@ -214,7 +214,7 @@ Las reglas de cuándo reportar están en `MemoriaDeSalud`, traducción literal d
 | `--nvs` | `FITO_NVS` | `simulador/.nvs-<serial>.json` (`.nvs-auto-<serial>.json` con `auto`) |
 | `--espera-reclamo` | `FITO_ESPERA_RECLAMO` | `5` segundos entre reintentos mientras nadie lo reclama |
 | `--intervalo` | `FITO_INTERVALO` | `5` segundos |
-| `--especie` | `FITO_ESPECIE` | `potos` (`sansevieria`, `potos`, `suculenta`, `helecho`, `lavanda`) |
+| `--especie` | `FITO_ESPECIE` | `helecho` (`girasol`, `cactus`, `suculenta`, `helecho`, `atrapamoscas`) |
 | `--lecturas` | `FITO_LECTURAS` | `0` = hasta Ctrl+C |
 | `--max-pendientes` | `FITO_MAX_PENDIENTES` | `500` lecturas guardadas sin red |
 | `--espera-red` | `FITO_ESPERA_RED` | `10` segundos entre pruebas de red |
