@@ -116,7 +116,7 @@ Respuesta `200`:
 
 ### Dispositivos de una planta (la app)
 
-`GET /api/v1/plantas/{plantaId}/dispositivos` (solo el dueño: un invitado recibe 403, como siempre) y, con `salud` igual, `GET /api/v1/admin/dispositivos`:
+`GET /api/v1/plantas/{plantaId}/dispositivos` (fase 12, D173: también el invitado, solo lectura; antes solo el dueño) y, con `salud` igual, `GET /api/v1/admin/dispositivos`:
 
 ```json
 [
@@ -180,7 +180,7 @@ El front no se tocó. Lo que le falta:
 - Un caso nuevo `SALUD_DE_LA_MATERA` en el `switch` de `tipo` del mensaje de `/user/queue/plantas/{id}`: guarda `datos` como la salud vigente de ese `serial` (sin volver a pedir nada).
 - Al abrir la planta, leer `GET /plantas/{id}/dispositivos` y usar `salud`. Con `estado` distinto de `OK`, un aviso arriba del diagnóstico con la frase de D158 (con `SIN_NOTICIAS`, recalcular el "hace X" desde `ultimaNoticiaEn` cada minuto). Mientras haya aviso, mostrar el diagnóstico como "dato de la última lectura", atenuado: sigue siendo el último que hubo, pero no es de ahora. Paridad con la OLED: mascota preocupada (regla del 12-nov).
 - Sin `salud` (`null`): no mostrar aviso; con `ultimaCredencialEn` nulo ya dice "esperando que se conecte".
-- El invitado no puede llamar a `GET .../dispositivos`: solo ve la salud por el aviso en vivo (ver Límites).
+- El invitado no podía llamar a `GET .../dispositivos` y solo veía la salud por el aviso en vivo; desde la fase 12 (D173) sí puede.
 
 ## Pruebas
 
@@ -194,9 +194,9 @@ El front no se tocó. Lo que le falta:
 
 ## Límites
 
-- **El invitado no ve la salud al abrir la pantalla.** `GET /plantas/{id}/dispositivos` es solo del dueño (hoy y desde la fase 3). El invitado se entera por el aviso en vivo, pero si abre la app después del aviso no sabe nada. Hacerlo bien es un endpoint de solo lectura para el invitado (o `salud` dentro de `GET /plantas/{id}`): cambio de contrato que no se pidió y quedó fuera.
+- **El invitado no ve la salud al abrir la pantalla.** `GET /plantas/{id}/dispositivos` es solo del dueño (hoy y desde la fase 3). El invitado se entera por el aviso en vivo, pero si abre la app después del aviso no sabe nada. Hacerlo bien es un endpoint de solo lectura para el invitado (o `salud` dentro de `GET /plantas/{id}`): cambio de contrato que no se pidió y quedó fuera. **Resuelto en D173** (fase 12: el invitado lee `GET /plantas/{id}/dispositivos`).
 - **MQTT no cuenta como noticia.** Las lecturas que llegan por MQTT (fase 4, apagado por defecto) no llaman a `registrarLectura`; con MQTT prendido, una matera sana por esa vía pasaría a `SIN_NOTICIAS`. El firmware real usa HTTP. Arreglarlo es una línea en `SuscriptorDeLecturasMqtt` y cambiar su constructor y su prueba.
-- **Desvincular y reclamar de nuevo no borra la salud.** La fila es del dispositivo, no de la planta. Si se traspasa una matera que estaba en `FALLA`, el dueño nuevo ve la falla vieja hasta la primera lectura o reporte. `ServicioDispositivos` tampoco se tocó.
+- **Desvincular y reclamar de nuevo no borra la salud.** La fila es del dispositivo, no de la planta. Si se traspasa una matera que estaba en `FALLA`, el dueño nuevo ve la falla vieja hasta la primera lectura o reporte. `ServicioDispositivos` tampoco se tocó. **Resuelto en D173** (fase 12: desvincular borra la fila de salud y su `ultimaLecturaEn`).
 - **El latido hace que "falla sostenida" no aparezca como cambio.** Después del primer aviso la app no se entera de nada más hasta que algo cambie o la matera calle. Es lo pedido (no spamear), pero quien abra la app a las 3 a. m. ve el estado vigente solo si lo pide.
 - **Una matera apagada y una matera sin Wi-Fi se ven igual** (`SIN_NOTICIAS`). Con Wi-Fi caído la OLED dice "Sin red" y con el aparato apagado no dice nada; el servidor no puede distinguirlos.
 - **Sin correo.** Solo WebSocket (D157).

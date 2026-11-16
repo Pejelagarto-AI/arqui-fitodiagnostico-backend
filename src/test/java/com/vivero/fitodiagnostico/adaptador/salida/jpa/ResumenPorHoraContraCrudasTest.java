@@ -165,6 +165,26 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
     }
 
     @Test
+    void conLecturasEspaciadasUnaHoraLaOscuridadEmpiezaEnLaPrimeraLecturaOscuraYNoEnElAncla() {
+        // Tres lecturas, una por hora (reportes lentos): luz a las 11:30:05, oscuro a las 12:30:05 y a las 14:30:05.
+        Instant hasta = Instant.parse("2026-11-16T14:30:05Z");
+        sembrar(hasta, t -> {
+            if (t.equals(Instant.parse("2026-11-16T11:30:05Z"))) {
+                return 500.0;
+            }
+            return t.equals(Instant.parse("2026-11-16T12:30:05Z")) ? 10.0 : null;
+        });
+
+        ExposicionLuminica conResumen = medir(diagnosticos.serieDe(planta.id(), Magnitud.LUZ,
+                hasta.minus(Duration.ofHours(24)), hasta), hasta, 10);
+        ExposicionLuminica conCrudas = medir(crudas(hasta.minus(Duration.ofHours(24)), hasta), hasta, 10);
+
+        assertThat(conCrudas.horasEnOscuridad()).isCloseTo(2.0, within(0.001));
+        assertThat(conResumen.horasEnOscuridad()).isCloseTo(2.0, within(0.001));
+        assertThat(regla.periodo(conResumen)).isEqualTo(Periodo.NOCHE);
+    }
+
+    @Test
     void unaLecturaAtrasadaInvalidaElResumenDeSuHoraYElDeLaSiguiente() {
         sembrar(TARDE, t -> hora(t) >= 6 && hora(t) < 18 ? 800.0 : 0.0);
         diagnosticos.serieDe(planta.id(), Magnitud.LUZ, TARDE.minus(Duration.ofHours(24)), TARDE);   // llena los resúmenes

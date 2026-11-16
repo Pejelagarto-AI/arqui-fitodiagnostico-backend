@@ -93,8 +93,8 @@ Lo que **no** cambió: `Rango`, `Especie`, `Medicion`, `Lectura`, `Magnitud`, `C
 
 - Sin reloj ni ubicación, el sistema no distingue la noche de un armario: una planta 2 h a oscuras de día también "duerme". La luz acumulada del día sigue diciendo si le faltó luz.
 - Umbral de luz, horas mínimas y horas para la noche son iguales para todas las especies (D125). Hacerlos por especie es una columna nueva del catálogo, con su migración y su campo en `POST /admin/especies`.
-- Cada lectura de la matera consulta unas 17 000 filas (D127). Con el índice de V15 es una lectura por rango, pero si hubiera muchas materas convendría un resumen por hora.
-- Al entrar en la noche, una planta que estaba `EN_RIESGO` solo por luz pasa a `SALUDABLE`, y eso dispara el aviso `CAMBIO_DE_ESTADO` (correo incluido). Es cierto, pero puede sorprender.
+- Cada lectura de la matera consulta unas 17 000 filas (D127). Con el índice de V15 es una lectura por rango, pero si hubiera muchas materas convendría un resumen por hora. **Resuelto en D175** (fase 12: resumen por hora).
+- Al entrar en la noche, una planta que estaba `EN_RIESGO` solo por luz pasa a `SALUDABLE`, y eso dispara el aviso `CAMBIO_DE_ESTADO` (correo incluido). Es cierto, pero puede sorprender. **Resuelto en D171** (fase 12: `motivo: PERIODO`, sin correo).
 - `POST /diagnosticos` no tiene historial y sigue juzgando la luz al instante: es lo pedido (RF-F6), y la respuesta lo dice con `base: INSTANTANEA`.
 - El firmware y el front aún no usan `periodo` (sección anterior).
 

@@ -84,7 +84,7 @@ record ResumenDeLuzPorHora(UUID plantaId, Instant hora, int lecturas, double seg
      * termina donde terminó de verdad la última lectura con datos ({@code ultimaLecturaEn}). Pegarlas hace que cada
      * tramo mida exactamente lo que el resumen dice, aunque hubiera huecos sin lectura dentro de la hora; alinearlas a
      * la derecha en la última lectura real hace que el primer tramo de las crudas siga siendo el de pocos segundos que
-     * fue. La primera muestra es un ancla oscura (la regla ignora el tramo de la primera muestra de la serie, como con
+     * fue. La primera muestra es un ancla con luz (la regla ignora el tramo de la primera muestra de la serie, como con
      * las crudas).
      *
      * <p>Nada queda antes de {@code desde}: si las horas suman más que el espacio, se recorta lo más antiguo.
@@ -110,7 +110,8 @@ record ResumenDeLuzPorHora(UUID plantaId, Instant hora, int lecturas, double seg
         if (inicio.isBefore(desde)) {
             inicio = desde;
         }
-        serie.add(new Muestra(inicio, 0.0));
+        // El ancla no cuenta como oscura: la racha de oscuridad empieza en la primera muestra de verdad (la de su primer tramo).
+        serie.add(new Muestra(inicio, ReglaDeLuzAcumulada.UMBRAL_HAY_LUZ_LUX));
         double acumulado = 0;
         for (double[] tramo : tramos) {
             acumulado += tramo[0];

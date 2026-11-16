@@ -196,6 +196,8 @@ Va en un módulo aparte (p. ej. `dominio.gamificacion` + `aplicacion.ServicioGam
 
 **Hecho en la fase 9** ([`docs/fase9/IMPLEMENTACION.md`](fase9/IMPLEMENTACION.md)): el contexto se llama `mascota` (`com.vivero.fitodiagnostico.mascota`, D130), el "evento" es el puerto de aplicación `ObservadorDeMediciones` que llama `ServicioMediciones` (D140) y `dominio` no cambió ni una línea; ArchUnit lo comprueba (`el_nucleo_no_conoce_a_la_mascota`).
 
+**Hecho en la fase 12** ([`docs/fase12/IMPLEMENTACION.md`](fase12/IMPLEMENTACION.md)): el resumen de luz por hora es una optimización de la infraestructura que no cambia el dominio ni el puerto. `ReglaDeLuzAcumulada` sigue recibiendo una `SerieTemporal` y decidiendo qué significa; el adaptador JPA de `RepositorioDiagnosticos.serieDe` la arma con una fila por hora cerrada (tabla `resumen_luz_hora`, V22, convertida en pocas muestras sintéticas que reproducen los tramos, las horas con luz y desde cuándo hay oscuridad) más las lecturas crudas de la hora en curso, así que cada lectura de la matera pasa de leer unas 17 000 filas a unas 400 (D175). El resumen se llena la primera vez que hace falta y una tarea diaria (`RetencionDeLecturas`, entrada, por `PodarHistorialPort`) borra las crudas de más de 30 días habiéndolas resumido (D176); los puertos de esa tarea viven en el paquete `historial`, fuera del dominio, y el motivo de los avisos en `avisos` (D174).
+
 ## 6. Decisiones y alternativas descartadas
 
 | Decisión | Alternativa descartada | Por qué se descartó |
