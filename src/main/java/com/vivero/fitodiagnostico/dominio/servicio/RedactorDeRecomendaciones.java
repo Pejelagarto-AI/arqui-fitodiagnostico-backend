@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.dominio.servicio;
 
+import com.vivero.fitodiagnostico.dominio.modelo.BaseDeEvaluacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
@@ -13,7 +14,9 @@ import java.util.List;
  * Sin estado y sin nombrar ninguna {@link Magnitud} concreta: el texto de la
  * acción y la descripción de presentación vienen de la propia magnitud, así
  * que agregar una magnitud nueva no obliga a tocar esta clase (OCP), igual
- * que {@link ClasificadorDeParametros}.
+ * que {@link ClasificadorDeParametros}. Escribe el valor que se evaluó: cuando es
+ * acumulado (la luz con historial, fase 8) lo dice, para que no parezca la lectura
+ * del momento.
  */
 public final class RedactorDeRecomendaciones {
 
@@ -38,8 +41,12 @@ public final class RedactorDeRecomendaciones {
         String comparacion = bajo ? "por debajo del" : "por encima del";
         String accion = bajo ? magnitud.accionSiBajo() : magnitud.accionSiAlto();
 
-        return capitalizar(magnitud.descripcion()) + " " + numero(parametro.valor()) + " "
-                + magnitud.unidad() + " " + comparacion + " rango óptimo "
+        boolean acumulada = parametro.base() == BaseDeEvaluacion.ACUMULADA;
+        String valor = acumulada
+                ? numero(Math.round(parametro.valorEvaluado())) + " " + magnitud.unidad() + " de promedio en el día,"
+                : numero(parametro.valorEvaluado()) + " " + magnitud.unidad();
+
+        return capitalizar(magnitud.descripcion()) + " " + valor + " " + comparacion + " rango óptimo "
                 + numero(rangoOptimo.minimo()) + "–" + numero(rangoOptimo.maximo()) + " "
                 + magnitud.unidad() + ": " + accion + ".";
     }
