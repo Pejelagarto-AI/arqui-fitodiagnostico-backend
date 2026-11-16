@@ -194,6 +194,8 @@ Va en un módulo aparte (p. ej. `dominio.gamificacion` + `aplicacion.ServicioGam
 |---|---|---|
 | `dominio.gamificacion.Racha`/`Nivel`; `aplicacion.ServicioGamificacion`; `infraestructura.persistencia.RachaEntity`; `web.GamificacionController` | `aplicacion.ServicioDiagnostico` (publicar evento `DiagnosticoRealizado` en vez de acoplarse directo a gamificación) | `dominio.modelo.*` y `dominio.servicio.*` del diagnóstico |
 
+**Hecho en la fase 9** ([`docs/fase9/IMPLEMENTACION.md`](fase9/IMPLEMENTACION.md)): el contexto se llama `mascota` (`com.vivero.fitodiagnostico.mascota`, D130), el "evento" es el puerto de aplicación `ObservadorDeMediciones` que llama `ServicioMediciones` (D140) y `dominio` no cambió ni una línea; ArchUnit lo comprueba (`el_nucleo_no_conoce_a_la_mascota`).
+
 ## 6. Decisiones y alternativas descartadas
 
 | Decisión | Alternativa descartada | Por qué se descartó |

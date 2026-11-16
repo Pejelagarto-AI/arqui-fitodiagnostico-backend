@@ -21,21 +21,24 @@ import java.util.UUID;
  * Quien puede leer pero no modificar (invitado) recibe
  * {@link OperacionNoPermitidaException}: ya sabe que la planta existe, así
  * que un 403 no filtra nada y explica mejor qué pasó.
+ *
+ * <p>Público desde la fase 9: el contexto {@code mascota} aplica las MISMAS reglas de acceso que la planta
+ * (dueño e invitados leen, solo el dueño actúa, ajeno 404) y las reusa en vez de copiarlas (D143).
  */
-final class AutorizadorDePlantas {
+public final class AutorizadorDePlantas {
 
     private final RepositorioPlantas plantas;
     private final RepositorioAccesos accesos;
     private final PoliticaDeAcceso politica;
 
-    AutorizadorDePlantas(RepositorioPlantas plantas, RepositorioAccesos accesos, PoliticaDeAcceso politica) {
+    public AutorizadorDePlantas(RepositorioPlantas plantas, RepositorioAccesos accesos, PoliticaDeAcceso politica) {
         this.plantas = plantas;
         this.accesos = accesos;
         this.politica = politica;
     }
 
     /** @throws PlantaNoEncontradaException si no existe o el usuario no es dueño ni invitado */
-    Planta paraLeer(UUID usuario, UUID plantaId) {
+    public Planta paraLeer(UUID usuario, UUID plantaId) {
         Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new PlantaNoEncontradaException(plantaId));
         if (!politica.puedeLeer(usuario, planta, accesos.invitadosDe(plantaId))) {
             throw new PlantaNoEncontradaException(plantaId);
@@ -47,7 +50,7 @@ final class AutorizadorDePlantas {
      * @throws PlantaNoEncontradaException si no puede ni leerla
      * @throws OperacionNoPermitidaException si puede leerla pero no es el dueño (RN5)
      */
-    Planta paraModificar(UUID usuario, UUID plantaId) {
+    public Planta paraModificar(UUID usuario, UUID plantaId) {
         Planta planta = paraLeer(usuario, plantaId);
         if (!politica.puedeModificar(usuario, planta)) {
             throw new OperacionNoPermitidaException("solo el dueño de la planta puede hacer esta operación");
