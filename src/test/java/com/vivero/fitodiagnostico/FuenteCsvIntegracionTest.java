@@ -80,7 +80,7 @@ class FuenteCsvIntegracionTest {
                 .andExpect(jsonPath("$.length()").value(5));
 
         mockMvc.perform(json(post("/api/v1/diagnosticos"),
-                "{\"especie\":\"potos\",\"humedad\":55,\"luz\":700,\"temperatura\":22}"))
+                "{\"especie\":\"helecho\",\"humedad\":70,\"luz\":500,\"temperatura\":22}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("SALUDABLE"));
     }
@@ -94,13 +94,13 @@ class FuenteCsvIntegracionTest {
         String usuario = token(correo, CLAVE);
 
         String cuerpo = mockMvc.perform(json(post("/api/v1/plantas").header(HttpHeaders.AUTHORIZATION, "Bearer " + usuario),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}"))
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String planta = JsonPath.read(cuerpo, "$.id");
 
         mockMvc.perform(json(post("/api/v1/plantas/" + planta + "/mediciones")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + usuario),
-                "{\"humedad\":55,\"luz\":700,\"temperatura\":22}"))
+                "{\"humedad\":70,\"luz\":500,\"temperatura\":22}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"));
     }
@@ -117,7 +117,7 @@ class FuenteCsvIntegracionTest {
                 .andExpect(jsonPath("$.error").value("CATALOGO_SOLO_LECTURA"))
                 .andExpect(jsonPath("$.mensaje").isNotEmpty());
 
-        mockMvc.perform(post("/api/v1/admin/especies/potos/desactivar")
+        mockMvc.perform(post("/api/v1/admin/especies/helecho/desactivar")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + admin))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("CATALOGO_SOLO_LECTURA"));

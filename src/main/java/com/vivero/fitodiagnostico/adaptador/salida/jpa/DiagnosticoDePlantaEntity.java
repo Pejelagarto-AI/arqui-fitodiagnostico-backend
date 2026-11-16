@@ -2,6 +2,7 @@ package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -58,6 +59,27 @@ public class DiagnosticoDePlantaEntity {
     @Enumerated(EnumType.STRING)
     private EstadoGlobal estado;
 
+    // Fase 8 (V15): de día o de noche, y la exposición a la luz de las 24 h previas. Las columnas
+    // luz_* van juntas: todas null si la luz se evaluó sin historial (instantánea).
+    @Column(name = "periodo", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Periodo periodo = Periodo.DIA;
+
+    @Column(name = "luz_horas_observadas")
+    private Double luzHorasObservadas;
+
+    @Column(name = "luz_horas_de_luz")
+    private Double luzHorasDeLuz;
+
+    @Column(name = "luz_lux_promedio_en_luz")
+    private Double luzLuxPromedioEnLuz;
+
+    @Column(name = "luz_lux_efectivo")
+    private Double luzLuxEfectivo;
+
+    @Column(name = "luz_horas_en_oscuridad")
+    private Double luzHorasEnOscuridad;
+
     // EAGER + SUBSELECT: con open-in-view desactivado un LAZY fallaría fuera de la transacción, y
     // SUBSELECT carga las colecciones de TODA una página en una consulta cada una (no una por fila
     // ni un producto cartesiano entre las dos colecciones).
@@ -107,6 +129,30 @@ public class DiagnosticoDePlantaEntity {
         return estado;
     }
 
+    public Periodo getPeriodo() {
+        return periodo;
+    }
+
+    public Double getLuzHorasObservadas() {
+        return luzHorasObservadas;
+    }
+
+    public Double getLuzHorasDeLuz() {
+        return luzHorasDeLuz;
+    }
+
+    public Double getLuzLuxPromedioEnLuz() {
+        return luzLuxPromedioEnLuz;
+    }
+
+    public Double getLuzLuxEfectivo() {
+        return luzLuxEfectivo;
+    }
+
+    public Double getLuzHorasEnOscuridad() {
+        return luzHorasEnOscuridad;
+    }
+
     public Set<ParametroEmbebido> getParametros() {
         return parametros;
     }
@@ -145,5 +191,19 @@ public class DiagnosticoDePlantaEntity {
 
     void setEstado(EstadoGlobal estado) {
         this.estado = estado;
+    }
+
+    void setPeriodo(Periodo periodo) {
+        this.periodo = periodo;
+    }
+
+    /** Las cinco columnas de la exposición a la vez: o todas tienen valor o todas son null. */
+    void setExposicion(Double horasObservadas, Double horasDeLuz, Double luxPromedioEnLuz, Double luxEfectivo,
+                       Double horasEnOscuridad) {
+        this.luzHorasObservadas = horasObservadas;
+        this.luzHorasDeLuz = horasDeLuz;
+        this.luzLuxPromedioEnLuz = luxPromedioEnLuz;
+        this.luzLuxEfectivo = luxEfectivo;
+        this.luzHorasEnOscuridad = horasEnOscuridad;
     }
 }

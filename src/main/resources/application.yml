@@ -54,6 +54,26 @@
 #                           La conexion que publica las respuestas usa <clientId>-respuestas.
 #                           Broker anonimo + JWT en el payload: ver D83 en docs/fase4/IMPLEMENTACION.md.
 
+# Fase 9: la planta como mascota. Todo tiene valor por defecto (ver mascota.modelo.ParametrosDeMascota y la tabla
+# de propiedades en docs/fase9/IMPLEMENTACION.md); los umbrales son provisionales hasta calibrar con la sonda real.
+#   fitodiagnostico.mascota.subida-minima-de-riego   puntos de humedad sobre la mediana para llamar riego (15)
+#   fitodiagnostico.mascota.perdida-por-hora-en-critico, ...-en-riesgo, ganancia-por-hora-saludable   (20, 5, 10)
+#   fitodiagnostico.mascota.plazo-para-confirmar-riego   plazo de "la regué" (PT15M)
+#   fitodiagnostico.mascota.tic.habilitado / tic.intervalo   tarea periódica de la mascota (true, PT1M)
+
+# Fase 10: salud de la matera (OPCIONAL, valores de la demo por defecto). Una matera sin lecturas ni reportes por mas de
+# max(3 x intervalo esperado, silencio minimo) pasa a SIN_NOTICIAS; si reporta una falla, su latido es mas lento.
+#   FITO_SALUD_INTERVALO_ESPERADO  cada cuanto manda lecturas la matera (por defecto PT5S).
+#   FITO_SALUD_SILENCIO_MINIMO     suelo del silencio tolerado (por defecto PT2M).
+#   FITO_SALUD_LATIDO_DE_FALLA     cada cuanto reporta mientras un sensor falla (por defecto PT5M; es el del firmware).
+
+# Fase 12: retención de las lecturas crudas (D176). Una matera a 5 s genera unas 17 000 lecturas al día; las crudas se
+# guardan 30 días y de cada hora que se va queda un resumen (resumen_luz_hora) para siempre.
+#   FITO_HISTORIAL_RETENCION_CRUDAS      cuánto se guardan las lecturas crudas (por defecto P30D; mínimo PT48H).
+#   FITO_HISTORIAL_RETENCION_HABILITADA  "false" apaga la tarea diaria (por defecto true).
+#   FITO_HISTORIAL_RETENCION_CRON        cuándo corre (por defecto "0 30 3 * * *", 3:30 a. m.).
+#   fitodiagnostico.mascota.enfriamiento-de-caricia   segundos mínimos entre dos caricias de una planta (PT10S, D172).
+
 # Bloque 4: correo y enlaces al front. Todo por variable de entorno y con valores
 # de desarrollo que apuntan a Mailpit (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit;
 # bandeja en http://localhost:8025). Ninguno es secreto salvo la contraseña SMTP.
@@ -74,6 +94,10 @@ fitodiagnostico:
     bcrypt-coste: ${FITO_BCRYPT_COSTE:10}
   flota:
     clave: ${FITO_CLAVE_FLOTA:}
+  salud:
+    intervalo-esperado: ${FITO_SALUD_INTERVALO_ESPERADO:PT5S}
+    silencio-minimo: ${FITO_SALUD_SILENCIO_MINIMO:PT2M}
+    latido-de-falla: ${FITO_SALUD_LATIDO_DE_FALLA:PT5M}
   mqtt:
     habilitado: ${FITO_MQTT_HABILITADO:false}
     url: ${FITO_MQTT_URL:tcp://localhost:1883}

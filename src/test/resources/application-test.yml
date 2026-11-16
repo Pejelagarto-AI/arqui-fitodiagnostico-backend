@@ -16,3 +16,11 @@ fitodiagnostico:
     asincrono: false
   front:
     url: http://front.pruebas.local
+  # Fase 9: sin tic de la mascota en las pruebas; las que necesitan el paso del tiempo llaman al puerto con un reloj manual.
+  mascota:
+    tic:
+      habilitado: false
+  # Fase 12: sin tarea diaria de retención en las pruebas; las que la necesitan llaman al puerto con un reloj manual.
+  historial:
+    retencion:
+      habilitada: false

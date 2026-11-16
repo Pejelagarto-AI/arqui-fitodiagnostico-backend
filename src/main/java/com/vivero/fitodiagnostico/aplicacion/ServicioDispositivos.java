@@ -23,6 +23,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.MismaRed;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import com.vivero.fitodiagnostico.salud.RepositorioDeSalud;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,17 +69,20 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
     private final EmisorTokenDispositivoPort emisor;
     private final AutenticadorDeDispositivos autenticador;
     private final GeneradorDeTokens generador;
+    private final RepositorioDeSalud salud;
     private final Clock reloj;
 
     public ServicioDispositivos(RepositorioPlantas plantas, RepositorioAccesos accesos, PoliticaDeAcceso politica,
                                 RepositorioDispositivos dispositivos, EmisorTokenDispositivoPort emisor,
-                                AutenticadorDeDispositivos autenticador, GeneradorDeTokens generador, Clock reloj) {
+                                AutenticadorDeDispositivos autenticador, GeneradorDeTokens generador,
+                                RepositorioDeSalud salud, Clock reloj) {
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
         this.plantas = plantas;
         this.dispositivos = dispositivos;
         this.emisor = emisor;
         this.autenticador = autenticador;
         this.generador = generador;
+        this.salud = salud;
         this.reloj = reloj;
     }
 
@@ -144,10 +148,14 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
         return dispositivo;
     }
 
+    /**
+     * Fase 12 (D173): dueño e invitados leen, con las mismas reglas que leer la planta (un ajeno recibe el 404 de siempre).
+     * Reclamar y desvincular siguen siendo solo del dueño.
+     */
     @Override
     @Transactional(readOnly = true)
     public List<Dispositivo> listar(UUID solicitante, UUID plantaId) {
-        Planta planta = autorizador.paraModificar(solicitante, plantaId);
+        Planta planta = autorizador.paraLeer(solicitante, plantaId);
         return dispositivos.porPlanta(planta.id());
     }
 
@@ -160,6 +168,8 @@ public class ServicioDispositivos implements RegistrarDispositivoDeFabricaPort, 
                 .orElseThrow(() -> new DispositivoNoEncontradoException(serial));
         dispositivo.desvincular();
         dispositivos.guardar(dispositivo);
+        // Fase 12 (D173): la salud y la última lectura son de esta planta; el dueño nuevo no hereda el estado viejo.
+        salud.eliminar(serial);
     }
 
     // ---- vínculo vigente (cada lectura) ----

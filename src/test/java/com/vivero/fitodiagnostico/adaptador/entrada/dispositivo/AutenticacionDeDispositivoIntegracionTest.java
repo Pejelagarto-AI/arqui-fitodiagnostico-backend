@@ -63,7 +63,7 @@ class AutenticacionDeDispositivoIntegracionTest {
         String admin = iniciarSesion(ADMIN_CORREO, ADMIN_CONTRASENA);
         dueno = registrarEIniciarSesion();
         planta = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
         serial = PREFIJO + UUID.randomUUID().toString().substring(0, 6);
         ResultActions fabrica = mockMvc.perform(json(con(post("/api/v1/admin/dispositivos"), admin),
                 "{\"serial\":\"" + serial + "\"}")).andExpect(status().isCreated());
@@ -293,7 +293,7 @@ class AutenticacionDeDispositivoIntegracionTest {
         String token = tokenDelChip();
 
         mockMvc.perform(json(con(post("/api/v1/dispositivos/" + serial + "/lecturas"), token),
-                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":55,\"luz\":700,\"temperatura\":22}"))
+                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":70,\"luz\":500,\"temperatura\":22}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.origen").value("DISPOSITIVO"))
                 .andExpect(jsonPath("$.plantaId").value(planta));
 
@@ -313,7 +313,7 @@ class AutenticacionDeDispositivoIntegracionTest {
         String token = tokenDelChip();
 
         mockMvc.perform(json(con(post("/api/v1/dispositivos/otro-serial/lecturas"), token),
-                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":55,\"luz\":700,\"temperatura\":22}"))
+                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":70,\"luz\":500,\"temperatura\":22}"))
                 .andExpect(status().isForbidden());
     }
 }

@@ -36,7 +36,7 @@ float SensoresSimulados::normal(int i) {
     return v;
 }
 
-void SensoresSimulados::leer(Lectura &l, const char *&descripcion) {
+bool SensoresSimulados::leer(Lectura &l, const char *&descripcion) {
     float v[3];
     for (int i = 0; i < 3; i++) v[i] = normal(i);
     descripcion = "dentro del optimo";
@@ -55,4 +55,5 @@ void SensoresSimulados::leer(Lectura &l, const char *&descripcion) {
     l.humedad = redondear(v[0]);
     l.luz = redondear(v[1]);
     l.temperatura = redondear(v[2]);
+    return true;
 }

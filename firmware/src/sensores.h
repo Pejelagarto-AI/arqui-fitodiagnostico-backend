@@ -1,4 +1,6 @@
-// Sensores detras de una interfaz: hoy SensoresSimulados; SensoresReales (DHT22, sonda capacitiva, BH1750) despues.
+// Puerto de salida del firmware: de donde salen las lecturas. La maquina de estados (main.cpp) solo conoce esta
+// interfaz. Adaptadores: SensoresSimulados (caminata aleatoria) y SensoresCompuestos (tres SensorDeMagnitud:
+// potenciometros hoy, DHT22, sonda capacitiva o BH1750 despues). Cual se usa lo decide la composicion en main.cpp.
 #pragma once
 #include <Arduino.h>
 #include <time.h>
@@ -16,7 +18,19 @@ class Sensores {
 public:
     virtual ~Sensores() {}
     // Llena `l` (sin la hora) y `descripcion` ("dentro del optimo" o "fuera de rango en humedad").
-    virtual void leer(Lectura &l, const char *&descripcion) = 0;
+    // Devuelve false si esta vez no hay lectura completa (un sensor real fallo); `descripcion` dice por que.
+    virtual bool leer(Lectura &l, const char *&descripcion) = 0;
+    // Rangos optimos de la especie que devuelve el servidor: 0 humedad, 1 luz, 2 temperatura.
+    // Por defecto se ignoran; cada adaptador decide si le sirven.
+    virtual void adoptarRangos(const float minimo[3], const float maximo[3]) { (void)minimo; (void)maximo; }
+    // Modo calibracion: lo que midio cada magnitud antes de convertir y el valor convertido, de la ultima leer().
+    // Por defecto (sensores simulados) no hay nada crudo que mostrar.
+    virtual void describirCrudos(char *buf, size_t n) { snprintf(buf, n, "sin datos crudos"); }
+    // Salud (fase 10): cual magnitud no se pudo medir en la ultima leer(): 0 humedad, 1 luz, 2 temperatura. Por defecto
+    // ninguna (los sensores simulados no fallan).
+    virtual void fallas(bool falla[3]) { for (int i = 0; i < 3; i++) falla[i] = false; }
+    // Por que fallo, para el campo "detalle" del reporte de salud ("temperatura: dht22 sin respuesta"). Vacio si nada fallo.
+    virtual void describirFallas(char *buf, size_t n) { if (n) buf[0] = '\0'; }
 };
 
 // Caminata aleatoria alrededor del rango optimo del poto (como simulador/simulador_esp32.py), con una lectura
@@ -24,9 +38,9 @@ public:
 class SensoresSimulados : public Sensores {
 public:
     SensoresSimulados();
-    void leer(Lectura &l, const char *&descripcion) override;
-    // Rangos optimos de la especie (los que devuelve el servidor): 0 humedad, 1 luz, 2 temperatura. Recentra la caminata.
-    void adoptarRangos(const float minimo[3], const float maximo[3]);
+    bool leer(Lectura &l, const char *&descripcion) override;   // nunca falla: siempre true
+    // Recentra la caminata en el medio del rango optimo de la especie.
+    void adoptarRangos(const float minimo[3], const float maximo[3]) override;
 
 private:
     float actual_[3];
@@ -35,5 +49,3 @@ private:
     float normal(int i);
 };
 
-// Hueco para el hardware real: implementar leer() con DHT22 (temperatura), sonda capacitiva (humedad) y BH1750 (luz).
-// class SensoresReales : public Sensores { ... };

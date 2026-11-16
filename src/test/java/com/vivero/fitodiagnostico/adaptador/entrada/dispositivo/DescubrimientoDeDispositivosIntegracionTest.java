@@ -120,7 +120,7 @@ class DescubrimientoDeDispositivosIntegracionTest {
 
     private String plantaNueva() throws Exception {
         return leer(mockMvc.perform(json(con(post("/api/v1/plantas"), usuario),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
     }
 
     private String enmascarado() {

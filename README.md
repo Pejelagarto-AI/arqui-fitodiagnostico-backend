@@ -102,7 +102,7 @@ La respuesta correcta al reto es `base64( HMAC-SHA256( clave = el string del sec
 
 ### Firmware de la matera (fase 5)
 
-`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba; las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md).
+`firmware/` es el gemelo real del simulador: ESP32 con pantalla OLED que se registra solo, muestra un QR para vincularla desde el celular y reporta lecturas. Cableado, `local.ini`, compilación y problemas comunes en [`firmware/README.md`](firmware/README.md). `scripts/demo-lan.sh` levanta backend y front en la red local para la prueba, y `scripts/demo-https.sh` pone además un proxy Caddy con certificado propio en `https://<ip>:8443`, necesario para la cámara en vivo del lector de QR del front (contexto seguro y API del mismo origen); las decisiones D89 a D92 están en [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md). Los sensores (simulados o potenciómetros, y el plan de los sensores reales) están en [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md), decisiones D98 a D101.
 
 ### Broker MQTT para desarrollo (fase 4)
 
@@ -121,6 +121,7 @@ El reto y la credencial siguen por HTTP; el token viaja dentro de cada mensaje (
 |---|---|---|
 | `fito/dispositivos/{serial}/lecturas` | el chip (QoS 1) | `{token, marcaDeTiempo, humedad, luz, temperatura}` |
 | `fito/dispositivos/{serial}/respuestas` | el backend (QoS 1) | `{ok:true, id, estado, registradaEn}` o `{ok:false, error, mensaje, detalle}` |
+| `fito/dispositivos/{serial}/mascota` | el backend (QoS 1, fase 9) | `{evento, ocurridoEn, vitalidad, animo, detalle}`: cada evento de la mascota de la planta vinculada (D142) |
 
 ```bash
 # backend con MQTT (apagado por defecto; sin broker arranca igual por HTTP)
@@ -148,12 +149,20 @@ Con token de dispositivo solo se abre `POST /api/v1/dispositivos/{serial}/lectur
 | Compartir plantas (dueño) | `POST/GET /api/v1/plantas/{id}/invitaciones` (genera un enlace de un solo uso con caducidad de 7 días; el token se entrega solo en esta respuesta; `{"correo"}` opcional lo envía por correo), `DELETE .../invitaciones/{invitacionId}`, `GET .../invitados`, `DELETE .../invitados/{invitadoId}` (el invitado recibe `ACCESO_PERDIDO`) |
 | Compartir plantas (invitado) | `GET /api/v1/plantas/compartidas`, `DELETE /api/v1/plantas/compartidas/{id}` (renunciar), `POST /api/v1/invitaciones/aceptar {token}`, `POST /api/v1/invitaciones/aceptar-con-registro {token, nombre, correo, contrasena}` (público: el visitante sin cuenta se registra y acepta en un solo paso) |
 | Solicitudes de especie | `POST/GET /api/v1/solicitudes-especie` (pedir y ver las propias); administrador: `GET /api/v1/admin/solicitudes-especie`, `POST .../{id}/aprobar`, `POST .../{id}/rechazar` (con `{"respuesta"}`; aprobar no da de alta la especie, eso es `POST /admin/especies`) |
-| Dispositivos (fase 3) | Fábrica (administrador): `POST/GET /api/v1/admin/dispositivos`. Dueño: `POST/GET /api/v1/plantas/{id}/dispositivos {serial}`, `DELETE .../dispositivos/{serial}`. Dispositivo: `POST /api/v1/dispositivos/registro {serial, secreto, firma}` (pública, solo con `FITO_CLAVE_FLOTA`), `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial {respuesta}` (públicas), `POST /api/v1/dispositivos/{serial}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`) |
-| Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO` y `CAMBIO_DE_ESTADO`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
+| Dispositivos (fase 3) | Fábrica (administrador): `POST/GET /api/v1/admin/dispositivos`. Dueño: `POST /api/v1/plantas/{id}/dispositivos {serial}`, `DELETE .../dispositivos/{serial}`; dueño e invitados: `GET /api/v1/plantas/{id}/dispositivos` (con `salud`, fase 12). Dispositivo: `POST /api/v1/dispositivos/registro {serial, secreto, firma}` (pública, solo con `FITO_CLAVE_FLOTA`), `POST /api/v1/dispositivos/{serial}/reto` y `.../credencial {respuesta}` (públicas), `POST /api/v1/dispositivos/{serial}/lecturas {marcaDeTiempo, humedad, luz, temperatura}` (solo con el token de dispositivo; origen `DISPOSITIVO`), `POST /api/v1/dispositivos/{serial}/salud {sensores: {humedad, luz, temperatura: "OK"\|"FALLA"}, detalle}` (mismo token; fase 10) |
+| Mascota (fase 9) | `GET /api/v1/plantas/{id}/mascota` (vitalidad, ánimo, racha, últimos eventos y "la regué" pendiente; sin lecturas 200 con `hayLecturas: false`), `GET .../mascota/eventos?pagina=0&tamano=20` (línea de tiempo), `POST .../mascota/acciones {"tipo": "ACARICIAR" \| "LA_REGUE"}` (solo el dueño; 201, 202 si queda pendiente, o 200 con la última caricia si llegó antes de 10 s, fase 12). El ánimo puede ser `DORMIDA` (de noche, si solo falla la luz). Dueño e invitados leen; invitado que actúa 403; ajeno 404. Contrato en [`docs/fase9/IMPLEMENTACION.md`](docs/fase9/IMPLEMENTACION.md) |
+| Vista en vivo | `ws://host/ws` (STOMP sobre WebSocket, sin SockJS). Primer frame `CONNECT` con `Authorization: Bearer <JWT>` (el mismo de la API). Suscripciones: `/user/queue/plantas/{id}` (`DIAGNOSTICO_NUEVO`, `CAMBIO_DE_ESTADO` y, desde la fase 9, `EVENTO_DE_MASCOTA`; solo si se puede leer esa planta) y `/user/queue/avisos` (`ACCESO_PERDIDO`, `SOLICITUD_RESUELTA`). El cliente no puede enviar |
 
 `GET /api/v1/especies` devuelve solo las especies activas; las desactivadas siguen siendo diagnosticables.
 
-Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta, desvincula sus dispositivos (siguen existiendo, otra planta puede reclamarlos) y avisa a los invitados. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió.
+Plantas: cada cliente ve y modifica solo las suyas (un administrador también). Una planta ajena a la que no se tiene acceso responde **404**, igual que una inexistente, para no revelar qué ids existen. Un invitado (acceso de lectura que se obtiene aceptando un enlace de invitación) puede consultar pero no editar, eliminar, compartir ni medir (403). Registrar una medición guarda el diagnóstico en el historial, avisa un `DIAGNOSTICO_NUEVO` a la vista en vivo del dueño y de los invitados y, si el estado global cambió respecto del anterior, un `CAMBIO_DE_ESTADO` por registro, correo y vista en vivo. **Los avisos salen después del commit**: si la transacción se revierte, no salen. Eliminar una planta, o una cuenta, elimina sus plantas, su historial, sus accesos, sus invitaciones pendientes y las solicitudes de la cuenta, desvincula sus dispositivos (siguen existiendo, otra planta puede reclamarlos) y avisa a los invitados. Consultar nunca escribe. `POST /api/v1/diagnosticos` (el diagnóstico suelto, sin cuenta) no cambió en el corte 2.
+
+**Salud de la matera (fase 10).** Cuando un sensor falla, la matera descarta la lectura y lo dice: la OLED muestra "no te siento temperatura" con la mascota preocupada y el "hace X" de la última lectura buena (sin esperar al servidor), y reporta `POST /api/v1/dispositivos/{serial}/salud` (al cambiar, y un latido cada 5 min mientras dure). El servidor guarda la salud (`OK`, `FALLA` o `SIN_NOTICIAS`, esta última cuando una matera vinculada calla más de `max(3 x intervalo, 2 min)`), la expone como `salud` y `ultimaLecturaEn` en `GET /api/v1/plantas/{id}/dispositivos` y en el admin, y empuja `SALUD_DE_LA_MATERA` por WebSocket al dueño y a los invitados. El simulador lo prueba con `--falla temperatura`. El dominio no se tocó. Contrato exacto, frases y decisiones en [`docs/fase10/IMPLEMENTACION.md`](docs/fase10/IMPLEMENTACION.md).
+
+**La OLED duerme y saluda (fase 11).** Cuando el diagnóstico de la respuesta 201 dice `periodo: "NOCHE"`, la mascota de la OLED duerme: ojos cerrados, quieta, respira 1 px cada 3 s y flota un "zzz"; la fila de la luz dice "duerme" en vez de los lux. Una pulsación corta del botón BOOT (soltar antes de 1 s) la hace saludar: el salto y el parpadeo doble del bloque `SALUDO` del front, sin hablar con el servidor. La larga (5 s) sigue borrando la red. Los números son los mismos en la OLED y en el front. Solo firmware: el contrato no cambió. Decisiones D160 a D169 en [`docs/fase11/IMPLEMENTACION.md`](docs/fase11/IMPLEMENTACION.md).
+**Pulido de mascota, avisos y base de datos (fase 12).** La mascota duerme de noche (`animo: DORMIDA`) y el amanecer no cuenta como "salió al sol". Un cambio de estado que se debe solo a la noche avisa por WebSocket con `datos.motivo: "PERIODO"` y no manda correo. Acariciar tiene enfriamiento de 10 s por planta (`fitodiagnostico.mascota.enfriamiento-de-caricia`; las que sobran dan 200 con la última, sin evento ni mensaje). El invitado puede leer `GET /plantas/{id}/dispositivos` y desvincular borra la salud de la matera. En la base: un resumen de luz por hora (`resumen_luz_hora`, V22) hace que cada lectura lea unas 400 muestras y no 17 000; las lecturas crudas se guardan 30 días y el resumen para siempre (`FITO_HISTORIAL_RETENCION_CRUDAS`, `FITO_HISTORIAL_RETENCION_HABILITADA`, `FITO_HISTORIAL_RETENCION_CRON`); el listado de plantas ya no hace una consulta por especie. El dominio no se tocó. Decisiones D170 a D179 en [`docs/fase12/IMPLEMENTACION.md`](docs/fase12/IMPLEMENTACION.md).
+
+**Luz acumulada y noche (fase 8).** Con historial, la luz de una planta se juzga por las últimas 24 h y no por la lectura del momento: horas con al menos 100 lux y el lux promedio en ellas, con un mínimo de 6 h de luz por día. Tras 2 h de oscuridad sostenida la planta duerme (`periodo: "NOCHE"`): la luz no cuenta para el estado global ni genera recomendación. Todo diagnóstico (el de `POST /api/v1/plantas/{id}/mediciones`, el vigente, el historial y la respuesta de `POST /api/v1/dispositivos/{serial}/lecturas`) agrega `periodo`, `exposicionLuminica` (`base`: `INSTANTANEA` o `ACUMULADA`, más `horasObservadas`, `horasDeLuz`, `luxPromedioEnLuz`, `luxEfectivo` y `horasEnOscuridad`, en `null` si es instantánea) y, en cada parámetro, `valorEvaluado` (lo que se comparó con el rango; `valor` sigue siendo la lectura). La respuesta MQTT agrega `periodo`. Ningún campo existente cambió. Sin historial (la primera lectura, o `POST /api/v1/diagnosticos`) la luz se juzga al instante, como antes. Detalle en [`docs/fase8/IMPLEMENTACION.md`](docs/fase8/IMPLEMENTACION.md).
 
 Las salidas de abajo (corte 1) fueron capturadas con la app corriendo.
 
@@ -166,40 +175,45 @@ curl http://localhost:8080/api/v1/especies
 ```json
 [
   {
-    "nombre": "sansevieria",
+    "nombre": "atrapamoscas",
     "rangos": {
-      "humedad": { "min": 20.0, "max": 45.0, "unidad": "%" },
-      "luz": { "min": 200.0, "max": 1500.0, "unidad": "lux" },
-      "temperatura": { "min": 15.0, "max": 29.0, "unidad": "°C" }
+      "humedad": { "min": 60.0, "max": 90.0, "unidad": "%" },
+      "luz": { "min": 3000.0, "max": 20000.0, "unidad": "lux" },
+      "temperatura": { "min": 15.0, "max": 32.0, "unidad": "°C" }
     }
   }
 ]
 ```
 
-(devuelve las 5 especies del Anexo B, ordenadas por nombre; se recorta a una para el ejemplo)
+(devuelve las 5 especies del catálogo por defecto, ordenadas por nombre; se recorta a una para el ejemplo)
 
 ### `POST /api/v1/diagnosticos`
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/diagnosticos \
   -H "Content-Type: application/json" \
-  -d '{"especie":"sansevieria","humedad":15,"luz":800,"temperatura":22}'
+  -d '{"especie":"helecho","humedad":40,"luz":500,"temperatura":22}'
 ```
 
 ```json
 {
-  "especie": "sansevieria",
+  "especie": "helecho",
   "estado": "EN_RIESGO",
   "parametros": [
-    { "nombre": "humedad", "valor": 15.0, "unidad": "%", "rangoOptimo": [20.0, 45.0], "estado": "BAJO" },
-    { "nombre": "luz", "valor": 800.0, "unidad": "lux", "rangoOptimo": [200.0, 1500.0], "estado": "OPTIMO" },
-    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [15.0, 29.0], "estado": "OPTIMO" }
+    { "nombre": "humedad", "valor": 40.0, "unidad": "%", "rangoOptimo": [60.0, 85.0], "estado": "BAJO", "valorEvaluado": 40.0 },
+    { "nombre": "luz", "valor": 500.0, "unidad": "lux", "rangoOptimo": [150.0, 800.0], "estado": "OPTIMO", "valorEvaluado": 500.0 },
+    { "nombre": "temperatura", "valor": 22.0, "unidad": "°C", "rangoOptimo": [16.0, 26.0], "estado": "OPTIMO", "valorEvaluado": 22.0 }
   ],
   "recomendaciones": [
-    "Humedad del sustrato 15 % por debajo del rango óptimo 20–45 %: regar moderadamente."
-  ]
+    "Humedad del sustrato 40 % por debajo del rango óptimo 60–85 %: regar moderadamente."
+  ],
+  "periodo": "DIA",
+  "exposicionLuminica": { "base": "INSTANTANEA", "horasObservadas": null, "horasDeLuz": null,
+                          "luxPromedioEnLuz": null, "luxEfectivo": null, "horasEnOscuridad": null }
 }
 ```
+
+`periodo`, `exposicionLuminica` y `valorEvaluado` son de la fase 8 y solo se agregaron. Este diagnóstico no tiene planta ni historial, así que la luz siempre se juzga al instante (`base: "INSTANTANEA"`) y el periodo es `DIA`. En el diagnóstico de una planta con historial, `base` es `ACUMULADA` y los números describen las últimas 24 h (ver arriba y `docs/fase8/`).
 
 Estados posibles: `SALUDABLE`, `EN_RIESGO`, `CRITICO` (regla por desviación, umbral 25 % del ancho del rango). Un parámetro dentro de rango es `OPTIMO`; fuera, `BAJO` o `ALTO`.
 
@@ -255,15 +269,29 @@ curl -X POST http://localhost:8080/api/v1/diagnosticos -H "Content-Type: applica
 
 ## Tabla de referencia
 
-Fuente: Anexo B del enunciado del proyecto de corte.
+El catálogo por defecto tiene **exactamente cinco especies, las que tienen mascota en la OLED**: es el mínimo que exige el enunciado. Fuente: Anexo B del enunciado del proyecto de corte (suculenta y helecho). Las tres últimas son de la fase 7; sus fuentes van en la sección siguiente. Del Anexo B salieron `sansevieria`, `potos` y `lavanda`, que no tienen mascota; un administrador puede darlas de alta otra vez con `POST /api/v1/admin/especies`.
 
 | Especie | Humedad (%) | Luz (lux) | Temperatura (°C) |
 |---|---|---|---|
-| sansevieria | 20–45 | 200–1500 | 15–29 |
-| potos | 40–70 | 300–1200 | 18–30 |
 | suculenta | 10–30 | 800–2500 | 15–32 |
 | helecho | 60–85 | 150–800 | 16–26 |
-| lavanda | 25–50 | 1000–3000 | 15–30 |
+| girasol | 40–70 | 10000–50000 | 18–28 |
+| cactus | 5–25 | 20000–60000 | 15–35 |
+| atrapamoscas | 60–90 | 3000–20000 | 15–32 |
+
+### Fuentes de las especies agregadas (fase 7)
+
+Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera tenga mascota (ver [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md)). Humedad es la del sustrato, como en el resto de la tabla. Donde la fuente no da un número de sustrato, el rango es criterio propio a partir de lo que dice la fuente, y se marca así.
+
+| Especie | Rango | Fuente |
+|---|---|---|
+| girasol | temperatura 18–28 °C | Ball Australia, [cultural notes de girasol en maceta](https://ballaustralia.com/wp-content/uploads/plant_list/cultural_notes/S/Sunflower-pot-CN-2.pdf) (día 18–25 °C antes de la flor); Holmes Seed, [Sunflower Growing Guide](https://www.holmesseed.com/growers-guidebook/growing-guides/sunflower-growing-guide/) (óptimo 21–26 °C) |
+| girasol | luz 10000–50000 lux | sol pleno (las mismas fuentes); 10000 lux es luz de día indirecta y 50000 un día soleado. Criterio propio sobre "sol pleno" |
+| girasol | humedad 40–70 % | criterio propio: sustrato húmedo y drenado, sin encharcar (mismas fuentes) |
+| cactus | luz 20000–60000 lux | Arizona-Sonora Desert Museum, [Cacti in pots](https://www.desertmuseum.org/visit/sheets/1Cact_pot.pdf): mínimo 2000 pies-candela (unos 21500 lux) 12 h al día; sol pleno son 10000 pies-candela y quema tras el vidrio |
+| cactus | humedad 5–25 % | criterio propio: dejar secar el sustrato entre riegos; el exceso de agua pudre la raíz (Desert Museum; [UMN Extension, cacti and succulents](https://extension.umn.edu/house-plants/cacti-and-succulents)) |
+| cactus | temperatura 15–35 °C | criterio propio: planta de desierto con reposo fresco en invierno (Desert Museum) |
+| atrapamoscas | los tres rangos | los de la especie que ya existía en la base en vivo, para que el CSV y la base digan lo mismo. Contraste: [NDSU](https://www.ndsu.edu/pubweb/chiwonlee/plsc211/student%20papers/articles02/dhodgson/dhodgson.html) da 21–35 °C en crecimiento y humedad del aire sobre 50 %; [Iowa State Extension](https://yardandgarden.extension.iastate.edu/faq/how-does-one-care-venus-flytrap) pide varias horas de sol directo y sustrato siempre húmedo |
 
 ## Documentación
 
@@ -272,6 +300,13 @@ Fuente: Anexo B del enunciado del proyecto de corte.
 - [`docs/fase2/IMPLEMENTACION.md`](docs/fase2/IMPLEMENTACION.md) — fase 2 (arquitectura hexagonal): mapa de paquetes, tabla de puertos y adaptadores, dónde se emite y verifica el JWT, la prueba de cambio, el análisis MQTT y las decisiones D63 a D73.
 - [`docs/fase3/IMPLEMENTACION.md`](docs/fase3/IMPLEMENTACION.md): fase 3 (vinculación de dispositivos a modo Chromecast): flujo de reclamo, contrato, reto HMAC, impacto en el dominio, límites y las decisiones D74 a D81.
 - [`docs/fase5/IMPLEMENTACION.md`](docs/fase5/IMPLEMENTACION.md): fase 5 (firmware ESP32 con QR en la OLED): enlace corto, Wi-Fi por defecto y portal cautivo, hora por NTP, cola en RAM y las decisiones D89 a D92.
+- [`docs/fase6/IMPLEMENTACION.md`](docs/fase6/IMPLEMENTACION.md): fase 6 (sensores físicos): puerto por magnitud, potenciómetros en el ADC1, las decisiones D98 a D101 y el plan de los sensores reales (calibración, DHT22, sonda alimentada por pin).
+- [`docs/fase7/IMPLEMENTACION.md`](docs/fase7/IMPLEMENTACION.md): fase 7 (la planta como mascota): girasol, cactus, suculenta y helecho con cara, ánimo e idle en la OLED, tres especies nuevas en el CSV y las decisiones D110 a D117.
+- [`docs/fase8/IMPLEMENTACION.md`](docs/fase8/IMPLEMENTACION.md): fase 8 (luz acumulada y noche): la luz se juzga por lo acumulado en 24 h, la planta duerme tras 2 h de oscuridad, campos nuevos del contrato (`periodo`, `exposicionLuminica`, `valorEvaluado`), la prueba de cambio y las decisiones D120 a D129.
+- [`docs/fase9/IMPLEMENTACION.md`](docs/fase9/IMPLEMENTACION.md): fase 9 (la planta como mascota en el servidor): contexto `mascota` que consume el historial sin tocar el dominio, vitalidad, eventos (riego, sol, desmayo, racha), ánimo, acariciar y "la regué", avisos por WebSocket y MQTT, migraciones V16 a V19 y las decisiones D130 a D149.
+- [`docs/fase10/IMPLEMENTACION.md`](docs/fase10/IMPLEMENTACION.md): fase 10 (salud de la matera): la OLED y el servidor dicen qué sensor falla ("no te siento la temperatura") o que la matera calló, `POST /api/v1/dispositivos/{serial}/salud`, `salud` y `ultimaLecturaEn` en los dispositivos, el aviso `SALUD_DE_LA_MATERA`, migraciones V20 y V21 y las decisiones D150 a D159.
+- [`docs/fase11/IMPLEMENTACION.md`](docs/fase11/IMPLEMENTACION.md): fase 11 (la OLED duerme y saluda): la mascota dormida de noche con `periodo` de la fase 8, el saludo con una pulsación corta de BOOT, los números que comparte con el front, el girasol dormido y las decisiones D160 a D169.
+- [`docs/fase12/IMPLEMENTACION.md`](docs/fase12/IMPLEMENTACION.md): fase 12 (pulido de mascota, avisos y base de datos): `DORMIDA`, `motivo: PERIODO` sin correo, enfriamiento de las caricias, el invitado lee los dispositivos, resumen de luz por hora, retención de crudas, índices y N+1 con sus cifras, migración V22 y las decisiones D170 a D179.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

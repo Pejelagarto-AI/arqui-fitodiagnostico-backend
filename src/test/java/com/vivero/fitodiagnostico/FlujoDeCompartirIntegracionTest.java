@@ -45,7 +45,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     @Test
     void elDuenoInvitaPorCorreoYElVisitanteSinCuentaSeRegistraYAceptaEnUnSoloPaso() throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         String visitante = "compartir-visitante-" + UUID.randomUUID().toString().substring(0, 6) + "@vivero.co";
 
         // El dueño invita: recibe el token y el enlace UNA vez, y el visitante recibe el enlace por correo.
@@ -94,7 +94,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
         Cuenta dueno = registrar("Dueña");
         Cuenta beto = registrar("Beto");
         Cuenta carla = registrar("Carla");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         String token = invitar(dueno, planta);
 
         mockMvc.perform(json(con(post("/api/v1/invitaciones/aceptar"), beto.token()), "{\"token\":\"" + token + "\"}"))
@@ -116,7 +116,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void unEnlaceCaducadoDa410ConSuPropioCodigoYNoDejaCrearLaCuenta() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta beto = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         String token = invitar(dueno, planta);
         // Se envejece la invitación entera (creada y caducidad): el dominio exige que caduque DESPUÉS de crearse.
         jdbc.update("update invitacion set creada_en = ?, expira_en = ? where planta_id = ?",
@@ -152,7 +152,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void siElCorreoDelRegistroYaTieneCuentaDa409YLaInvitacionSigueVigente() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta beto = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         String token = invitar(dueno, planta);
 
         mockMvc.perform(json(post("/api/v1/invitaciones/aceptar-con-registro"),
@@ -171,7 +171,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void revocarUnaInvitacionLaInutilizaYSoloSeRevocaUnaPendiente() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta beto = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         var generada = mockMvc.perform(con(post("/api/v1/plantas/" + planta + "/invitaciones"), dueno.token()))
                 .andExpect(status().isCreated());
         String token = leer(generada, "$.token");
@@ -192,7 +192,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void noSePuedeRevocarUnaInvitacionYaAceptadaPorLaViaDeLasInvitaciones() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta beto = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         var generada = mockMvc.perform(con(post("/api/v1/plantas/" + planta + "/invitaciones"), dueno.token()));
         mockMvc.perform(json(con(post("/api/v1/invitaciones/aceptar"), beto.token()),
                 "{\"token\":\"" + leer(generada, "$.token") + "\"}")).andExpect(status().isOk());
@@ -209,7 +209,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
         Cuenta ajeno = registrar("Ajeno");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         String base = "/api/v1/plantas/" + planta;
         UUID cualquiera = UUID.randomUUID();
@@ -232,7 +232,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     @Test
     void elDuenoNoPuedeInvitarseNiAceptarSuPropiaInvitacion() throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
 
         mockMvc.perform(json(con(post("/api/v1/plantas/" + planta + "/invitaciones"), dueno.token()),
                         "{\"correo\":\"" + dueno.correo().toUpperCase() + "\"}"))
@@ -256,7 +256,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void elDuenoRevocaElAccesoYElInvitadoRecibeElAvisoPorCorreo() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         correo.limpiar();
 
@@ -277,7 +277,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
         Cuenta ajeno = registrar("Ajeno");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         correo.limpiar();
 
@@ -297,7 +297,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void elCambioDeEstadoLlegaPorCorreoAlDuenoYAlInvitadoRealYSoloCuandoCambia() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         correo.limpiar();
 
@@ -320,7 +320,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void despuesDeRevocarElInvitadoYaNoRecibeLosCambiosDeEstado() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         medir(dueno, planta, SALUDABLE);
         mockMvc.perform(con(delete("/api/v1/plantas/" + planta + "/invitados/" + invitado.id()), dueno.token()))
@@ -339,7 +339,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void eliminarUnaPlantaConInvitadoRealAvisaPorCorreoYBorraSusInvitacionesPendientes() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         String pendiente = invitar(dueno, planta);          // un enlace repartido que nadie usó todavía
         medir(dueno, planta, SALUDABLE);
@@ -363,7 +363,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void eliminarLaCuentaDelDuenoDejaSinAccesoAlInvitadoRealYLeAvisa() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         invitar(dueno, planta);
         correo.limpiar();
@@ -380,7 +380,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     void eliminarLaCuentaDelInvitadoQuitaSuAccesoPeroLaPlantaSigueYSoloAvisaAlDueno() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
         medir(dueno, planta, SALUDABLE);
 
@@ -547,7 +547,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
         mockMvc.perform(con(get("/api/v1/admin/solicitudes-especie"), ana.token())).andExpect(status().isForbidden());
         mockMvc.perform(con(post("/api/v1/admin/solicitudes-especie/" + UUID.randomUUID() + "/aprobar"), ana.token()))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(json(con(post("/api/v1/solicitudes-especie"), ana.token()), "{\"nombre\":\"POTOS\"}"))
+        mockMvc.perform(json(con(post("/api/v1/solicitudes-especie"), ana.token()), "{\"nombre\":\"HELECHO\"}"))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.error").value("ESPECIE_YA_EXISTE"));
         assertThat(contar("solicitud_especie")).isZero();
     }
@@ -607,7 +607,7 @@ class FlujoDeCompartirIntegracionTest extends BaseDeIntegracionDeCompartir {
     @Test
     void unaMedicionQueFallaDespuesDeDiagnosticarNoDejaAvisosFantasma() throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         medir(dueno, planta, SALUDABLE);
         correo.limpiar();
 

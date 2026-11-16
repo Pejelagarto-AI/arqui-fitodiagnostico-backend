@@ -114,7 +114,7 @@ class RegistroDeDispositivoIntegracionTest {
                 .andExpect(status().isCreated());
         String token = iniciarSesion(correo, CLAVE);
         planta[0] = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), token),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
         return token;
     }
 
@@ -212,7 +212,7 @@ class RegistroDeDispositivoIntegracionTest {
         String token = leer(credencial, "$.token");
 
         mockMvc.perform(json(con(post("/api/v1/dispositivos/" + serial + "/lecturas"), token),
-                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":55,\"luz\":700,\"temperatura\":22}"))
+                "{\"marcaDeTiempo\":\"2026-11-03T14:30:05Z\",\"humedad\":70,\"luz\":500,\"temperatura\":22}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.origen").value("DISPOSITIVO"));
 
         // reiniciarse y volver a registrarse no desvincula nada

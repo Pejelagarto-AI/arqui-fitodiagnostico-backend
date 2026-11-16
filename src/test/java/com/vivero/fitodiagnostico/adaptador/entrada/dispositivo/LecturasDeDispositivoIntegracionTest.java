@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,7 +52,7 @@ class LecturasDeDispositivoIntegracionTest {
     void preparar() throws Exception {
         limpiar();
         dueno = registrarEIniciarSesion();
-        planta = crearPlanta("Pepa", "potos");           // potos: humedad 40-70, luz 300-1200, temperatura 18-30
+        planta = crearPlanta("Pepa", "helecho");           // helecho: humedad 60-85, luz 150-800, temperatura 16-26
         otraPlanta = crearPlanta("Otra", "helecho");
         tokenDelDispositivo = emitirToken(planta, "esp32-01");
     }
@@ -112,6 +113,11 @@ class LecturasDeDispositivoIntegracionTest {
                 + ",\"temperatura\":" + temperatura + "}";
     }
 
+    private static String lecturaEn(String marca, String humedad, String luz, String temperatura) {
+        return "{\"marcaDeTiempo\":\"" + marca + "\",\"humedad\":" + humedad + ",\"luz\":" + luz
+                + ",\"temperatura\":" + temperatura + "}";
+    }
+
     private int diagnosticosDe(String plantaId) {
         return jdbc.queryForObject("select count(*) from diagnostico_planta where planta_id = ?", Integer.class,
                 UUID.fromString(plantaId));
@@ -121,12 +127,12 @@ class LecturasDeDispositivoIntegracionTest {
 
     @Test
     void unaLecturaDentroDelOptimoResponde201ConElDiagnosticoYQuedaEnElHistorialConOrigenDispositivo() throws Exception {
-        reportar(tokenDelDispositivo, lectura("55", "700", "22"))
+        reportar(tokenDelDispositivo, lectura("70", "500", "22"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.origen").value("DISPOSITIVO"))
                 .andExpect(jsonPath("$.plantaId").value(planta))
                 .andExpect(jsonPath("$.tomadaEn").value(MARCA))
-                .andExpect(jsonPath("$.diagnostico.especie").value("potos"))
+                .andExpect(jsonPath("$.diagnostico.especie").value("helecho"))
                 .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))
                 .andExpect(jsonPath("$.diagnostico.parametros.length()").value(3));
 
@@ -139,6 +145,38 @@ class LecturasDeDispositivoIntegracionTest {
     }
 
     @Test
+    void laPrimeraLecturaDiceQueLaLuzSeEvaluoAlInstanteYDeDia() throws Exception {
+        // Fase 8: el contrato solo agrega campos.
+        reportar(tokenDelDispositivo, lectura("70", "500", "22"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.diagnostico.periodo").value("DIA"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.base").value("INSTANTANEA"))
+                .andExpect(jsonPath("$.diagnostico.parametros[1].valor").value(500.0))
+                .andExpect(jsonPath("$.diagnostico.parametros[1].valorEvaluado").value(500.0));
+    }
+
+    @Test
+    void conDosHorasDeOscuridadLaPlantaDuermeYElVigenteLoDice() throws Exception {
+        // Luz hace 3 h, oscuridad desde hace 2 h: es de noche. 10 lux contra 150-800 no la pone en riesgo.
+        Instant ahora = Instant.parse(MARCA);
+        reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(3 * 3600).toString(), "70", "500", "22"))
+                .andExpect(status().isCreated());
+        reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(2 * 3600).toString(), "70", "10", "22"))
+                .andExpect(status().isCreated());
+        reportar(tokenDelDispositivo, lectura("70", "10", "22"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.diagnostico.periodo").value("NOCHE"))
+                .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.base").value("ACUMULADA"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.horasEnOscuridad").value(2.0));
+
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/diagnostico"), dueno))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diagnostico.diagnostico.periodo").value("NOCHE"))
+                .andExpect(jsonPath("$.diagnostico.diagnostico.exposicionLuminica.base").value("ACUMULADA"));
+    }
+
+    @Test
     void unaLecturaFueraDeRangoEsValidaYElDiagnosticoLoDice() throws Exception {
         reportar(tokenDelDispositivo, lectura("5", "700", "22"))
                 .andExpect(status().isCreated())
@@ -147,7 +185,7 @@ class LecturasDeDispositivoIntegracionTest {
 
     @Test
     void laPlantaSaleDelTokenNoDeLaRutaNiDelCuerpo() throws Exception {
-        reportar(tokenDelDispositivo, lectura("55", "700", "22")).andExpect(status().isCreated());
+        reportar(tokenDelDispositivo, lectura("70", "500", "22")).andExpect(status().isCreated());
 
         assertThat(diagnosticosDe(planta)).isEqualTo(1);
         assertThat(diagnosticosDe(otraPlanta)).isZero();
@@ -166,11 +204,11 @@ class LecturasDeDispositivoIntegracionTest {
 
     @Test
     void unaMarcaDeTiempoAusenteOMalFormadaEs400() throws Exception {
-        reportar(tokenDelDispositivo, "{\"humedad\":55,\"luz\":700,\"temperatura\":22}")
+        reportar(tokenDelDispositivo, "{\"humedad\":70,\"luz\":500,\"temperatura\":22}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detalle.campo").value("marcaDeTiempo"));
         reportar(tokenDelDispositivo,
-                "{\"marcaDeTiempo\":\"ayer por la tarde\",\"humedad\":55,\"luz\":700,\"temperatura\":22}")
+                "{\"marcaDeTiempo\":\"ayer por la tarde\",\"humedad\":70,\"luz\":500,\"temperatura\":22}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("PARAMETRO_INVALIDO"))
                 .andExpect(jsonPath("$.detalle.campo").value("marcaDeTiempo"));
@@ -208,12 +246,12 @@ class LecturasDeDispositivoIntegracionTest {
 
     @Test
     void sinTokenEs401() throws Exception {
-        mockMvc.perform(json(post(RUTA), lectura("55", "700", "22"))).andExpect(status().isUnauthorized());
+        mockMvc.perform(json(post(RUTA), lectura("70", "500", "22"))).andExpect(status().isUnauthorized());
     }
 
     @Test
     void unTokenDePersonaEs403() throws Exception {
-        reportar(dueno, lectura("55", "700", "22"))
+        reportar(dueno, lectura("70", "500", "22"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("ACCESO_DENEGADO"));
         assertThat(diagnosticosDe(planta)).isZero();
@@ -223,7 +261,7 @@ class LecturasDeDispositivoIntegracionTest {
     void unDispositivoNoPuedeReportarPorOtroDispositivo() throws Exception {
         // El token es de esp32-01; la ruta dice esp32-02.
         mockMvc.perform(json(con(post("/api/v1/dispositivos/esp32-02/lecturas"), tokenDelDispositivo),
-                lectura("55", "700", "22")))
+                lectura("70", "500", "22")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("OPERACION_NO_PERMITIDA"));
         assertThat(diagnosticosDe(planta)).isZero();
@@ -235,6 +273,6 @@ class LecturasDeDispositivoIntegracionTest {
                 .delete("/api/v1/plantas/" + planta), dueno)).andExpect(status().isNoContent());
 
         // La cascada desvincula la matera al borrar la planta; con la D96 el token queda sin vínculo: 401 para que renueve.
-        reportar(tokenDelDispositivo, lectura("55", "700", "22")).andExpect(status().isUnauthorized());
+        reportar(tokenDelDispositivo, lectura("70", "500", "22")).andExpect(status().isUnauthorized());
     }
 }

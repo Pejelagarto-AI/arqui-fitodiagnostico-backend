@@ -217,7 +217,7 @@ class SinHtmlTest {
         assertThat(respuesta.getBody()).contains("\"error\":\"PLANTA_NO_ENCONTRADA\"");
         // D6: sin token, el endpoint suelto sigue respondiendo.
         assertThat(pedir(HttpMethod.POST, "/api/v1/diagnosticos",
-                "{\"especie\":\"potos\",\"humedad\":50,\"luz\":700,\"temperatura\":22}").getStatusCode())
+                "{\"especie\":\"helecho\",\"humedad\":50,\"luz\":700,\"temperatura\":22}").getStatusCode())
                 .isEqualTo(HttpStatus.OK);
     }
 

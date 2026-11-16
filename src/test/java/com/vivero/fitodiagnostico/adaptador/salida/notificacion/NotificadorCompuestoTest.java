@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.adaptador.salida.notificacion;
 
+import com.vivero.fitodiagnostico.avisos.MotivoDelAviso;
 import com.vivero.fitodiagnostico.dobles.NotificadorGrabador;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
@@ -59,6 +60,28 @@ class NotificadorCompuestoTest {
         assertThat(registro.avisos()).hasSize(3);
         assertThat(correo.avisos()).hasSize(3);
         assertThat(vivo.avisos()).hasSize(3);
+    }
+
+    @Test
+    void unCambioDeEstadoPorElPeriodoNoSaleEnCorreoPeroSiPorElRegistroYLaVistaEnVivo() {
+        Aviso porLaNoche = new Aviso(Set.of(UUID.randomUUID()), TipoDeAviso.CAMBIO_DE_ESTADO, "hola",
+                Map.of(MotivoDelAviso.CLAVE, MotivoDelAviso.PERIODO));
+
+        compuesto.avisar(porLaNoche);
+
+        assertThat(correo.avisos()).isEmpty();
+        assertThat(registro.avisos()).containsExactly(porLaNoche);
+        assertThat(vivo.avisos()).containsExactly(porLaNoche);
+    }
+
+    @Test
+    void elMotivoPeriodoSoloQuitaElCorreoDelCambioDeEstadoYOtroMotivoNoLoQuita() {
+        compuesto.avisar(new Aviso(Set.of(UUID.randomUUID()), TipoDeAviso.CAMBIO_DE_ESTADO, "hola",
+                Map.of(MotivoDelAviso.CLAVE, "OTRO")));
+        compuesto.avisar(new Aviso(Set.of(UUID.randomUUID()), TipoDeAviso.ACCESO_PERDIDO, "hola",
+                Map.of(MotivoDelAviso.CLAVE, MotivoDelAviso.PERIODO)));
+
+        assertThat(correo.avisos()).hasSize(2);
     }
 
     @Test

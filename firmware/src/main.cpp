@@ -5,6 +5,7 @@
 //                                  \-> FATAL (clave de flota mala, serial tomado, falta configuracion)
 #include <Arduino.h>
 #include <WiFi.h>
+#include "alimentado_por_pin.h"
 #include "boton.h"
 #include "cliente_api.h"
 #include "cola.h"
@@ -17,6 +18,9 @@
 #include "registro.h"
 #include "reloj.h"
 #include "sensores.h"
+#include "sensor_analogico.h"
+#include "sensores_compuestos.h"
+#include "temperatura_dht22.h"
 
 namespace {
 enum class Fase { Arranque, Red, Hora, Registro, Credencial, Reclamo, Operando, Fatal };
@@ -26,11 +30,37 @@ uint32_t desde = 0;              // millis() de entrada a la fase
 uint32_t proximoIntento = 0;     // para reintentos
 String token;
 time_t tokenExpira = 0;
-SensoresSimulados sensoresSimulados;
-Sensores *sensores = &sensoresSimulados;
+// Composicion de los sensores: el unico lugar que sabe que adaptador hay detras del puerto Sensores.
+// Se elige con `sensores` en local.ini (extra_script.py ya rechaza un valor desconocido).
+#define N_PUNTOS(t) ((int)(sizeof(t) / sizeof((t)[0])))
+#if !defined(FITO_SENSORES)
+#error "Falta FITO_SENSORES en include/config_local.h: compile con PlatformIO para que extra_script.py lo genere"
+#elif FITO_SENSORES == FITO_SENSORES_POTENCIOMETROS
+SensorAnalogico potHumedad(config::PIN_HUMEDAD, config::POT_HUMEDAD, N_PUNTOS(config::POT_HUMEDAD));
+SensorAnalogico potLuz(config::PIN_LUZ, config::POT_LUZ, N_PUNTOS(config::POT_LUZ));
+SensorAnalogico potTemperatura(config::PIN_TEMPERATURA, config::POT_TEMPERATURA, N_PUNTOS(config::POT_TEMPERATURA));
+SensoresCompuestos sensoresDeLaMatera(potHumedad, potLuz, potTemperatura);
+const char *const NOMBRE_SENSORES = "potenciometros";
+#elif FITO_SENSORES == FITO_SENSORES_REALES
+// Sonda resistiva (alimentada solo al leer), LDR y DHT22. Las dos curvas analogicas vienen de local.ini.
+SensorAnalogico sonda(config::PIN_HUMEDAD, config::CAL_HUMEDAD, N_PUNTOS(config::CAL_HUMEDAD));
+AlimentadoPorPin humedadDelSustrato(sonda, config::PIN_ALIMENTACION_HUMEDAD, config::ALIMENTACION_MS);
+SensorAnalogico ldr(config::PIN_LUZ, config::CAL_LUZ, N_PUNTOS(config::CAL_LUZ));
+TemperaturaDht22 dht22(config::PIN_TEMPERATURA);
+SensoresCompuestos sensoresDeLaMatera(humedadDelSustrato, ldr, dht22);
+const char *const NOMBRE_SENSORES = "reales (sonda, LDR y DHT22)";
+#elif FITO_SENSORES == FITO_SENSORES_SIMULADOS
+SensoresSimulados sensoresDeLaMatera;
+const char *const NOMBRE_SENSORES = "simulados";
+#else
+#error "sensores en local.ini debe ser simulados, potenciometros o reales"
+#endif
+Sensores *sensores = &sensoresDeLaMatera;
 uint32_t proximaLectura = 0;
+uint32_t proximaCalibracion = 0;
 uint32_t numeroDeLectura = 0;
 String ultimoEstado;
+bool ultimaNoche = false;                // fase 11: el periodo del ultimo diagnostico (NOCHE = la mascota duerme)
 bool punto = false;
 uint32_t apagarPunto = 0;
 bool sinRedMostrada = false;
@@ -42,6 +72,12 @@ int segundosBoton = -1;
 char fatal1[24], fatal2[24], fatal3[24];
 Lectura ultima = {};
 bool hayUltima = false;
+// Salud (fase 10): que sensores fallaron en la ultima lectura, cuando fue la ultima buena y que le dijimos al servidor.
+bool fallaActual[3] = {false, false, false};
+bool hayFalla = false;
+char detalleFalla[200] = "";
+uint32_t ultimaBuenaMs = 0;
+fito_salud_memoria memoriaSalud = {};
 
 void entrar(Fase nueva) {
     fase = nueva;
@@ -67,8 +103,12 @@ String nombreAMostrar() {
 }
 
 void pintarOperando() {
+    if (hayFalla) {      // la OLED avisa por su cuenta, sin esperar al servidor
+        pantalla::sensoresFallan(nombreAMostrar().c_str(), api::especie().c_str(), fallaActual, hayUltima, ultimaBuenaMs);
+        return;
+    }
     if (!hayUltima) { pantalla::vinculada(nombreAMostrar().c_str()); return; }
-    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str());
+    pantalla::lecturas(nombreAMostrar().c_str(), ultima, ultimoEstado.c_str(), punto, api::especie().c_str(), ultimaNoche);
 }
 
 void empezarExito() {
@@ -91,10 +131,12 @@ void redibujar() {
     }
 }
 
-// El boton BOOT: cuenta regresiva en la OLED, a los 5 s borra red y token (no la identidad) y reinicia.
+// El boton BOOT: cuenta regresiva en la OLED, a los 5 s borra red y token (no la identidad) y reinicia. Una pulsacion
+// corta hace saludar a la mascota (fase 11); no habla con el servidor.
 void atenderBoton() {
-    bool cumplido;
-    uint32_t ms = boton::ciclo(cumplido);
+    bool cumplido, corta;
+    uint32_t ms = boton::ciclo(cumplido, corta);
+    if (corta) { registrar("BOOT corto: la mascota saluda"); pantalla::saludar(millis()); }
     if (cumplido) {
         registrar("BOOT sostenido 5 s: se borran Wi-Fi, servidor y token (la identidad se conserva). Reiniciando.");
         pantalla::mensaje("Wi-Fi borrado", "Reiniciando...");
@@ -103,7 +145,7 @@ void atenderBoton() {
         delay(800);
         ESP.restart();
     }
-    if (ms >= 1000) {
+    if (ms >= config::BOTON_CORTA_MS) {
         int restan = (int)((config::BOTON_REINICIO_MS - ms) / 1000) + 1;
         if (restan != segundosBoton) { segundosBoton = restan; pantalla::reinicio(restan); }
     } else if (segundosBoton != -1) {
@@ -239,6 +281,30 @@ void faseReclamo() {
     if (fase == Fase::Reclamo) pantalla::qr(enlaceDelQr(), identidad::codigo(), puntosReclamo);
 }
 
+// Modo calibracion (calibracion = 1 en local.ini): una linea compacta con lo que midio cada sensor antes de
+// convertir. Apagado por defecto para que el registro normal siga igual al del simulador.
+void registrarCrudos() {
+#if FITO_CALIBRACION
+    char crudos[160];
+    sensores->describirCrudos(crudos, sizeof crudos);
+    registrar("cal %s", crudos);
+#endif
+}
+
+// En modo calibracion los sensores se leen tambien fuera de OPERANDO (esperando el reclamo, sin servidor), para
+// calibrar sin tener la planta vinculada. Esas lecturas no se envian.
+void calibrarFueraDeOperando() {
+#if FITO_CALIBRACION
+    if (fase == Fase::Operando) return;
+    if (millis() < proximaCalibracion) return;
+    proximaCalibracion = millis() + config::INTERVALO_LECTURA_MS;
+    Lectura l = {};
+    const char *descripcion = "";
+    if (!sensores->leer(l, descripcion)) registrar("cal (sin enviar) %s", descripcion);
+    registrarCrudos();
+#endif
+}
+
 void tomarLectura() {
     if (!reloj::hayHora()) {
         if (!sinHoraAvisada) { registrar("sin hora valida: no se reportan lecturas"); sinHoraAvisada = true; }
@@ -246,7 +312,21 @@ void tomarLectura() {
     }
     Lectura l = {};
     const char *descripcion = "";
-    sensores->leer(l, descripcion);
+    bool ok = sensores->leer(l, descripcion);
+    registrarCrudos();
+    if (!ok) {
+        registrar("lectura descartada: %s", descripcion);
+        sensores->fallas(fallaActual);
+        sensores->describirFallas(detalleFalla, sizeof detalleFalla);
+        hayFalla = fallaActual[0] || fallaActual[1] || fallaActual[2];
+        pintarOperando();
+        return;
+    }
+    if (hayFalla) registrar("los sensores responden otra vez");
+    hayFalla = false;
+    for (bool &f : fallaActual) f = false;
+    detalleFalla[0] = '\0';
+    ultimaBuenaMs = millis();
     l.cuando = time(nullptr);
     l.n = ++numeroDeLectura;
     l.fuera = strncmp(descripcion, "fuera", 5) == 0;
@@ -267,13 +347,15 @@ void vaciarCola() {
         }
         const Lectura &l = cola::frente();
         String estado;
-        int codigo = api::enviarLectura(token, l, estado);
+        bool noche = false;
+        int codigo = api::enviarLectura(token, l, estado, noche);
         char marca[24];
         reloj::iso(l.cuando, marca, sizeof marca);
         if (codigo == 201) {
-            registrar("#%u -> HTTP 201 estado=%s (tomada %s)", (unsigned)l.n, estado.c_str(), marca);
+            registrar("#%u -> HTTP 201 estado=%s%s (tomada %s)", (unsigned)l.n, estado.c_str(), noche ? " NOCHE" : "", marca);
             ultimoEstado = estado;
-            if (api::rangos().hay) sensoresSimulados.adoptarRangos(api::rangos().minimo, api::rangos().maximo);
+            ultimaNoche = noche;
+            if (api::rangos().hay) sensores->adoptarRangos(api::rangos().minimo, api::rangos().maximo);
             pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;
             cola::sacar();
@@ -292,12 +374,33 @@ void vaciarCola() {
     }
 }
 
+// Cuenta al servidor que un sensor falla (o que se recupero). Las reglas de cuando son de fito_salud_toca (nucleo, con
+// pruebas): al cambiar el estado y, mientras algo falle, un latido cada 5 min. La OLED ya avisó sin esperar a esto.
+void atenderSalud() {
+    uint8_t actual[FITO_N_SENSORES];
+    for (int i = 0; i < FITO_N_SENSORES; i++) actual[i] = fallaActual[i] ? 1 : 0;
+    const uint32_t ahora = millis();
+    if (!red::conectada() || !fito_salud_toca(&memoriaSalud, actual, ahora)) return;
+    if (!token.length() || (reloj::hayHora() && tokenExpira - time(nullptr) < (time_t)config::MARGEN_RENOVACION_S)) {
+        registrar("renovando credencial para reportar la salud...");
+        if (!renovarCredencial()) return;
+    }
+    fito_salud_intento(&memoriaSalud, ahora);
+    int codigo = api::enviarSalud(token, fallaActual, hayFalla ? detalleFalla : "");
+    if (codigo == 200) {
+        fito_salud_confirmado(&memoriaSalud, actual, ahora);
+    } else if (codigo == 401) {
+        registrar("salud -> HTTP 401 (token descartado, se pedira otro)");
+        token = ""; identidad::borrarToken();
+    }
+}
+
 void faseOperando() {
     uint32_t ahora = millis();
     if (exitoActivo) {                                           // animacion de exito, sin bloquear
         if (pantalla::animarExito(ahora)) return;
         exitoActivo = false;
-        if (hayUltima) pintarOperando();
+        if (hayUltima || hayFalla) pintarOperando();
     }
     pantalla::animarLecturas(ahora);
     if (punto && ahora > apagarPunto) { punto = false; if (red::conectada() && hayUltima) pintarOperando(); }
@@ -314,6 +417,8 @@ void faseOperando() {
     tomarLectura();
     vaciarCola();
     if (fase != Fase::Operando) return;
+    atenderSalud();
+    if (fase != Fase::Operando) return;
     if (!red::conectada() || cola::tamano() > 1) { char b[8]; (void)b; pantalla::sinRed(cola::tamano()); }
     else pintarOperando();
 }
@@ -324,6 +429,7 @@ void setup() {
     delay(300);
     Serial.println();
     registrar("firmware de la matera Fito (ESP32), 115200 baudios");
+    registrar("sensores: %s%s", NOMBRE_SENSORES, FITO_CALIBRACION ? " (modo calibracion)" : "");
     boton::iniciar();
     pantalla::iniciar();
     identidad::iniciar();
@@ -348,6 +454,7 @@ void loop() {
         case Fase::Operando: faseOperando(); break;
         case Fase::Fatal: break;
         }
+        calibrarFueraDeOperando();
     }
     delay(10);
 }

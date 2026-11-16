@@ -362,7 +362,7 @@ class FlujoDeCuentasIntegracionTest {
     void lasRutasPublicasFuncionanSinToken() throws Exception {
         mockMvc.perform(get("/api/v1/especies")).andExpect(status().isOk());
         mockMvc.perform(json(post("/api/v1/diagnosticos"),
-                        "{\"especie\":\"sansevieria\",\"humedad\":32.5,\"luz\":850,\"temperatura\":21}"))
+                        "{\"especie\":\"suculenta\",\"humedad\":32.5,\"luz\":850,\"temperatura\":21}"))
                 .andExpect(status().isOk());
     }
 

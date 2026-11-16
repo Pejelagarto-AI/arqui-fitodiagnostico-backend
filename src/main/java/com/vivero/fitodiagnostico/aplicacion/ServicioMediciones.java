@@ -3,12 +3,15 @@ package com.vivero.fitodiagnostico.aplicacion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarMedicionManualPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
+import com.vivero.fitodiagnostico.avisos.MotivoDelAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.SerieTemporal;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
@@ -17,12 +20,16 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeLuzAcumulada;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -40,6 +47,14 @@ import java.util.UUID;
  * tocar el dominio ni este servicio. La comprobación de quién puede medir es
  * parte del adaptador de entrada humano y no del caso de uso: una maceta no es
  * un usuario, se autentica con su credencial (RN19).
+ *
+ * <p>Fase 8 (D120): antes de evaluar, trae del historial los lux de las últimas
+ * 24 h ({@link ReglaDeLuzAcumulada#VENTANA}) por el puerto {@link RepositorioDiagnosticos}
+ * y se los entrega al evaluador. Solo los trae: no cuenta horas ni compara lux, eso
+ * lo decide el dominio.
+ *
+ * <p>Fase 9: después de guardar y avisar, entrega el registro a los {@link ObservadorDeMediciones} que la
+ * composición haya conectado (hoy, la mascota). Este servicio no sabe quiénes son (D140).
  */
 @Service
 public class ServicioMediciones implements RegistrarMedicionManualPort, RegistrarLecturaPort {
@@ -52,11 +67,21 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
     private final Notificador notificador;
     private final AutorizadorDePlantas autorizador;
     private final Clock reloj;
+    private final List<ObservadorDeMediciones> observadores;
 
+    /** Sin observadores: el caso de uso tal como era antes de la fase 9 (lo usan las pruebas de aplicación). */
     public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
                               RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
                               DetectorDeCambioDeEstado detector, Notificador notificador,
                               PoliticaDeAcceso politica, Clock reloj) {
+        this(plantas, accesos, diagnosticos, evaluador, detector, notificador, politica, reloj, List.of());
+    }
+
+    @Autowired
+    public ServicioMediciones(RepositorioPlantas plantas, RepositorioAccesos accesos,
+                              RepositorioDiagnosticos diagnosticos, EvaluadorDeEstado evaluador,
+                              DetectorDeCambioDeEstado detector, Notificador notificador,
+                              PoliticaDeAcceso politica, Clock reloj, List<ObservadorDeMediciones> observadores) {
         this.plantas = plantas;
         this.accesos = accesos;
         this.diagnosticos = diagnosticos;
@@ -65,6 +90,7 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         this.notificador = notificador;
         this.autorizador = new AutorizadorDePlantas(plantas, accesos, politica);
         this.reloj = reloj;
+        this.observadores = List.copyOf(observadores);
     }
 
     /**
@@ -98,8 +124,11 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         // RN8: se compara contra el inmediatamente anterior de ESTA planta, leído antes de guardar el nuevo.
         Optional<DiagnosticoDePlanta> anterior = diagnosticos.ultimoDe(planta.id());
 
+        // Fase 8: la luz se evalúa con lo acumulado en el día; el dominio decide qué significa.
+        SerieTemporal luzAnterior = luzAnteriorA(planta, medicion, tomadaEn);
+
         // RN11: se evalúa con la especie de la planta aunque ya esté descontinuada.
-        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion);
+        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion, tomadaEn, luzAnterior);
         DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, tomadaEn, evaluado);
         diagnosticos.guardar(registro);
 
@@ -114,13 +143,34 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
 
         // RF-G1: solo si el estado cambió respecto del inmediatamente anterior (RN8).
         if (detector.huboCambio(anterior.map(DiagnosticoDePlanta::diagnostico).orElse(null), evaluado)) {
+            // Fase 12 (D171): si solo cambió porque entró o salió la noche, el aviso lo dice y el correo no sale.
+            Map<String, String> datos = new HashMap<>(Map.of(Aviso.PLANTA_ID, planta.id().toString(),
+                    Aviso.ESTADO, registro.estado().name()));
+            if (CausaDelCambioDeEstado.soloPorElPeriodo(anterior.orElseThrow().diagnostico(), evaluado)) {
+                datos.put(MotivoDelAviso.CLAVE, MotivoDelAviso.PERIODO);
+            }
             notificador.avisar(new Aviso(destinatarios, TipoDeAviso.CAMBIO_DE_ESTADO,
                     "La planta «" + planta.apodo() + "» pasó de " + anterior.orElseThrow().estado()
-                            + " a " + registro.estado() + ".",
-                    Map.of(Aviso.PLANTA_ID, planta.id().toString(),
-                            Aviso.ESTADO, registro.estado().name())));
+                            + " a " + registro.estado() + ".", datos));
+        }
+
+        // Fase 9 (D140): quien quiera enterarse de cada lectura, sin que este caso de uso lo conozca.
+        for (ObservadorDeMediciones observador : observadores) {
+            observador.alRegistrar(registro);
         }
         return registro;
+    }
+
+    /**
+     * Los lux de la planta en la ventana que termina en esta medición, sin esta (todavía no
+     * está guardada). Si la medición no trae luz no hay nada que acumular.
+     */
+    private SerieTemporal luzAnteriorA(Planta planta, Medicion medicion, Instant tomadaEn) {
+        if (!medicion.contiene(Magnitud.LUZ)) {
+            return SerieTemporal.vacia();
+        }
+        return diagnosticos.serieDe(planta.id(), Magnitud.LUZ,
+                tomadaEn.minus(ReglaDeLuzAcumulada.VENTANA), tomadaEn);
     }
 
     /** RF-G1: el dueño y los invitados. */

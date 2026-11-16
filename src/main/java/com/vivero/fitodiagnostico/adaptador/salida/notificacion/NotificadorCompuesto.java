@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.adaptador.salida.notificacion;
 
+import com.vivero.fitodiagnostico.avisos.MotivoDelAviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
@@ -7,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -61,9 +63,25 @@ public class NotificadorCompuesto implements Notificador {
         this.canales = Map.copyOf(canales);
     }
 
+    /**
+     * La ruta del tipo, salvo un cambio de estado cuyo único motivo es el periodo (entró o salió la noche, D171): ese no
+     * va por correo, que sería un correo por culpa de una cortina cerrada. Sigue por el registro y la vista en vivo.
+     */
+    static Set<Canal> rutasDe(Aviso aviso) {
+        Set<Canal> rutas = RUTAS.getOrDefault(aviso.tipo(), Set.of());
+        boolean porElPeriodo = aviso.tipo() == TipoDeAviso.CAMBIO_DE_ESTADO
+                && MotivoDelAviso.PERIODO.equals(aviso.datos().get(MotivoDelAviso.CLAVE));
+        if (!porElPeriodo) {
+            return rutas;
+        }
+        Set<Canal> sinCorreo = EnumSet.copyOf(rutas);
+        sinCorreo.remove(Canal.CORREO);
+        return sinCorreo;
+    }
+
     @Override
     public void avisar(Aviso aviso) {
-        for (Canal canal : RUTAS.getOrDefault(aviso.tipo(), Set.of())) {
+        for (Canal canal : rutasDe(aviso)) {
             Notificador adaptador = canales.get(canal);
             if (adaptador == null) {
                 continue;

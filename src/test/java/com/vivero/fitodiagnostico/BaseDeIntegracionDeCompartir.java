@@ -36,7 +36,7 @@ abstract class BaseDeIntegracionDeCompartir {
     protected static final String ADMIN_CORREO = "admin@pruebas.fitodiagnostico.local";
     protected static final String ADMIN_CONTRASENA = "contrasena-de-pruebas-1";
     protected static final String CLAVE = "clave-larga-1";
-    protected static final String SALUDABLE = "{\"humedad\":55,\"luz\":700,\"temperatura\":22}";   // potos: 40-70, 300-1200, 18-30
+    protected static final String SALUDABLE = "{\"humedad\":70,\"luz\":500,\"temperatura\":22}";   // helecho: 60-85, 150-800, 16-26
     protected static final String CRITICA = "{\"humedad\":5,\"luz\":700,\"temperatura\":22}";
     protected static final String FRONT = "http://front.pruebas.local";
 

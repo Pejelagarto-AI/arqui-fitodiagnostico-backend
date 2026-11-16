@@ -114,7 +114,7 @@ class LecturasMqttIntegracionTest {
         limpiar();
         String dueno = registrarEIniciarSesion();
         planta = leer(mockMvc.perform(json(con(post("/api/v1/plantas"), dueno),
-                "{\"apodo\":\"Pepa\",\"especie\":\"potos\"}")).andExpect(status().isCreated()), "$.id");
+                "{\"apodo\":\"Pepa\",\"especie\":\"helecho\"}")).andExpect(status().isCreated()), "$.id");
         // Desde la D96 una lectura exige que el dispositivo siga reclamado por la planta del token.
         jdbc.update("insert into dispositivo (serial, secreto, planta_id, reclamado_en, creado_en, registrado_por) "
                 + "values (?, 's', ?, now(), now(), 'ADMIN')", SERIAL, UUID.fromString(planta));
@@ -145,7 +145,7 @@ class LecturasMqttIntegracionTest {
 
     @Test
     void unaLecturaValidaRecibeRespuestaOkYQuedaGuardadaConOrigenDispositivoYSuHoraOriginal() throws Exception {
-        publicar(SERIAL, lectura(tokenValido, "55", "700", "22"));
+        publicar(SERIAL, lectura(tokenValido, "70", "500", "22"));
 
         JsonNode r = respuestaDe(SERIAL);
         assertThat(r.get("ok").asBoolean()).isTrue();
@@ -163,7 +163,7 @@ class LecturasMqttIntegracionTest {
 
     @Test
     void unTokenInvalidoRecibeCredencialRechazadaYNoGuardaNada() throws Exception {
-        publicar(SERIAL, lectura("esto.no.es.un.jwt", "55", "700", "22"));
+        publicar(SERIAL, lectura("esto.no.es.un.jwt", "70", "500", "22"));
 
         JsonNode r = respuestaDe(SERIAL);
         assertThat(r.get("ok").asBoolean()).isFalse();
@@ -174,7 +174,7 @@ class LecturasMqttIntegracionTest {
     @Test
     void unTokenDeOtroDispositivoRecibeOperacionNoPermitida() throws Exception {
         String ajeno = emisor.emitir("otro-chip", UUID.fromString(planta)).valor();
-        publicar(SERIAL, lectura(ajeno, "55", "700", "22"));
+        publicar(SERIAL, lectura(ajeno, "70", "500", "22"));
 
         assertThat(respuestaDe(SERIAL).get("error").asText()).isEqualTo("OPERACION_NO_PERMITIDA");
         assertThat(diagnosticos()).isZero();
@@ -183,7 +183,7 @@ class LecturasMqttIntegracionTest {
     @Test
     void trasDesvincularLaMateraElTokenVigenteRecibeCredencialRechazada() throws Exception {
         jdbc.update("update dispositivo set planta_id = null, reclamado_en = null where serial = ?", SERIAL);
-        publicar(SERIAL, lectura(tokenValido, "55", "700", "22"));
+        publicar(SERIAL, lectura(tokenValido, "70", "500", "22"));
 
         JsonNode r = respuestaDe(SERIAL);
         assertThat(r.get("ok").asBoolean()).isFalse();
@@ -211,7 +211,7 @@ class LecturasMqttIntegracionTest {
         // Despues del fallo, otros dos malos y uno bueno: el suscriptor no se cayo.
         publicar(SERIAL, "no soy json");
         respuestaDe(SERIAL);
-        publicar(SERIAL, lectura("esto.no.es.un.jwt", "55", "700", "22"));
+        publicar(SERIAL, lectura("esto.no.es.un.jwt", "70", "500", "22"));
         respuestaDe(SERIAL);
         publicar(SERIAL, lectura(tokenValido, "50", "600", "21"));
 

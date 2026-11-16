@@ -30,6 +30,88 @@ void fito_firma_de_flota(const char *clave, const char *serial, const char *secr
 /* base64( HMAC-SHA256( clave = secreto como texto, mensaje = reto como texto ) ). `salida` >= FITO_LARGO_FIRMA_B64. */
 void fito_respuesta_al_reto(const char *secreto, const char *reto, char *salida);
 
+/* Un punto de una tabla de calibracion: a `mv` milivoltios en la entrada le corresponde `valor` en la magnitud. */
+typedef struct {
+    int mv;
+    float valor;
+} fito_punto_cal;
+
+#define FITO_MAX_PUNTOS_CAL 8
+
+/* Lleva milivoltios a la magnitud con una tabla de `n` puntos ORDENADOS por mv estrictamente ascendente,
+ * interpolando en linea recta entre los dos puntos vecinos. Los valores pueden bajar (curva descendente: la LDR y
+ * la sonda dan menos voltaje con mas luz o mas agua). Por debajo del primer punto devuelve el valor del primero y
+ * por encima del ultimo el del ultimo (recorte en los extremos). n == 1 devuelve ese valor; n <= 0 devuelve 0.
+ * La usa SensorAnalogico; extra_script.py valida y ordena las tablas de local.ini. */
+float fito_interpolar_cal(int mv, const fito_punto_cal *tabla, int n);
+
+
+/* ---- salud de la matera (fase 10): cuando reportar al servidor que un sensor falla o se recupero ---- */
+
+#define FITO_N_SENSORES 3                       /* humedad, luz, temperatura */
+#define FITO_SALUD_LATIDO_MS 300000UL           /* mientras algo falla, un reporte cada 5 min como maximo */
+#define FITO_SALUD_ENTRE_INTENTOS_MS 10000UL    /* entre dos intentos (cambios seguidos o un envio que fallo) */
+
+/* Lo que el firmware recuerda de lo que ya le dijo al servidor. Se inicia con ceros. */
+typedef struct {
+    uint8_t enviado[FITO_N_SENSORES];   /* 1 = falla; el ultimo estado que el servidor confirmo (200) */
+    int hay_enviado;                    /* 0 hasta el primer envio confirmado */
+    uint32_t enviado_en_ms;             /* millis() de ese envio */
+    int hay_intento;                    /* 0 hasta el primer intento, haya funcionado o no */
+    uint32_t intento_en_ms;
+} fito_salud_memoria;
+
+/* ¿Toca reportar ahora? `actual[i]` es 1 si el sensor i fallo en la ultima lectura. Reglas:
+ *  - Cambio (distinto de lo ultimo confirmado; sin confirmado, cualquier falla): se reporta, pero no antes de
+ *    FITO_SALUD_ENTRE_INTENTOS_MS despues del intento anterior (un sensor que parpadea no inunda al servidor, y un
+ *    envio fallido se reintenta cada tanto).
+ *  - Sin cambio y con alguna falla: un latido cada FITO_SALUD_LATIDO_MS desde el ultimo confirmado, con el mismo
+ *    freno entre intentos.
+ *  - Todo bien y nada que corregir: nunca. Las diferencias de millis() son modulares: sirven tras el desborde. */
+int fito_salud_toca(const fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms);
+
+/* Anota que se intento enviar (antes de la llamada HTTP, para frenar los reintentos aunque falle). */
+void fito_salud_intento(fito_salud_memoria *m, uint32_t ahora_ms);
+
+/* Anota que el servidor confirmo `actual` (HTTP 200). */
+void fito_salud_confirmado(fito_salud_memoria *m, const uint8_t actual[FITO_N_SENSORES], uint32_t ahora_ms);
+
+/* "hace 45 s", "hace 3 min", "hace 2 h" (y "hace 0 s" si segundos <= 0). `salida` >= 16 bytes. */
+void fito_hace_cuanto(long segundos, char *salida, size_t n);
+
+
+/* ---- la mascota duerme y saluda (fase 11) ---- */
+
+/* Saludo: la reaccion a una pulsacion corta del boton BOOT. Calcado del bloque SALUDO del front
+ * (js/componentes/mascota-tiempo.js, F47): 12 cuadros de 50 ms. En cada cuadro el cuerpo entero (lo que esta sobre
+ * la matera) sube FITO_SALUDO_DY[i] px (negativo = arriba) y los ojos van abiertos FITO_SALUDO_OJOS[i] (el factor de
+ * parpadeo). La cara es la contenta, sin transicion. */
+#define FITO_SALUDO_CUADRO_MS 50u
+#define FITO_SALUDO_CUADROS 12
+#define FITO_SALUDO_MS (FITO_SALUDO_CUADRO_MS * FITO_SALUDO_CUADROS)
+extern const int8_t FITO_SALUDO_DY[FITO_SALUDO_CUADROS];
+extern const float FITO_SALUDO_OJOS[FITO_SALUDO_CUADROS];
+
+/* Cuadro del saludo a `t_ms` de empezado (0..11), o -1 si ya termino. */
+int fito_saludo_cuadro(uint32_t t_ms);
+
+/* Respiracion de la planta dormida: periodo de 3 s, 1 px. Sube 1 px (devuelve -1) en la mitad central del periodo,
+ * de 750 a 2249 ms; el resto devuelve 0. Es lround(0.5 - 0.5 cos(2 pi t / 3000)) con el borde en entero. */
+#define FITO_RESPIRA_MS 3000u
+#define FITO_RESPIRA_SUBE_DESDE_MS 750u
+#define FITO_RESPIRA_SUBE_HASTA_MS 2250u
+int fito_respira_dy(uint32_t ahora_ms);
+
+/* "zzz" de la planta dormida: tres cuadros de 1 s (una zeta, dos, tres) que se repiten cada 3 s, al paso de la
+ * respiracion. Devuelve 0, 1 o 2. */
+#define FITO_ZZZ_CUADRO_MS 1000u
+int fito_zzz_cuadro(uint32_t ahora_ms);
+
+/* Pulsacion del boton: corta (saludo) si se solto despues de FITO_BOTON_REBOTE_MS y antes de `tope_ms` (donde
+ * empieza la cuenta regresiva del reinicio). Devuelve 1 o 0. */
+#define FITO_BOTON_REBOTE_MS 30u
+int fito_pulsacion_corta(uint32_t sostenido_ms, uint32_t tope_ms);
+
 #ifdef __cplusplus
 }
 #endif

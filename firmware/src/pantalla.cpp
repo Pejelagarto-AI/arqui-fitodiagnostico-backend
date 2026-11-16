@@ -1,4 +1,5 @@
 #include "pantalla.h"
+#include "nucleo/fito_nucleo.h"
 #include "configuracion.h"
 #include "registro.h"
 #include "sprites.h"
@@ -104,6 +105,13 @@ const uint8_t *const PLANTA[3] = {sprites::planta_saludable_0, sprites::planta_r
 const uint8_t *const CARNI_TRISTE[2] = {sprites::carni_riesgo_0, sprites::carni_critico_0};
 const uint8_t *const CARNI_BOCA[3] = {sprites::carni_abierta_0, sprites::carni_media, sprites::carni_cerrada};
 const int CARNI_G[3] = {14, 7, 0};                           // abertura de la boca de cada cuadro (la cara se ancla a ella)
+// Mascotas por especie (fase 7). Cada familia tiene su cuerpo por estado y, si lo necesita, un cuadro de idle.
+const uint8_t *const GIRASOL[3] = {sprites::girasol_saludable_0, sprites::girasol_riesgo_0, sprites::girasol_critico_0};
+const uint8_t *const CACTUS[3] = {sprites::cactus_saludable, sprites::cactus_riesgo, sprites::cactus_critico};
+const uint8_t *const SUCULENTA[3] = {sprites::suculenta_saludable_0, sprites::suculenta_riesgo_0, sprites::suculenta_critico_0};
+const uint8_t *const HELECHO[3][2] = {{sprites::helecho_saludable_0, sprites::helecho_saludable_1},
+                                      {sprites::helecho_riesgo_0, sprites::helecho_riesgo_1},
+                                      {sprites::helecho_critico_0, sprites::helecho_critico_1}};
 const uint8_t *const EXITO[6] = {sprites::exito_0, sprites::exito_1, sprites::exito_2,
                                  sprites::exito_3, sprites::exito_4, sprites::exito_5};
 
@@ -127,6 +135,10 @@ Cara caraDesde = CARA_NIVEL[0], caraHasta = CARA_NIVEL[0];
 uint32_t caraT0 = 0;
 int caraNivel = -1;
 uint32_t parpadeoDesde = 0, proximoParpadeo = 0;
+
+// Fase 11: lo que decide pintarLecturas() para el cuadro que se pinta y leen las caras y las familias.
+bool duermeAhora = false;              // la planta duerme en este cuadro (noche, sin aviso de sensores, sin saludo)
+int dyExtra = 0;                       // px que sube (negativo) o baja el cuerpo entero: saludo o respiracion
 
 float suave(float t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
 float mezcla(float a, float b, float k) { return a + (b - a) * k; }
@@ -185,7 +197,7 @@ void caraMatera(const Cara &c, float parpadeo, uint32_t ahora) {
         int y = yBoca(x, 23.5f, 2.5f, 60, 1.2f, c);
         oled.drawPixel(x, y < 59 ? 59 : y > 62 ? 62 : y, SSD1306_BLACK);
     }
-    if (caraNivel == 2) {                                         // lagrima ocasional
+    if (caraNivel == 2 && !duermeAhora) {                         // lagrima ocasional (dormida no llora)
         const uint32_t fase = ahora % 4200;
         if (fase < 900) {
             const int y = 56 + (int)(fase * 5 / 900);
@@ -195,28 +207,50 @@ void caraMatera(const Cara &c, float parpadeo, uint32_t ahora) {
     }
 }
 
-// Cara de la carnivora: ojos 5 de ancho (alto segun lo abiertos), cejas y, si esta triste, la boca.
-void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp, int yo, int dy, bool conBoca) {
+// Medidas de una cara grande (en negro sobre una zona lisa del sprite). Todo relativo al centro de los ojos.
+struct Geometria {
+    int8_t separacion;     // del centro de la cara al centro de cada ojo
+    int8_t altoOjo;        // alto del ojo abierto (ancho fijo de 5)
+    int8_t semiBoca;       // media boca en px
+    int8_t yBoca;          // fila de la boca bajo los ojos
+    float curvaBoca;       // px de curva de la sonrisa en los extremos
+    int8_t yCeja;          // fila de la ceja (negativa: encima de los ojos)
+    int8_t xLagrima;       // columna de la lagrima respecto al centro
+};
+const Geometria GEO_TRAMPA = {9, 7, 7, 2, 4.0f, -6, 13};     // la carnivora (fase 5): igual que antes, pixel a pixel
+const Geometria GEO_CHICA = {4, 5, 4, 4, 2.0f, -4, 7};       // girasol y suculenta: cabe en un disco de radio 9
+const Geometria GEO_CACTUS = {5, 5, 5, 4, 2.0f, -5, 8};      // cuerpo de 19 px de ancho
+
+// Cara grande: ojos de 5 de ancho (alto segun lo abiertos), cejas y, si `conBoca`, la boca y la lagrima.
+void caraGrande(const Cara &c, float parpadeo, uint32_t ahora, int cx, int cy, const Geometria &g, bool conBoca) {
     const float a = c.abierto * parpadeo;
-    const int h = max(1, (int)lroundf(7 * a));
-    const int cx = 24 + desv(yo, seno, amp);
+    const int h = max(1, (int)lroundf(g.altoOjo * a));
     for (int lado = -1; lado <= 1; lado += 2) {
-        const int ex = cx + 9 * lado;
-        const int top = yo + dy - h / 2;
+        const int ex = cx + g.separacion * lado;
+        const int top = cy - h / 2;
         oled.fillRoundRect(ex - 2, top, 5, h, h >= 4 ? 2 : h >= 2 ? 1 : 0, SSD1306_BLACK);
         if (h >= 5) oled.drawPixel(ex - 1, top + 1, SSD1306_WHITE);
         if (c.inclina > 0.2f) {                                   // el extremo de adentro mas alto: ceja triste
-            const int fuera = yo + dy - 6 + (int)lroundf(c.inclina), dentro = yo + dy - 6 - (int)lroundf(2 * c.inclina);
+            const int fuera = cy + g.yCeja + (int)lroundf(c.inclina), dentro = cy + g.yCeja - (int)lroundf(2 * c.inclina);
             oled.drawLine(ex + 4 * lado, fuera, ex - 3 * lado, dentro, SSD1306_BLACK);
         }
     }
     if (conBoca) {
-        for (int x = cx - 7; x <= cx + 7; x++) oled.drawPixel(x, yBoca(x, (float)cx, 7.0f, yo + 2 + dy, 4.0f, c), SSD1306_BLACK);
-        if (caraNivel == 2) {
+        for (int x = cx - g.semiBoca; x <= cx + g.semiBoca; x++)
+            oled.drawPixel(x, yBoca(x, (float)cx, (float)g.semiBoca, cy + g.yBoca, g.curvaBoca, c), SSD1306_BLACK);
+        if (caraNivel == 2 && !duermeAhora) {
             const uint32_t fase = ahora % 4200;
-            if (fase < 900) { const int y = yo + dy + 3 + (int)(fase * 7 / 900); oled.drawPixel(cx + 13, y, SSD1306_BLACK); oled.drawPixel(cx + 13, y + 1, SSD1306_BLACK); }
+            if (fase < 900) {
+                const int y = cy + g.yBoca + 1 + (int)(fase * 7 / 900);
+                oled.drawPixel(cx + g.xLagrima, y, SSD1306_BLACK); oled.drawPixel(cx + g.xLagrima, y + 1, SSD1306_BLACK);
+            }
         }
     }
+}
+
+// Cara de la carnivora (fase 5) sobre la cara grande generica.
+void caraTrampa(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp, int yo, int dy, bool conBoca) {
+    caraGrande(c, parpadeo, ahora, 24 + desv(yo, seno, amp), yo + dy, GEO_TRAMPA, conBoca);
 }
 
 // ---- estado de la pantalla de lecturas (para repintar sin que main reenvie todo) ----
@@ -224,9 +258,35 @@ Lectura lLect = {};
 char lNombre[64] = "";
 char lEstado[16] = "";
 bool lPunto = false;
-bool lCarnivora = false;
 int lNivel = 0;                         // 0 saludable, 1 en riesgo, 2 critico
+uint32_t lNivelDesde = 0;               // cuando entro al nivel actual (el cactus cuenta desde aqui para la flor)
 uint32_t lUltimoDibujo = 0;
+// Aviso de sensores (fase 10): la matera no puede medir algo. Lo decide el firmware solo, sin esperar al servidor.
+struct AvisoDeSensores { bool activo; bool falla[3]; bool hayBuena; uint32_t buenaMs; };
+AvisoDeSensores lAviso = {};
+// El nivel que se dibuja: con el aviso la mascota esta al menos preocupada (cara y cuerpo de "en riesgo"), aunque
+// el diagnostico de la ultima lectura buena dijera saludable. El nivel real (lNivel) no cambia.
+int nivelVisible() { return lAviso.activo && lNivel < 1 ? 1 : lNivel; }
+// Fase 11: el ultimo diagnostico dijo periodo NOCHE (la planta duerme) y el saludo de la pulsacion corta de BOOT.
+bool lNoche = false;
+bool saludando = false;
+uint32_t saludoDesde = 0;
+
+// ---- familias de mascota: el nombre de la especie que manda el servidor decide el dibujo ----
+enum class Familia : uint8_t { Comun, Carnivora, Girasol, Cactus, Suculenta, Helecho };
+struct Clave { const char *texto; Familia familia; };
+// Se busca cada texto dentro del nombre, sin mayusculas. La primera que coincide gana; sin coincidencia, la comun.
+const Clave CLAVES[] = {{"atrapamoscas", Familia::Carnivora}, {"carniv", Familia::Carnivora},
+                        {"girasol", Familia::Girasol}, {"cactus", Familia::Cactus}, {"cacto", Familia::Cactus},
+                        {"suculenta", Familia::Suculenta}, {"echeveria", Familia::Suculenta},
+                        {"helecho", Familia::Helecho}};
+Familia lFamilia = Familia::Comun;
+// Cuanto se balancea cada familia respecto a la comun (el girasol mas, el cactus casi nada). Indice: Familia.
+const float FACTOR_BALANCEO[] = {1.0f, 1.0f, 1.3f, 0.4f, 0.4f, 1.2f};
+// Riego: si la humedad sube al menos esto entre dos lecturas, la suculenta se infla (cae una gota y sonrie).
+constexpr float SUBIDA_RIEGO = 3.0f;
+float lHumedadPrevia = NAN;
+uint32_t regadoDesde = 0;
 bool mordiendo = false;
 uint32_t mordiscoDesde = 0;
 uint32_t proximoMordisco = 0;
@@ -241,31 +301,172 @@ bool contieneSinMayusculas(const char *pajar, const char *aguja) {
     return false;
 }
 
+Familia familiaDe(const char *especie) {
+    if (!especie) return Familia::Comun;
+    for (const Clave &k : CLAVES)
+        if (contieneSinMayusculas(especie, k.texto)) return k.familia;
+    return Familia::Comun;
+}
+
+// Centro de la cara de cada familia por nivel (saludable, en riesgo, critico): sigue a la cabeza del sprite.
+struct Punto { int8_t x, y; };
+const Punto CARA_GIRASOL[3] = {{24, 17}, {28, 22}, {31, 29}};
+const Punto CARA_GIRASOL_DORMIDO = {23, 21};      // la cabeza del sprite girasol_dormido (fase 11)
+const Punto CARA_CACTUS[3] = {{24, 22}, {24, 23}, {24, 29}};
+constexpr int CACTUS_Y_FLOR = 4;                 // centro de la flor: 5 px sobre la punta del cuerpo (fila 9)
+constexpr uint32_t CACTUS_ESPERA_FLOR_MS = 600;  // tras volver a saludable, un respiro y la flor empieza a crecer
+constexpr uint32_t CACTUS_CRECE_FLOR_MS = 1500;
+const Punto CARA_SUCULENTA[3] = {{24, 36}, {24, 37}, {24, 39}};
+constexpr uint32_t SUCULENTA_RESPIRA_MS = 4500;  // saludable: se infla 500 ms cada 4,5 s
+constexpr uint32_t GOTA_MS = 500, RIEGO_MS = 1600;  // la gota cae en 500 ms; el gusto dura hasta 1,6 s
+const uint16_t HELECHO_MS[3] = {450, 700, 1100};  // cada cuanto alterna las frondas: mas lento cuanto peor esta
+
+// Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
+// En riesgo y critico la cabeza cuelga quieta y la cara sigue al tallo.
+// Dormido (fase 11): saludable cambia al sprite de la cabeza caida y todo queda quieto salvo la respiracion.
+void pintarGirasol(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const bool dormido = duermeAhora && nivelVisible() == 0;
+    const Punto p = dormido ? CARA_GIRASOL_DORMIDO : CARA_GIRASOL[nivelVisible()];
+    int dy = 0, mira = 0;
+    const uint8_t *bmp = dormido ? sprites::girasol_dormido : GIRASOL[nivelVisible()];
+    if (nivelVisible() == 0 && !duermeAhora) {
+        if ((ahora / 400) % 2) bmp = sprites::girasol_saludable_1;
+        if (!saludando) dy = (int)lroundf(0.6f * sinf(6.2831853f * (ahora % 1600) / 1600.0f));   // el saludo manda
+        mira = (int)lroundf(1.5f * sinf(6.2831853f * (ahora % 5000) / 5000.0f));
+    }
+    dy += dyExtra;
+    cuerpo(bmp, seno, amp, dy);
+    caraGrande(c, parpadeo, ahora, p.x + mira + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
+}
+
+// Flor del cactus: de boton a cinco petalos segun `k` (0..1), con el centro apagado para que se lea como flor.
+void florCactus(int x, int y, float k) {
+    if (k <= 0) return;
+    if (k < 0.3f) { oled.fillRect(x - 1, y + 1, 3, 2, SSD1306_WHITE); return; }        // boton
+    const int d = 1 + (int)lroundf(2 * k), r = 1;
+    oled.fillCircle(x, y - d, r, SSD1306_WHITE);
+    oled.fillCircle(x - d, y - 1, r, SSD1306_WHITE); oled.fillCircle(x + d, y - 1, r, SSD1306_WHITE);
+    oled.fillCircle(x - d + 1, y + d - 1, r, SSD1306_WHITE); oled.fillCircle(x + d - 1, y + d - 1, r, SSD1306_WHITE);
+    oled.drawPixel(x, y, SSD1306_BLACK);
+}
+
+// Suculenta: roseta que respira (se infla un momento cada 4,5 s si esta saludable). Al regarla cae una gota, se infla
+// (o da un saltito si no esta saludable) y sonrie aunque este en riesgo o critica.
+void pintarSuculenta(Cara c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const Punto p = CARA_SUCULENTA[nivelVisible()];
+    const uint32_t tRiego = ahora - regadoDesde;
+    const bool regando = regadoDesde && tRiego < RIEGO_MS;
+    bool inflada = nivelVisible() == 0 && !duermeAhora && ahora % SUCULENTA_RESPIRA_MS < 500;
+    int dy = dyExtra;
+    if (regando && tRiego >= GOTA_MS) {
+        if (nivelVisible() == 0) inflada = true; else dy += tRiego < GOTA_MS + 300 ? -1 : 0;
+        c.boca = max(c.boca, 0.8f); c.onda = 0; c.inclina = min(c.inclina, 0.3f);
+    }
+    cuerpo(inflada ? sprites::suculenta_saludable_1 : SUCULENTA[nivelVisible()], seno, amp, dy);
+    caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y + dy, GEO_CHICA, true);
+    if (regando && tRiego < GOTA_MS)                                                   // la gota cae sobre la roseta
+        bitmap(20, -8 + (int)((p.y - 14) * tRiego / GOTA_MS), sprites::icono_gota, 8, 8);
+}
+
+// Helecho: cinco frondas de foliolos finos que se mecen (dos cuadros que alternan) ademas del balanceo; la cara va en
+// la matera, como la planta comun. En riesgo las frondas se arquean; critico cuelgan ralas y bota un foliolo.
+void pintarHelecho(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const int cuadro = duermeAhora ? 0 : (ahora / HELECHO_MS[nivelVisible()]) % 2;     // dormido no se mece
+    cuerpo(HELECHO[nivelVisible()][cuadro], seno, amp, dyExtra);
+    caraMatera(c, parpadeo, ahora);
+}
+
+// Cactus: casi no se balancea; parpadea como todos y, saludable, le crece una flor en la punta.
+// En riesgo baja los brazos y la flor se va; critico se encoge y bota una espina.
+void pintarCactus(const Cara &c, float parpadeo, uint32_t ahora, float seno, float amp) {
+    const Punto p = CARA_CACTUS[nivelVisible()];
+    cuerpo(CACTUS[nivelVisible()], seno, amp, dyExtra);
+    caraGrande(c, parpadeo, ahora, p.x + desv(p.y, seno, amp), p.y + dyExtra, GEO_CACTUS, true);
+    if (nivelVisible() == 0 && !duermeAhora && ahora - lNivelDesde > CACTUS_ESPERA_FLOR_MS) {   // de noche la flor se cierra
+        const float k = min(1.0f, (float)(ahora - lNivelDesde - CACTUS_ESPERA_FLOR_MS) / CACTUS_CRECE_FLOR_MS);
+        florCactus(24 + desv(CACTUS_Y_FLOR, seno, amp), CACTUS_Y_FLOR + dyExtra, suave(k));
+    }
+}
+
+// Lo que reemplaza a los tres numeros cuando un sensor falla. Sin tildes ni articulo ("no te siento / temperatura"): la
+// frase completa cabe en la app, aqui son 13 caracteres por linea.
+void pintarAviso(uint32_t ahora) {
+    static const char *const NOMBRE_SENSOR[3] = {"humedad", "luz", "temperatura"};
+    int cuantos = 0, cual = 0;
+    for (int i = 0; i < 3; i++) if (lAviso.falla[i]) { cuantos++; cual = i; }
+    texto(50, 2, cuantos == 1 ? "no te siento" : "no siento");
+    texto(50, 12, cuantos == 1 ? NOMBRE_SENSOR[cual] : "mis sensores");
+    if (lAviso.hayBuena) {
+        char hace[16];
+        fito_hace_cuanto((long)((ahora - lAviso.buenaMs) / 1000), hace, sizeof hace);
+        texto(50, 26, "lectura buena");
+        texto(50, 36, hace);
+    } else {
+        texto(50, 26, "sin lecturas");
+        texto(50, 36, "todavia");
+    }
+}
+
+// "zzz" de la planta dormida (fase 11): zetas de 3, 4 y 5 px en la esquina de arriba a la derecha del sprite, una mas
+// por cuadro (fito_zzz_cuadro). Cada una lleva un borde apagado de 1 px para leerse sobre las hojas. No respira.
+struct Zeta { int8_t x, y, lado; };
+const Zeta ZZZ[3] = {{37, 10, 3}, {40, 5, 4}, {43, 0, 5}};
+void zeta(const Zeta &z) {
+    oled.fillRect(z.x - 1, z.y - 1, z.lado + 2, z.lado + 2, SSD1306_BLACK);
+    oled.drawFastHLine(z.x, z.y, z.lado, SSD1306_WHITE);
+    oled.drawFastHLine(z.x, z.y + z.lado - 1, z.lado, SSD1306_WHITE);
+    for (int i = 1; i < z.lado - 1; i++) oled.drawPixel(z.x + z.lado - 1 - i, z.y + i, SSD1306_WHITE);
+}
+void pintarZzz(uint32_t ahora) {
+    const int cuadro = fito_zzz_cuadro(ahora);
+    for (int i = 0; i <= cuadro; i++) zeta(ZZZ[i]);
+}
+
 void pintarLecturas(uint32_t ahora) {
     limpiar();
     modo = Modo::Lecturas;
     lUltimoDibujo = ahora;
-    fijarNivel(lNivel, ahora);
-    const Cara c = caraEn(ahora);
-    const float parpadeo = factorParpadeo(ahora);
-    const float seno = sinf(6.2831853f * (ahora % PERIODO_BALANCEO_MS) / PERIODO_BALANCEO_MS);
-    const float amp = AMPLITUD[lNivel];
-    if (!lCarnivora) {
-        cuerpo(PLANTA[lNivel], seno, amp, 0);
+    // Fase 11. El saludo (BOOT corto) gana a todo: salta y parpadea doble con la cara contenta, aunque sea de noche.
+    // Si no saluda y el diagnostico dijo NOCHE (y no hay aviso de sensores), duerme: ojos cerrados, sin balanceo ni
+    // idle, respira 1 px cada 3 s y flota el "zzz".
+    const int cuadroSaludo = saludando ? fito_saludo_cuadro(ahora - saludoDesde) : -1;
+    if (cuadroSaludo < 0) saludando = false;
+    duermeAhora = lNoche && !lAviso.activo && !saludando;
+    dyExtra = saludando ? FITO_SALUDO_DY[cuadroSaludo] : duermeAhora ? fito_respira_dy(ahora) : 0;
+    fijarNivel(nivelVisible(), ahora);
+    const Cara c = saludando ? CARA_NIVEL[0] : caraEn(ahora);
+    float parpadeo = factorParpadeo(ahora);                  // se llama siempre: el reloj del parpadeo sigue
+    if (saludando) parpadeo = FITO_SALUDO_OJOS[cuadroSaludo];
+    else if (duermeAhora) parpadeo = 0.0f;
+    const float seno = duermeAhora ? 0.0f : sinf(6.2831853f * (ahora % PERIODO_BALANCEO_MS) / PERIODO_BALANCEO_MS);
+    const float amp = AMPLITUD[nivelVisible()] * FACTOR_BALANCEO[(int)lFamilia];
+    if (lFamilia == Familia::Girasol) {
+        pintarGirasol(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Cactus) {
+        pintarCactus(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Suculenta) {
+        pintarSuculenta(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia == Familia::Helecho) {
+        pintarHelecho(c, parpadeo, ahora, seno, amp);
+    } else if (lFamilia != Familia::Carnivora) {
+        cuerpo(PLANTA[nivelVisible()], seno, amp, dyExtra);
         caraMatera(c, parpadeo, ahora);
-    } else if (lNivel > 0) {
-        cuerpo(CARNI_TRISTE[lNivel - 1], seno, amp, 0);
-        caraTrampa(c, parpadeo, ahora, seno, amp, lNivel == 1 ? 25 : 30, 0, true);
+    } else if (nivelVisible() > 0) {
+        cuerpo(CARNI_TRISTE[nivelVisible() - 1], seno, amp, dyExtra);
+        caraTrampa(c, parpadeo, ahora, seno, amp, nivelVisible() == 1 ? 25 : 30, dyExtra, true);
+    } else if (duermeAhora) {                                                  // dormida: la trampa cerrada
+        cuerpo(CARNI_BOCA[2], seno, amp, dyExtra);
+        caraTrampa(c, parpadeo, ahora, seno, amp, (32 - CARNI_G[2]) / 2, dyExtra, false);
     } else {
         if (!mordiendo && (int32_t)(ahora - proximoMordisco) >= 0) {          // mordisco espontaneo de vez en cuando
             mordiendo = true; mordiscoDesde = ahora;
             proximoMordisco = ahora + 6000 + (ahora % 4000);
         }
-        int boca = 0, dy = 0;
+        int boca = 0, dy = dyExtra;
         if (mordiendo) {
             const uint32_t t = ahora - mordiscoDesde;
             if (t >= MORDISCO_MS) mordiendo = false;
-            else { int i = 0; while (t >= MORDISCO[i].hasta) i++; boca = MORDISCO[i].boca; dy = MORDISCO[i].dy; }
+            else { int i = 0; while (t >= MORDISCO[i].hasta) i++; boca = MORDISCO[i].boca; dy += MORDISCO[i].dy; }
         }
         cuerpo(CARNI_BOCA[boca], seno, amp, dy);
         Cara cm = c;
@@ -276,7 +477,16 @@ void pintarLecturas(uint32_t ahora) {
     struct Fila { const uint8_t *icono; const char *unidad; } filas[3] = {
         {sprites::icono_gota, "%"}, {sprites::icono_sol, "lx"}, {sprites::icono_termometro, "C"}};
     snprintf(v, sizeof v, "%d", (int)roundf(lLect.humedad));
-    for (int i = 0; i < 3; i++) {
+    if (lAviso.activo) pintarAviso(ahora);
+    if (duermeAhora) pintarZzz(ahora);
+    for (int i = 0; i < 3 && !lAviso.activo; i++) {
+        if (i == 1 && lNoche) {
+            // De noche la luz no cuenta (fase 8): en vez del numero dice "duerme", centrado en la fila. En grande no cabe
+            // (71 px de 67) y con los lux al lado se lee mal ("3lx" parece "31x"): los lux de ahora los muestra la app.
+            bitmap(50, i * 15 + 3, filas[i].icono, 8, 8);
+            texto(61, i * 15 + 4, "duerme");
+            continue;
+        }
         if (i == 1) snprintf(v, sizeof v, "%d", (int)min(99999.0f, max(0.0f, roundf(lLect.luz))));
         if (i == 2) snprintf(v, sizeof v, "%.1f", lLect.temperatura);
         const int y = i * 15;
@@ -286,8 +496,8 @@ void pintarLecturas(uint32_t ahora) {
         if (largo < 5) texto(61 + 12 * largo + 1, y + 7, filas[i].unidad);
     }
     nombreEnVentana(0, 50, 47, 78, lNombre, ahora);
-    texto(50, 56, lEstado);
-    if (lPunto) oled.fillCircle(123, 59, 3, SSD1306_WHITE);
+    texto(50, 56, lAviso.activo ? "REVISA SENSOR" : lEstado);
+    if (lPunto && !lAviso.activo) oled.fillCircle(123, 59, 3, SSD1306_WHITE);
     listo();
 }
 
@@ -519,12 +729,17 @@ void vinculada(const char *codigo) {
     listo();
 }
 
-void lecturas(const char *codigo, const Lectura &l, const char *estado, bool punto, const char *especie) {
+void lecturas(const char *codigo, const Lectura &l, const char *estado, bool punto, const char *especie, bool noche) {
     if (!lista) return;   // sin OLED no hay bufer: dibujar escribiria en una direccion nula
+    lNoche = noche;
+    lAviso.activo = false;   // una lectura completa llego: los sensores responden
+    if (!isnan(lHumedadPrevia) && l.humedad >= lHumedadPrevia + SUBIDA_RIEGO) regadoDesde = millis();
+    lHumedadPrevia = l.humedad;
     lLect = l;
     lPunto = punto;
     aAscii(codigo, lNombre, sizeof lNombre);
-    lCarnivora = especie && (contieneSinMayusculas(especie, "atrapamoscas") || contieneSinMayusculas(especie, "carniv"));
+    lFamilia = familiaDe(especie);
+    const int nivelAntes = lNivel;
     lNivel = 0;
     const char *etiqueta = "-";
     if (estado && estado[0]) {
@@ -533,6 +748,21 @@ void lecturas(const char *codigo, const Lectura &l, const char *estado, bool pun
         else etiqueta = "SALUDABLE";
     }
     strlcpy(lEstado, etiqueta, sizeof lEstado);
+    if (lNivel != nivelAntes || !lNivelDesde) lNivelDesde = millis();
+    if (proximoMordisco == 0) proximoMordisco = millis() + 4000;
+    pintarLecturas(millis());
+}
+
+void sensoresFallan(const char *codigo, const char *especie, const bool falla[3], bool hayBuena, uint32_t ultimaBuenaMs) {
+    if (!lista) return;
+    for (int i = 0; i < 3; i++) lAviso.falla[i] = falla[i];
+    lAviso.hayBuena = hayBuena;
+    lAviso.buenaMs = ultimaBuenaMs;
+    const bool nuevo = !lAviso.activo;
+    lAviso.activo = true;
+    aAscii(codigo, lNombre, sizeof lNombre);
+    lFamilia = familiaDe(especie);
+    if (nuevo && !lNivelDesde) lNivelDesde = millis();
     if (proximoMordisco == 0) proximoMordisco = millis() + 4000;
     pintarLecturas(millis());
 }
@@ -544,10 +774,17 @@ void animarLecturas(uint32_t ahoraMs) {
 }
 
 void mordisco(uint32_t ahoraMs) {
-    if (!lCarnivora || lNivel > 0) return;
+    if (lFamilia != Familia::Carnivora || lNivel > 0 || lNoche) return;     // dormida no muerde
     mordiendo = true;
     mordiscoDesde = ahoraMs;
     proximoMordisco = ahoraMs + 6000 + (ahoraMs % 4000);
+}
+
+void saludar(uint32_t ahoraMs) {
+    if (!lista || modo != Modo::Lecturas) return;            // solo donde hay mascota: no en el QR ni en las pantallas de texto
+    saludando = true;
+    saludoDesde = ahoraMs;
+    pintarLecturas(ahoraMs);
 }
 
 void sinRed(size_t guardadas) {

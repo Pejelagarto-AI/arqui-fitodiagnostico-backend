@@ -84,6 +84,17 @@ void ciclo() {
             yaConectada();
         } else if (millis() - inicioIntento > config::ESPERA_WIFI_MS) {
             registrar("no conecto en %u s", (unsigned)(config::ESPERA_WIFI_MS / 1000));
+            // El Wi-Fi guardado en NVS (de otra prueba, otra red) no esta: antes del portal se prueba el de
+            // compilacion (local.ini), si es otro. Si conecta, queda guardado junto con el servidor de local.ini.
+            if (!usoDefectos && strlen(FITO_WIFI_SSID) > 0 && identidad::wifiSsid() != FITO_WIFI_SSID) {
+                usoDefectos = true;
+                WiFi.disconnect();
+                WiFi.begin(FITO_WIFI_SSID, FITO_WIFI_CLAVE);
+                inicioIntento = millis();
+                registrar("se prueba el Wi-Fi de compilacion: %s (hasta %u s)...", FITO_WIFI_SSID,
+                          (unsigned)(config::ESPERA_WIFI_MS / 1000));
+                break;
+            }
             empezarPortal();
         }
         break;

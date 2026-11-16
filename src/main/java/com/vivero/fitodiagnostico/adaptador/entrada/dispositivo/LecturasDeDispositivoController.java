@@ -5,6 +5,7 @@ import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort.VinculoVigente;
+import com.vivero.fitodiagnostico.salud.ReportarSaludPort;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,10 +47,13 @@ public class LecturasDeDispositivoController {
 
     private final RegistrarLecturaPort lecturas;
     private final VerificarVinculoPort vinculo;
+    private final ReportarSaludPort salud;
 
-    public LecturasDeDispositivoController(RegistrarLecturaPort lecturas, VerificarVinculoPort vinculo) {
+    public LecturasDeDispositivoController(RegistrarLecturaPort lecturas, VerificarVinculoPort vinculo,
+                                           ReportarSaludPort salud) {
         this.lecturas = lecturas;
         this.vinculo = vinculo;
+        this.salud = salud;
     }
 
     /** 201 con el diagnóstico guardado. 400 si el cuerpo es inválido; 403 si el token no es de este dispositivo. */
@@ -67,8 +71,11 @@ public class LecturasDeDispositivoController {
         // El token puede seguir vigente tras desvincular o traspasar la matera: se exige el vínculo actual (D96).
         VinculoVigente vigente = vinculo.exigirVinculo(dispositivoId, plantaId);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(RespuestaLectura.desde(
+        RespuestaLectura respuesta = RespuestaLectura.desde(
                 lecturas.registrar(plantaId, solicitud.aMedicion(), OrigenDeMedicion.DISPOSITIVO,
-                        solicitud.marcaDeTiempo()), vigente.apodo()));
+                        solicitud.marcaDeTiempo()), vigente.apodo());
+        // Fase 10: una lectura completa es noticia de la matera (cuándo llegó la última, y que sus sensores sirven).
+        salud.registrarLectura(dispositivoId, plantaId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }

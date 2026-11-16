@@ -206,7 +206,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
     void duenoInvitaVisitanteSeRegistraYAceptaDuenoMideConCambioDeEstadoInvitadoSeEnteraPorCorreoYWebSocketDuenoRevocaYInvitadoRecibeAccesoPerdido()
             throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         String visitante = "compartir-visita-" + UUID.randomUUID().toString().substring(0, 6) + "@vivero.co";
 
         // 1. El dueño invita por correo.
@@ -308,7 +308,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
         Cuenta ajeno = registrar("Ajeno");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         compartir(dueno, planta, invitado);
 
         conectar(dueno.token()).suscribir("/user/queue/plantas/" + planta);
@@ -329,7 +329,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
     void unAjenoRechazadoNoRecibeNadaAunqueElDuenoMida() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta ajeno = registrar("Ajeno");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         Cliente intruso = conectar(ajeno.token());
         intruso.suscribirYEsperarRechazo("/user/queue/plantas/" + planta);
         Cliente delDueno = conectar(dueno.token());
@@ -344,7 +344,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
     @Test
     void elAdministradorNoPuedeSuscribirseALaPlantaDeOtro() throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         Cliente admin = conectar(tokenDelAdministrador());
 
         admin.suscribirYEsperarRechazo("/user/queue/plantas/" + planta);
@@ -354,7 +354,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
     @Test
     void elClienteNoPuedeEnviarMensajesPorElCanal() throws Exception {
         Cuenta dueno = registrar("Dueña");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         Cliente delDueno = conectar(dueno.token());
         delDueno.suscribir("/user/queue/plantas/" + planta);
         Cliente otro = conectar(dueno.token());
@@ -393,7 +393,7 @@ class VistaEnVivoIntegracionTest extends BaseDeIntegracionDeCompartir {
     void ningunMensajeEnVivoLlevaUnToken() throws Exception {
         Cuenta dueno = registrar("Dueña");
         Cuenta invitado = registrar("Beto");
-        String planta = crearPlanta(dueno, "Pepa", "potos");
+        String planta = crearPlanta(dueno, "Pepa", "helecho");
         Cliente avisos = conectar(invitado.token());
         avisos.suscribir("/user/queue/avisos");
         compartir(dueno, planta, invitado);

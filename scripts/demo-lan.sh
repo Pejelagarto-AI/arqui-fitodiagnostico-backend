@@ -8,10 +8,11 @@
 #
 # La clave de flota es UNA sola: si firmware/local.ini tiene clave_flota, se usa esa; si no, la de .env.demo; si
 # ninguna existe, se genera y se escribe en .env.demo y (si el archivo existe) en firmware/local.ini.
-# Variables: FITO_FRONT_DIR (carpeta del front, por defecto ~/Documentos/fitodiagnostico-frontend).
+# Variables: FITO_FRONT_DIR (carpeta del front, por defecto ~/Documentos/fitodiagnostico-frontend), FITO_CORS_EXTRA (origenes
+# adicionales permitidos, separados por coma; demo-https.sh pasa los suyos), FITO_RAIZ (raiz del repo si el script corre desde otro sitio).
 set -euo pipefail
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RAIZ="${FITO_RAIZ:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"   # FITO_RAIZ: usar otro checkout como raiz (jar, .env.demo, local.ini)
 LOCAL_INI="$RAIZ/firmware/local.ini"
 ENV_DEMO="$RAIZ/.env.demo"
 FRONT_DIR="${FITO_FRONT_DIR:-$HOME/Documentos/fitodiagnostico-frontend}"
@@ -127,7 +128,7 @@ FRONT_URL="http://$IP:$PUERTO_FRONT"
   export FITO_ADMIN_CONTRASENA="$(leer_env FITO_ADMIN_CONTRASENA)"
   export FITO_CLAVE_FLOTA="$CLAVE"
   export FITO_FRONT_URL="$FRONT_URL/#"
-  export FITODIAGNOSTICO_CORS_ORIGENES="$FRONT_URL,http://localhost:$PUERTO_FRONT"
+  export FITODIAGNOSTICO_CORS_ORIGENES="$FRONT_URL,http://localhost:$PUERTO_FRONT${FITO_CORS_EXTRA:+,$FITO_CORS_EXTRA}"
   export SERVER_PORT="$PUERTO_API"
   export SPRING_DATASOURCE_URL="jdbc:h2:file:$ESTADO/fito-demo;DB_CLOSE_ON_EXIT=FALSE"
   nohup java -Xmx384m -jar "$JAR" > "$ESTADO/backend.log" 2>&1 &
