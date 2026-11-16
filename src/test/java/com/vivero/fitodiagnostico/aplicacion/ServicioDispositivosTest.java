@@ -1,5 +1,11 @@
 package com.vivero.fitodiagnostico.aplicacion;
 
+import com.vivero.fitodiagnostico.dobles.SaludEnMemoria;
+import com.vivero.fitodiagnostico.salud.EstadoDeSalud;
+import com.vivero.fitodiagnostico.salud.EstadoDeSensor;
+import com.vivero.fitodiagnostico.salud.SaludDelDispositivo;
+import com.vivero.fitodiagnostico.salud.SensorDeMatera;
+import java.util.Map;
 import com.vivero.fitodiagnostico.dobles.AutenticadorDeDispositivosFalso;
 import com.vivero.fitodiagnostico.dobles.EmisorTokenDispositivoFijo;
 import com.vivero.fitodiagnostico.dobles.GeneradorDeTokensFijo;
@@ -42,6 +48,7 @@ class ServicioDispositivosTest {
     private final UUID admin = UUID.randomUUID();
     private final UUID dueno = UUID.randomUUID();
     private final UUID invitado = UUID.randomUUID();
+    private SaludEnMemoria salud;
     private final UUID ajeno = UUID.randomUUID();
 
     private MundoEnMemoria mundo;
@@ -53,10 +60,11 @@ class ServicioDispositivosTest {
     @BeforeEach
     void preparar() {
         mundo = new MundoEnMemoria();
+        salud = new SaludEnMemoria();
         emisor = new EmisorTokenDispositivoFijo();
         reloj = RelojManual.enUnDiaCualquiera();
         servicio = new ServicioDispositivos(mundo.plantas, mundo.accesos, new PoliticaDeAcceso(), mundo.dispositivos,
-                emisor, new AutenticadorDeDispositivosFalso(), new GeneradorDeTokensFijo(), reloj);
+                emisor, new AutenticadorDeDispositivosFalso(), new GeneradorDeTokensFijo(), salud, reloj);
         planta = Planta.nueva(dueno, "Pepa", Muestras.especie("helecho"));
         mundo.plantas.guardar(planta);
         mundo.accesos.otorgar(AccesoCompartido.otorgadoAhora(planta.id(), invitado));
@@ -158,13 +166,12 @@ class ServicioDispositivosTest {
     }
 
     @Test
-    void elInvitadoNoPuedeReclamarListarNiDesvincularYUnAjenoRecibeLoMismoQueSiNoExistiera() {
+    void elInvitadoNoPuedeReclamarNiDesvincularYUnAjenoRecibeLoMismoQueSiNoExistiera() {
         deFabrica();
         servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
 
         assertThatThrownBy(() -> servicio.reclamar(invitado, planta.id(), "fito-AAAAAA"))
                 .isInstanceOf(OperacionNoPermitidaException.class);
-        assertThatThrownBy(() -> servicio.listar(invitado, planta.id())).isInstanceOf(OperacionNoPermitidaException.class);
         assertThatThrownBy(() -> servicio.desvincular(invitado, planta.id(), "fito-AAAAAA"))
                 .isInstanceOf(OperacionNoPermitidaException.class);
         assertThatThrownBy(() -> servicio.reclamar(ajeno, planta.id(), "fito-AAAAAA"))
@@ -172,6 +179,29 @@ class ServicioDispositivosTest {
         assertThatThrownBy(() -> servicio.listar(ajeno, planta.id())).isInstanceOf(PlantaNoEncontradaException.class);
         assertThatThrownBy(() -> servicio.desvincular(ajeno, planta.id(), "fito-AAAAAA"))
                 .isInstanceOf(PlantaNoEncontradaException.class);
+    }
+
+    @Test
+    void elInvitadoPuedeListarLosDispositivosDeLaPlantaCompartida() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThat(servicio.listar(invitado, planta.id())).extracting(Dispositivo::serial)
+                .containsExactly("fito-AAAAAA");
+    }
+
+    @Test
+    void desvincularBorraLaSaludYLaUltimaLecturaParaQueElSiguienteDuenoNoLaHerede() {
+        deFabrica();
+        servicio.reclamar(dueno, planta.id(), "fito-AAAAAA");
+        salud.guardar(new SaludDelDispositivo("fito-AAAAAA", EstadoDeSalud.FALLA,
+                Map.of(SensorDeMatera.HUMEDAD, EstadoDeSensor.OK, SensorDeMatera.LUZ, EstadoDeSensor.OK,
+                        SensorDeMatera.TEMPERATURA, EstadoDeSensor.FALLA), "dht22", reloj.instant(), reloj.instant(),
+                reloj.instant()));
+
+        servicio.desvincular(dueno, planta.id(), "fito-AAAAAA");
+
+        assertThat(salud.de("fito-AAAAAA")).isEmpty();
     }
 
     @Test

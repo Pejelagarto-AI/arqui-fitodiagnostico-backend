@@ -12,4 +12,7 @@ public interface RepositorioDeSalud {
     Optional<SaludDelDispositivo> de(String serial);
 
     List<SaludDelDispositivo> de(Collection<String> seriales);
+
+    /** Borra la salud de un dispositivo (al desvincularlo, D173). Sin fila no hace nada. */
+    void eliminar(String serial);
 }
