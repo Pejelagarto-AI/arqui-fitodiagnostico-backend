@@ -122,7 +122,7 @@ class SuscriptorDeLecturasMqttTest {
         String texto = json.writeValueAsString(procesar(lectura("bueno", "55", "700", "22")));
 
         assertThat(json.readTree(texto).fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("ok", "id", "estado", "registradaEn", "apodo");
+                .containsExactlyInAnyOrder("ok", "id", "estado", "registradaEn", "apodo", "periodo");   // periodo: fase 8
     }
 
     // ---- autenticacion: nada de esto llega al puerto ----

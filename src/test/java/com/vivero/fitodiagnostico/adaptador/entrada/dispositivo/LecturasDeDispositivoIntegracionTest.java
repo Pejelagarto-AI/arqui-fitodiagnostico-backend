@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -112,6 +113,11 @@ class LecturasDeDispositivoIntegracionTest {
                 + ",\"temperatura\":" + temperatura + "}";
     }
 
+    private static String lecturaEn(String marca, String humedad, String luz, String temperatura) {
+        return "{\"marcaDeTiempo\":\"" + marca + "\",\"humedad\":" + humedad + ",\"luz\":" + luz
+                + ",\"temperatura\":" + temperatura + "}";
+    }
+
     private int diagnosticosDe(String plantaId) {
         return jdbc.queryForObject("select count(*) from diagnostico_planta where planta_id = ?", Integer.class,
                 UUID.fromString(plantaId));
@@ -136,6 +142,38 @@ class LecturasDeDispositivoIntegracionTest {
                 .andExpect(jsonPath("$.hayDiagnostico").value(true))
                 .andExpect(jsonPath("$.diagnostico.origen").value("DISPOSITIVO"))
                 .andExpect(jsonPath("$.diagnostico.tomadaEn").value(MARCA));
+    }
+
+    @Test
+    void laPrimeraLecturaDiceQueLaLuzSeEvaluoAlInstanteYDeDia() throws Exception {
+        // Fase 8: el contrato solo agrega campos.
+        reportar(tokenDelDispositivo, lectura("70", "500", "22"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.diagnostico.periodo").value("DIA"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.base").value("INSTANTANEA"))
+                .andExpect(jsonPath("$.diagnostico.parametros[1].valor").value(500.0))
+                .andExpect(jsonPath("$.diagnostico.parametros[1].valorEvaluado").value(500.0));
+    }
+
+    @Test
+    void conDosHorasDeOscuridadLaPlantaDuermeYElVigenteLoDice() throws Exception {
+        // Luz hace 3 h, oscuridad desde hace 2 h: es de noche. 10 lux contra 150-800 no la pone en riesgo.
+        Instant ahora = Instant.parse(MARCA);
+        reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(3 * 3600).toString(), "70", "500", "22"))
+                .andExpect(status().isCreated());
+        reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(2 * 3600).toString(), "70", "10", "22"))
+                .andExpect(status().isCreated());
+        reportar(tokenDelDispositivo, lectura("70", "10", "22"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.diagnostico.periodo").value("NOCHE"))
+                .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.base").value("ACUMULADA"))
+                .andExpect(jsonPath("$.diagnostico.exposicionLuminica.horasEnOscuridad").value(2.0));
+
+        mockMvc.perform(con(get("/api/v1/plantas/" + planta + "/diagnostico"), dueno))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diagnostico.diagnostico.periodo").value("NOCHE"))
+                .andExpect(jsonPath("$.diagnostico.diagnostico.exposicionLuminica.base").value("ACUMULADA"));
     }
 
     @Test
