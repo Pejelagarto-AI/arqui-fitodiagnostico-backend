@@ -20,3 +20,7 @@ fitodiagnostico:
   mascota:
     tic:
       habilitado: false
+  # Fase 12: sin tarea diaria de retención en las pruebas; las que la necesitan llaman al puerto con un reloj manual.
+  historial:
+    retencion:
+      habilitada: false

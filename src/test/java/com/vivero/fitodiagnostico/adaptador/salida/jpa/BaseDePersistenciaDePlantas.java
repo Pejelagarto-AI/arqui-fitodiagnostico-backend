@@ -38,8 +38,19 @@ import java.util.UUID;
         AdaptadorUsuarioJpa.class, MapeadorUsuario.class, AdaptadorAccesoJpa.class,
         AdaptadorDiagnosticoJpa.class, MapeadorDiagnosticoDePlanta.class,
         AdaptadorInvitacionJpa.class, AdaptadorRestablecimientoJpa.class, AdaptadorSolicitudEspecieJpa.class,
-        AdaptadorDispositivoJpa.class})
+        AdaptadorDispositivoJpa.class, ResumenesDeLuz.class, AdaptadorHistorialJpa.class,
+        BaseDePersistenciaDePlantas.RelojDePrueba.class})
 abstract class BaseDePersistenciaDePlantas {
+
+    /** El reloj que pide {@code ResumenesDeLuz} (en la aplicación lo da la composición). */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class RelojDePrueba {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock reloj() {
+            return java.time.Clock.systemUTC();
+        }
+    }
+
 
     @Autowired protected AdaptadorPlantaJpa plantas;
     @Autowired protected AdaptadorAccesoJpa accesos;

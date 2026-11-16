@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,10 +27,13 @@ public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos {
 
     private final DiagnosticoDePlantaJpaRepository jpa;
     private final MapeadorDiagnosticoDePlanta mapeador;
+    private final ResumenesDeLuz resumenes;
 
-    public AdaptadorDiagnosticoJpa(DiagnosticoDePlantaJpaRepository jpa, MapeadorDiagnosticoDePlanta mapeador) {
+    public AdaptadorDiagnosticoJpa(DiagnosticoDePlantaJpaRepository jpa, MapeadorDiagnosticoDePlanta mapeador,
+                                   ResumenesDeLuz resumenes) {
         this.jpa = jpa;
         this.mapeador = mapeador;
+        this.resumenes = resumenes;
     }
 
     @Override
@@ -46,10 +51,31 @@ public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos {
                 paginacion.pagina(), paginacion.tamano(), pagina.getTotalElements());
     }
 
-    /** Reemplaza la implementación por defecto del puerto (que pagina diagnósticos completos) por una consulta. */
+    /**
+     * Reemplaza la implementación por defecto del puerto (que pagina diagnósticos completos) por consultas (D127) y,
+     * desde la fase 12, por el resumen por hora (D175): las horas enteras cerradas dentro de {@code [desde, hasta)} salen
+     * del resumen (una fila por hora) y solo la hora en curso sale de las lecturas crudas. El puerto y el dominio no
+     * cambian: el dominio recibe la serie de siempre, con pocas muestras sintéticas en lugar de las miles de la hora.
+     *
+     * <p>Aproximación (D175): la hora parcial más antigua de la ventana ({@code desde} hasta la hora en punto) no
+     * cuenta, así que de 24 h se miran entre 23 y 24 h. Si el rango no contiene una hora entera cerrada, todo sale de
+     * las crudas, como antes.
+     */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public SerieTemporal serieDe(UUID plantaId, Magnitud magnitud, Instant desde, Instant hasta) {
+        Instant primeraCerrada = ResumenesDeLuz.primeraHoraDesde(desde);
+        Instant horaEnCurso = ResumenesDeLuz.inicioDeLaHora(hasta);
+        if (magnitud != Magnitud.LUZ || !primeraCerrada.isBefore(horaEnCurso)) {
+            return crudas(plantaId, magnitud, desde, hasta);
+        }
+        List<Muestra> muestras = new ArrayList<>(ResumenDeLuzPorHora.comoSerie(
+                resumenes.deLasHoras(plantaId, primeraCerrada, horaEnCurso), primeraCerrada));
+        muestras.addAll(crudas(plantaId, magnitud, horaEnCurso, hasta).muestras());
+        return SerieTemporal.de(muestras);
+    }
+
+    private SerieTemporal crudas(UUID plantaId, Magnitud magnitud, Instant desde, Instant hasta) {
         return SerieTemporal.de(jpa.serie(plantaId, magnitud, desde, hasta).stream()
                 .map(fila -> new Muestra((Instant) fila[0], ((Number) fila[1]).doubleValue()))
                 .toList());
@@ -61,6 +87,12 @@ public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos {
         DiagnosticoDePlantaEntity entidad = jpa.findById(diagnostico.id()).orElseGet(mapeador::nuevaEntidad);
         mapeador.volcarEn(entidad, diagnostico);
         jpa.saveAndFlush(entidad);
+        // Fase 12 (D175): una lectura que llega a una hora que ya cerró (cola sin red, reloj de la matera) cambia lo que
+        // ese resumen debía decir. En el camino normal tomada y registrada caen en la misma hora y no cuesta nada.
+        Instant horaTomada = ResumenesDeLuz.inicioDeLaHora(diagnostico.tomadaEn());
+        if (!horaTomada.equals(ResumenesDeLuz.inicioDeLaHora(diagnostico.registradoEn()))) {
+            resumenes.invalidar(diagnostico.plantaId(), horaTomada);
+        }
     }
 
     @Override
