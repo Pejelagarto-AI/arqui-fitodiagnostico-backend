@@ -17,7 +17,7 @@ public enum Animo {
     CON_FRIO,
     /** Temperatura ALTO. */
     CON_CALOR,
-    /** Luz BAJO. Cuando exista {@code periodo} en el diagnóstico, de noche será DORMIDA (ver MapaDeAnimo). */
+    /** Luz BAJO. Con {@code Diagnostico.periodo()} (fase 8) de noche será DORMIDA (ver MapaDeAnimo). */
     A_OSCURAS,
     /** Luz ALTO. */
     DESLUMBRADA,

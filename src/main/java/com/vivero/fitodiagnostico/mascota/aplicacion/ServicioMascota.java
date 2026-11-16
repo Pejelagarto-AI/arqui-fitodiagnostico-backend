@@ -19,7 +19,7 @@ import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.EventoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.MapaDeAnimo;
-import com.vivero.fitodiagnostico.mascota.modelo.Muestra;
+import com.vivero.fitodiagnostico.mascota.modelo.LecturaReciente;
 import com.vivero.fitodiagnostico.mascota.modelo.ParametrosDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.ReglasDeVitalidad;
 import com.vivero.fitodiagnostico.mascota.modelo.ResultadoDeAccion;
@@ -115,7 +115,7 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         EstadoDeMascota estado = avance.estado();
         List<EventoDeMascota> nuevos = new ArrayList<>(avance.eventos());
 
-        List<Muestra> muestras = muestrasRecientes(registro.plantaId());
+        List<LecturaReciente> muestras = muestrasRecientes(registro.plantaId());
         Optional<EventoDeMascota> regada = detector.riego(registro.plantaId(), muestras, estado.ultimaRegadaEn());
         if (regada.isPresent()) {
             nuevos.add(regada.get());
@@ -152,7 +152,7 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         List<EventoDeMascota> nuevos = new ArrayList<>(avance.eventos());
         Optional<AccionDeMascota> pendiente = acciones.pendienteDe(plantaId);
         if (pendiente.isPresent()) {
-            List<Muestra> muestras = muestrasRecientes(plantaId);
+            List<LecturaReciente> muestras = muestrasRecientes(plantaId);
             resolverPendiente(plantaId, muestras, avance.estado(), ahora).ifPresent(nuevos::add);
         }
         // Escribir solo si algo cambió: una mascota SALUDABLE con 100 de vitalidad no genera una escritura por minuto.
@@ -185,7 +185,7 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         if (yaPendiente.isPresent()) {
             return ResultadoDeAccion.de(yaPendiente.get());   // idempotente: decirlo dos veces no abre dos esperas
         }
-        List<Muestra> muestras = muestrasRecientes(plantaId);
+        List<LecturaReciente> muestras = muestrasRecientes(plantaId);
         AccionDeMascota accion = AccionDeMascota.riegoDeclarado(plantaId, ahora,
                 ahora.plus(parametros.plazoParaConfirmarRiego()),
                 detector.humedadDeReferencia(muestras, ahora).orElse(null));
@@ -202,7 +202,7 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         return ResultadoDeAccion.de(guardada);
     }
 
-    private Optional<EventoDeMascota> resolverPendiente(UUID plantaId, List<Muestra> muestras, EstadoDeMascota estado,
+    private Optional<EventoDeMascota> resolverPendiente(UUID plantaId, List<LecturaReciente> muestras, EstadoDeMascota estado,
                                                         Instant ahora) {
         return acciones.pendienteDe(plantaId)
                 .flatMap(p -> confirmador.evaluar(p, muestras, estado.ultimaRegadaEn(), ahora))
@@ -213,9 +213,9 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
     }
 
     /** Las últimas lecturas de la planta, por el puerto del historial que ya existía (una página). */
-    private List<Muestra> muestrasRecientes(UUID plantaId) {
+    private List<LecturaReciente> muestrasRecientes(UUID plantaId) {
         return diagnosticos.historialDe(plantaId, new Paginacion(0, parametros.lecturasARevisar()))
-                .elementos().stream().map(Muestra::de).toList();
+                .elementos().stream().map(LecturaReciente::de).toList();
     }
 
     private void registrarYPublicar(Planta planta, EstadoDeMascota estado, Optional<Diagnostico> ultimo,

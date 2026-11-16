@@ -18,18 +18,18 @@ class DetectorDeSaltosDeMascotaTest {
     private final Instant t0 = Instant.parse("2026-11-16T08:00:00Z");
 
     /** Una lectura por minuto con estas humedades y luz fija de 500 lux. */
-    private List<Muestra> humedades(double... valores) {
-        List<Muestra> m = new ArrayList<>();
+    private List<LecturaReciente> humedades(double... valores) {
+        List<LecturaReciente> m = new ArrayList<>();
         for (int i = 0; i < valores.length; i++) {
-            m.add(new Muestra(t0.plus(Duration.ofMinutes(i)), valores[i], 500));
+            m.add(new LecturaReciente(t0.plus(Duration.ofMinutes(i)), valores[i], 500));
         }
         return m;
     }
 
-    private List<Muestra> luces(double... valores) {
-        List<Muestra> m = new ArrayList<>();
+    private List<LecturaReciente> luces(double... valores) {
+        List<LecturaReciente> m = new ArrayList<>();
         for (int i = 0; i < valores.length; i++) {
-            m.add(new Muestra(t0.plus(Duration.ofMinutes(i)), 40, valores[i]));
+            m.add(new LecturaReciente(t0.plus(Duration.ofMinutes(i)), 40, valores[i]));
         }
         return m;
     }
@@ -77,19 +77,19 @@ class DetectorDeSaltosDeMascotaTest {
 
     @Test
     void lasLecturasFueraDeLaVentanaNoCuentanComoReferencia() {
-        List<Muestra> m = new ArrayList<>(List.of(
-                new Muestra(t0, 30, 500), new Muestra(t0.plusSeconds(60), 30, 500), new Muestra(t0.plusSeconds(120), 30, 500)));
+        List<LecturaReciente> m = new ArrayList<>(List.of(
+                new LecturaReciente(t0, 30, 500), new LecturaReciente(t0.plusSeconds(60), 30, 500), new LecturaReciente(t0.plusSeconds(120), 30, 500)));
         Instant tarde = t0.plus(Duration.ofHours(2));
-        m.add(new Muestra(tarde, 30, 500));
-        m.add(new Muestra(tarde.plusSeconds(60), 48, 500));
-        m.add(new Muestra(tarde.plusSeconds(120), 50, 500));
+        m.add(new LecturaReciente(tarde, 30, 500));
+        m.add(new LecturaReciente(tarde.plusSeconds(60), 48, 500));
+        m.add(new LecturaReciente(tarde.plusSeconds(120), 50, 500));
 
         assertThat(detector.riego(planta, m, null)).isEmpty();   // en la última hora solo hay una lectura de referencia
     }
 
     @Test
     void elOrdenDeLlegadaNoImporta() {
-        List<Muestra> m = new ArrayList<>(humedades(30, 31, 29, 30, 30, 48, 50));
+        List<LecturaReciente> m = new ArrayList<>(humedades(30, 31, 29, 30, 30, 48, 50));
         java.util.Collections.reverse(m);   // el historial llega del más reciente al más antiguo
 
         assertThat(detector.riego(planta, m, null)).isPresent();

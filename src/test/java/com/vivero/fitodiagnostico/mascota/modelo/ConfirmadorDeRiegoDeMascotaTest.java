@@ -17,8 +17,8 @@ class ConfirmadorDeRiegoDeMascotaTest {
     private final Instant t0 = Instant.parse("2026-11-16T08:00:00Z");
     private final AccionDeMascota pendiente = AccionDeMascota.riegoDeclarado(planta, t0, t0.plus(Duration.ofMinutes(15)), 30.0);
 
-    private Muestra a(int minutos, double humedad) {
-        return new Muestra(t0.plus(Duration.ofMinutes(minutos)), humedad, 500);
+    private LecturaReciente a(int minutos, double humedad) {
+        return new LecturaReciente(t0.plus(Duration.ofMinutes(minutos)), humedad, 500);
     }
 
     @Test

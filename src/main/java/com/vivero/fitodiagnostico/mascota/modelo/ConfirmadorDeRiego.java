@@ -31,7 +31,7 @@ public final class ConfirmadorDeRiego {
         this.parametros = parametros;
     }
 
-    public Optional<Resolucion> evaluar(AccionDeMascota pendiente, List<Muestra> muestras, Instant ultimaRegadaEn,
+    public Optional<Resolucion> evaluar(AccionDeMascota pendiente, List<LecturaReciente> muestras, Instant ultimaRegadaEn,
                                         Instant ahora) {
         if (!pendiente.pendiente()) {
             return Optional.empty();
@@ -41,9 +41,9 @@ public final class ConfirmadorDeRiego {
             return Optional.of(resolver(pendiente, EstadoDeAccion.CONFIRMADA, ahora,
                     Map.of("motivo", "REGADA_DETECTADA", "regadaEn", ultimaRegadaEn.toString())));
         }
-        List<Muestra> posteriores = muestras.stream()
+        List<LecturaReciente> posteriores = muestras.stream()
                 .filter(m -> m.tomadaEn().isAfter(pendiente.creadaEn()) && !m.tomadaEn().isAfter(pendiente.venceEn()))
-                .sorted(Comparator.comparing(Muestra::tomadaEn)).toList();
+                .sorted(Comparator.comparing(LecturaReciente::tomadaEn)).toList();
         if (pendiente.humedadDeReferencia() != null) {
             double umbral = pendiente.humedadDeReferencia() + parametros.subidaMinimaDeRiego();
             for (int i = 1; i < posteriores.size(); i++) {

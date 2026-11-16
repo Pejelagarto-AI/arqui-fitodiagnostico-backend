@@ -1,5 +1,4 @@
 -- Fase 9: la planta como mascota (D130 a D149, docs/fase9/IMPLEMENTACION.md).
--- V15 queda reservada a otro cambio en curso (el periodo día/noche del diagnóstico).
 --
 -- Una fila por planta con lo que la mascota recuerda: vitalidad, si está desmayada, el último estado que dijo el
 -- sensor y desde cuándo, la racha y la hora de la última REGADA y del último SALIO_AL_SOL (enfriamiento). Nace con

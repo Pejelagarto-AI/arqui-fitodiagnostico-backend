@@ -51,7 +51,7 @@ public final class MapaDeAnimo {
         return switch (causa.magnitud()) {
             case HUMEDAD -> bajo ? Animo.SEDIENTA : Animo.AHOGADA;
             case TEMPERATURA -> bajo ? Animo.CON_FRIO : Animo.CON_CALOR;
-            // Cuando el diagnóstico traiga `periodo`, luz BAJO de NOCHE será DORMIDA y no A_OSCURAS:
+            // Día/noche: aquí se consumirá Diagnostico.periodo() (fase 8, D121): luz BAJO de NOCHE será DORMIDA y no A_OSCURAS:
             // dormir no es un problema y la cara no debe pedir ayuda.
             case LUZ -> bajo ? Animo.A_OSCURAS : Animo.DESLUMBRADA;
         };
