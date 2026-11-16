@@ -148,7 +148,7 @@ public class SuscriptorDeLecturasMqtt implements MessageHandler {
                     lectura.marcaDeTiempo());
             log.info("lectura MQTT de {} registrada: {}", serial, registro.diagnostico().estado());
             return RespuestaMqtt.exito(registro.id().toString(), registro.diagnostico().estado().name(),
-                    registro.registradoEn().toString(), vigente.apodo());
+                    registro.registradoEn().toString(), vigente.apodo(), registro.diagnostico().periodo().name());
         } catch (JsonMappingException e) {
             String campo = e.getPath().isEmpty() ? null : e.getPath().get(0).getFieldName();
             return campo == null

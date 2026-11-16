@@ -3,14 +3,20 @@ package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 import com.vivero.fitodiagnostico.dobles.Muestras;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.dominio.modelo.BaseDeEvaluacion;
+import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Pagina;
 import com.vivero.fitodiagnostico.dominio.modelo.Paginacion;
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
+import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
+import com.vivero.fitodiagnostico.dominio.modelo.SerieTemporal;
 import com.vivero.fitodiagnostico.dominio.modelo.Usuario;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +66,59 @@ class AdaptadorDiagnosticoJpaTest extends BaseDePersistenciaDePlantas {
         assertThat(leido.diagnostico().parametros()).extracting(p -> p.magnitud())
                 .containsExactly(Magnitud.HUMEDAD, Magnitud.LUZ, Magnitud.TEMPERATURA);   // orden del enum
         assertThat(leido.diagnostico().estado()).isEqualTo(EstadoGlobal.CRITICO);
+    }
+
+    @Test
+    void elPeriodoLaExposicionYElValorEvaluadoSobrevivenALaBase() {
+        // Fase 8 (V15): un diagnóstico de noche, con la luz evaluada sobre lo acumulado.
+        Diagnostico d = evaluar(especie, Muestras.medicion(45, 0, 22));
+        List<ResultadoParametro> parametros = d.parametros().stream()
+                .map(p -> p.magnitud() != Magnitud.LUZ ? p
+                        : new ResultadoParametro(Magnitud.LUZ, 0, p.rangoOptimo(), Clasificacion.OPTIMO, 812.5,
+                                BaseDeEvaluacion.ACUMULADA))
+                .toList();
+        Diagnostico deNoche = new Diagnostico(d.especie(), d.medicion(), EstadoGlobal.SALUDABLE, parametros, List.of(),
+                d.evaluadoEn(), Periodo.NOCHE, new ExposicionLuminica(24, 10.5, 900, 812.5, 3.25));
+        DiagnosticoDePlanta registro = guardar(planta, deNoche, OrigenDeMedicion.DISPOSITIVO);
+        sincronizar();
+
+        DiagnosticoDePlanta leido = diagnosticos.ultimoDe(planta.id()).orElseThrow();
+
+        assertThat(leido).isEqualTo(registro);
+        assertThat(leido.diagnostico().periodo()).isEqualTo(Periodo.NOCHE);
+        assertThat(leido.diagnostico().exposicion().horasEnOscuridad()).isEqualTo(3.25);
+    }
+
+    @Test
+    void unDiagnosticoInstantaneoSeLeeSinExposicionYDeDia() {
+        DiagnosticoDePlanta registro = guardar(planta, evaluar(especie, Muestras.medicionSaludable()),
+                OrigenDeMedicion.MANUAL);
+        sincronizar();
+
+        DiagnosticoDePlanta leido = diagnosticos.ultimoDe(planta.id()).orElseThrow();
+
+        assertThat(leido).isEqualTo(registro);
+        assertThat(leido.diagnostico().exposicion()).isNull();
+        assertThat(leido.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
+    }
+
+    @Test
+    void laSerieDeLuzSaleDeUnaConsultaPorCuandoSeTomoYRecortaLaVentana() {
+        Instant base = ahora();
+        for (int minuto = 0; minuto < 5; minuto++) {
+            Diagnostico d = evaluarEn(base, Muestras.medicion(45, 100 * (minuto + 1), 22));
+            diagnosticos.guardar(DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), OrigenDeMedicion.DISPOSITIVO,
+                    base.plusSeconds(60L * minuto), d));
+        }
+        sincronizar();
+
+        SerieTemporal serie = diagnosticos.serieDe(planta.id(), Magnitud.LUZ, base.plusSeconds(60),
+                base.plusSeconds(240));
+
+        assertThat(serie.muestras()).extracting(m -> m.valor()).containsExactly(200.0, 300.0, 400.0);
+        assertThat(serie.muestras().get(0).tomadaEn()).isEqualTo(base.plusSeconds(60));
+        assertThat(diagnosticos.serieDe(UUID.randomUUID(), Magnitud.LUZ, base, base.plusSeconds(600)).estaVacia())
+                .isTrue();
     }
 
     @Test

@@ -9,7 +9,9 @@ import com.vivero.fitodiagnostico.dominio.modelo.AccesoCompartido;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
+import com.vivero.fitodiagnostico.dominio.modelo.BaseDeEvaluacion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
+import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.servicio.ClasificadorDeParametros;
@@ -21,6 +23,7 @@ import com.vivero.fitodiagnostico.dominio.servicio.ReglaPorDesviacion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -90,6 +93,54 @@ class ServicioMedicionesTest {
 
         assertThat(delDispositivo.tomadaEn()).isEqualTo(tomada);
         assertThat(delDispositivo.registradoEn()).isNotEqualTo(tomada);
+    }
+
+    // ---- fase 8: la aplicación trae la luz del historial y el dominio decide ----
+
+    @Test
+    void laPrimeraLecturaDeUnaPlantaEvaluaLaLuzAlInstante() {
+        DiagnosticoDePlanta registro = servicio.registrar(planta.id(), Muestras.medicion(45, 0, 22),
+                OrigenDeMedicion.DISPOSITIVO, reloj.instant());
+
+        assertThat(registro.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
+        assertThat(registro.diagnostico().periodo()).isEqualTo(Periodo.DIA);
+        assertThat(registro.estado()).isEqualTo(EstadoGlobal.CRITICO);   // 0 lux contra 500-1000, como siempre
+    }
+
+    @Test
+    void conUnDiaDeHistorialLaPlantaDuermeDeNocheYNoEntraEnRiesgoPorLuz() {
+        Instant noche = reloj.instant();
+        // Un día de lecturas cada 15 min: sol (700 lux) de hace 13 h a hace 3 h, oscuridad desde entonces.
+        for (int k = 96; k >= 1; k--) {
+            double lux = k >= 13 && k <= 52 ? 700 : 0;
+            servicio.registrar(planta.id(), Muestras.medicion(45, lux, 22), OrigenDeMedicion.DISPOSITIVO,
+                    noche.minus(Duration.ofMinutes(15L * k)));
+        }
+
+        DiagnosticoDePlanta registro = servicio.registrar(planta.id(), Muestras.medicion(45, 0, 22),
+                OrigenDeMedicion.DISPOSITIVO, noche);
+
+        assertThat(registro.diagnostico().periodo()).isEqualTo(Periodo.NOCHE);
+        assertThat(registro.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.ACUMULADA);
+        assertThat(registro.diagnostico().exposicion().horasDeLuz()).isEqualTo(10.0);
+        assertThat(registro.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(registro.diagnostico().recomendaciones()).isEmpty();
+    }
+
+    @Test
+    void lasLecturasDeOtraPlantaNoCuentanEnLaLuzDeEsta() {
+        Planta otra = Planta.nueva(dueno, "Otra", Muestras.especie("helecho"));
+        mundo.plantas.guardar(otra);
+        Instant ahora = reloj.instant();
+        for (int k = 12; k >= 1; k--) {
+            servicio.registrar(otra.id(), Muestras.medicion(45, 0, 22), OrigenDeMedicion.DISPOSITIVO,
+                    ahora.minus(Duration.ofMinutes(15L * k)));
+        }
+
+        DiagnosticoDePlanta registro = servicio.registrar(planta.id(), Muestras.medicion(45, 0, 22),
+                OrigenDeMedicion.DISPOSITIVO, ahora);
+
+        assertThat(registro.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
     }
 
     @Test

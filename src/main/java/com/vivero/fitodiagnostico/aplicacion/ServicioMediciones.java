@@ -6,9 +6,11 @@ import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.dominio.modelo.Aviso;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
 import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
+import com.vivero.fitodiagnostico.dominio.modelo.SerieTemporal;
 import com.vivero.fitodiagnostico.dominio.modelo.TipoDeAviso;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.Notificador;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
@@ -17,6 +19,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeLuzAcumulada;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +43,11 @@ import java.util.UUID;
  * tocar el dominio ni este servicio. La comprobación de quién puede medir es
  * parte del adaptador de entrada humano y no del caso de uso: una maceta no es
  * un usuario, se autentica con su credencial (RN19).
+ *
+ * <p>Fase 8 (D120): antes de evaluar, trae del historial los lux de las últimas
+ * 24 h ({@link ReglaDeLuzAcumulada#VENTANA}) por el puerto {@link RepositorioDiagnosticos}
+ * y se los entrega al evaluador. Solo los trae: no cuenta horas ni compara lux, eso
+ * lo decide el dominio.
  */
 @Service
 public class ServicioMediciones implements RegistrarMedicionManualPort, RegistrarLecturaPort {
@@ -98,8 +106,11 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         // RN8: se compara contra el inmediatamente anterior de ESTA planta, leído antes de guardar el nuevo.
         Optional<DiagnosticoDePlanta> anterior = diagnosticos.ultimoDe(planta.id());
 
+        // Fase 8: la luz se evalúa con lo acumulado en el día; el dominio decide qué significa.
+        SerieTemporal luzAnterior = luzAnteriorA(planta, medicion, tomadaEn);
+
         // RN11: se evalúa con la especie de la planta aunque ya esté descontinuada.
-        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion);
+        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion, tomadaEn, luzAnterior);
         DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, tomadaEn, evaluado);
         diagnosticos.guardar(registro);
 
@@ -121,6 +132,18 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
                             Aviso.ESTADO, registro.estado().name())));
         }
         return registro;
+    }
+
+    /**
+     * Los lux de la planta en la ventana que termina en esta medición, sin esta (todavía no
+     * está guardada). Si la medición no trae luz no hay nada que acumular.
+     */
+    private SerieTemporal luzAnteriorA(Planta planta, Medicion medicion, Instant tomadaEn) {
+        if (!medicion.contiene(Magnitud.LUZ)) {
+            return SerieTemporal.vacia();
+        }
+        return diagnosticos.serieDe(planta.id(), Magnitud.LUZ,
+                tomadaEn.minus(ReglaDeLuzAcumulada.VENTANA), tomadaEn);
     }
 
     /** RF-G1: el dueño y los invitados. */

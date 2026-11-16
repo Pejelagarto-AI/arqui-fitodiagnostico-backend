@@ -3,6 +3,7 @@ package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
 import com.vivero.fitodiagnostico.dominio.modelo.Especie;
+import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.Lectura;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Medicion;
@@ -25,6 +26,10 @@ import java.util.Map;
  * Consecuencia: la {@code Especie} reconstruida es un retrato de lo que se usó
  * para evaluar y su {@code activa} no es parte de ese retrato (queda en true);
  * nadie lee ese campo de un diagnóstico del historial.
+ *
+ * <p>Fase 8: el periodo, la exposición a la luz y el valor evaluado de cada parámetro
+ * también salen de la fila. Las filas anteriores a V15 se leen como lo que fueron:
+ * de día, con la luz evaluada al instante.
  */
 @Component
 public class MapeadorDiagnosticoDePlanta {
@@ -42,14 +47,30 @@ public class MapeadorDiagnosticoDePlanta {
         Medicion medicion = Medicion.de(guardados.stream()
                 .map(p -> new Lectura(p.magnitud(), p.valor())).toList());
         List<ResultadoParametro> parametros = guardados.stream()
-                .map(p -> new ResultadoParametro(p.magnitud(), p.valor(),
-                        new Rango(p.rangoMinimo(), p.rangoMaximo()), p.clasificacion()))
+                .map(MapeadorDiagnosticoDePlanta::parametroDesde)
                 .toList();
 
         Diagnostico diagnostico = new Diagnostico(especie, medicion, entidad.getEstado(), parametros,
-                List.copyOf(entidad.getRecomendaciones()), entidad.getEvaluadoEn());
+                List.copyOf(entidad.getRecomendaciones()), entidad.getEvaluadoEn(), entidad.getPeriodo(),
+                exposicionDesde(entidad));
         return new DiagnosticoDePlanta(entidad.getId(), entidad.getPlantaId(), entidad.getOrigen(),
                 entidad.getTomadaEn(), entidad.getRegistradoEn(), diagnostico);
+    }
+
+    private static ResultadoParametro parametroDesde(ParametroEmbebido p) {
+        Rango rango = new Rango(p.rangoMinimo(), p.rangoMaximo());
+        if (p.base() == null || p.valorEvaluado() == null) {
+            return new ResultadoParametro(p.magnitud(), p.valor(), rango, p.clasificacion());
+        }
+        return new ResultadoParametro(p.magnitud(), p.valor(), rango, p.clasificacion(), p.valorEvaluado(), p.base());
+    }
+
+    private static ExposicionLuminica exposicionDesde(DiagnosticoDePlantaEntity e) {
+        if (e.getLuzLuxEfectivo() == null) {
+            return null;
+        }
+        return new ExposicionLuminica(e.getLuzHorasObservadas(), e.getLuzHorasDeLuz(), e.getLuzLuxPromedioEnLuz(),
+                e.getLuzLuxEfectivo(), e.getLuzHorasEnOscuridad());
     }
 
     DiagnosticoDePlantaEntity nuevaEntidad() {
@@ -66,10 +87,19 @@ public class MapeadorDiagnosticoDePlanta {
         entidad.setEvaluadoEn(diagnostico.evaluadoEn());
         entidad.setEspecieNombre(diagnostico.especie().nombre());
         entidad.setEstado(diagnostico.estado());
+        entidad.setPeriodo(diagnostico.periodo());
+        ExposicionLuminica e = diagnostico.exposicion();
+        if (e == null) {
+            entidad.setExposicion(null, null, null, null, null);
+        } else {
+            entidad.setExposicion(e.horasObservadas(), e.horasDeLuz(), e.luxPromedioEnLuz(), e.luxEfectivo(),
+                    e.horasEnOscuridad());
+        }
         entidad.getParametros().clear();
         for (ResultadoParametro r : diagnostico.parametros()) {
             entidad.getParametros().add(new ParametroEmbebido(r.magnitud(), r.valor(),
-                    r.rangoOptimo().minimo(), r.rangoOptimo().maximo(), r.clasificacion()));
+                    r.rangoOptimo().minimo(), r.rangoOptimo().maximo(), r.clasificacion(),
+                    r.valorEvaluado(), r.base()));
         }
         entidad.getRecomendaciones().clear();
         entidad.getRecomendaciones().addAll(diagnostico.recomendaciones());
