@@ -103,7 +103,7 @@ Otras placas: `-e esp32-s3-devkitc-1` o `-e esp32-c3-devkitm-1` (los pines I2C d
 python3 firmware/test/probar_nucleo.py
 ```
 
-Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (498 comprobaciones, con las reglas de la salud de la fase 10 y los números del saludo y de la planta dormida de la fase 11). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
+Compila con `gcc` el núcleo en C (`src/nucleo/`) con un SHA-256 portable y compara, contra el simulador de Python, el serial desde la MAC (incluida `e08cfee64440` -> `fito-YUBUD6`), el secreto en base64url, la firma de flota y la respuesta al reto; además, la interpolación de las tablas de calibración y su lectura desde `local.ini` (829 comprobaciones, con las reglas de la salud de la fase 10, los números del saludo y de la planta dormida de la fase 11 y, en la fase 14, la cola de eventos de la mascota, sus cuadros, la barra, las frases y el simulador). En el chip el hash lo da mbedTLS; al arrancar, el firmware verifica ese camino con el vector RFC 4231 y escribe `autotest HMAC-SHA256 (mbedTLS): ok`.
 
 ## Qué muestra la OLED
 
@@ -170,6 +170,18 @@ Las reglas de cuándo reportar son `fito_salud_toca` en `src/nucleo/` (C puro) y
 - **Saludo.** Pulsar BOOT y soltarlo antes de 1 s (`BOTON_CORTA_MS`): 12 cuadros de 50 ms con el salto `-2 -4 -5 -5 -4 -2 0 +1 0 0 0 0` px y los ojos `1 1 .5 0 .5 1 .5 0 .5 1 1 1`, cara contenta, también de noche (la despierta un momento). Solo en la pantalla de lecturas; no habla con el servidor. Mantenerlo más de 1 s sigue siendo la cuenta regresiva del reinicio.
 
 Los números viven en `src/nucleo/fito_nucleo.c` (con pruebas) y son los mismos del front (`mascota-tiempo.js`). `python3 firmware/sprites/previsualizar.py /ruta` genera `40_dormida_*`, `41_saludo_*`, `anim_dormida_*.gif`, `anim_noche_saludo.gif` y, en `mascota/`, los cuadros sueltos que compara `tools/comparar-mascotas.py --oled` del front. Decisiones D160 a D169 en [`docs/fase11/IMPLEMENTACION.md`](../docs/fase11/IMPLEMENTACION.md).
+
+### La mascota completa (fase 14)
+
+Con un servidor nuevo, la 201 de la lectura trae `mascota` (vitalidad, ánimo, accesorio y los eventos desde la lectura anterior) y la OLED la usa; sin esa clave todo se ve como en la fase 11.
+
+- **Frases.** La fila de abajo de la pantalla de lecturas alterna cada 3000 ms (`FRASE_ALTERNA_MS`) entre el estado del servidor y una frase del ánimo con la personalidad de cada familia. La fuente es `sprites/frases.json` (hasta 13 caracteres ASCII); `python3 firmware/sprites/generar_frases.py` la pasa a `src/frases.h` y falla si algo no cumple.
+- **Vitalidad.** Una línea de 78x1 px en (50, 45) que se ve solo mientras se muestra una frase (en otro momento no cabe sin tocar el nombre ni los números).
+- **Eventos.** Se encolan y suenan de a uno, 3000 ms cada uno (`FRASE_EVENTO_MS`), con su frase: SALIO_AL_SOL (rayos), ACARICIADA (saludo y corazón), REVIVIO (saludo y destellos), RACHA (estrella), DESMAYO (cae 2 px con ojos en "x"; mientras el ánimo sea DESMAYADA se queda así, sin balanceo), REGADA (la gota de siempre) y RIEGO_CONFIRMADO o RIEGO_DESMENTIDO (solo la frase). De noche se despierta lo que dura la animación.
+- **Accesorio.** Sombrero, moño o gafas encima de la mascota, anclados a la cara de cada familia (`ANCLA_ACCESORIO` en `pantalla.cpp`).
+- **BOOT corto.** Además del saludo inmediato, manda `POST /api/v1/dispositivos/{serial}/mascota/acciones {"tipo":"ACARICIAR"}` (solo con red y token) y registra el código HTTP (`caricia -> HTTP 201`; 200 si es repetida dentro de 10 s).
+
+Los dibujos nuevos salen de `python3 firmware/sprites/dibujar_mascota.py` (escribe solo los `arte/*.txt` nuevos) y `generar.py`. Todas las constantes y la tabla de anclas están en [`docs/fase14/IMPLEMENTACION.md`](../docs/fase14/IMPLEMENTACION.md), junto con las decisiones D190 a D199; el simulador muestra la `mascota` de la 201 y acaricia con `--acariciar`.
 
 ## Reiniciar la configuración
 
