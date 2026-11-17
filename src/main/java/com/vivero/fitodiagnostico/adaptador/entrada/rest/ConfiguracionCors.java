@@ -32,7 +32,7 @@ public class ConfiguracionCors implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(origenes)
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 // Authorization: el JWT viaja en esa cabecera; sin permitirla, el navegador
                 // bloquea el preflight de toda petición autenticada del front.
                 .allowedHeaders("Content-Type", "Authorization");
