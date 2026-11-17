@@ -310,6 +310,7 @@ Las tres últimas filas no están en el Anexo B. Se agregaron para que la matera
 - [`docs/fase11/IMPLEMENTACION.md`](docs/fase11/IMPLEMENTACION.md): fase 11 (la OLED duerme y saluda): la mascota dormida de noche con `periodo` de la fase 8, el saludo con una pulsación corta de BOOT, los números que comparte con el front, el girasol dormido y las decisiones D160 a D169.
 - [`docs/fase12/IMPLEMENTACION.md`](docs/fase12/IMPLEMENTACION.md): fase 12 (pulido de mascota, avisos y base de datos): `DORMIDA`, `motivo: PERIODO` sin correo, enfriamiento de las caricias, el invitado lee los dispositivos, resumen de luz por hora, retención de crudas, índices y N+1 con sus cifras, migración V22 y las decisiones D170 a D179.
 - [`docs/fase13/IMPLEMENTACION.md`](docs/fase13/IMPLEMENTACION.md): fase 13 (la mascota completa): la mascota en la respuesta de cada lectura con los eventos desde la lectura anterior, la caricia desde la matera, el accesorio por planta (V23) y el tablero de plantas con mascota y salud por lote, y las decisiones D180 a D185.
+- [`docs/fase14/IMPLEMENTACION.md`](docs/fase14/IMPLEMENTACION.md): fase 14 (la mascota completa en la OLED, lado firmware): frases por familia que alternan con el estado, barra de vitalidad, eventos de la mascota en cola con sus animaciones, el desmayo, accesorios con sus anclas, BOOT corto que acaricia de verdad, `--acariciar` en el simulador, las constantes que el front calca y las decisiones D190 a D199.
 - [`docs/BITACORA-IA.md`](docs/BITACORA-IA.md) — bitácora de uso de IA en el proyecto.
 
 ---

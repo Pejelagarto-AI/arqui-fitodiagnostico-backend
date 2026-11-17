@@ -131,12 +131,25 @@ void redibujar() {
     }
 }
 
+// Fase 14: la pulsacion corta del BOOT, ademas del saludo local (inmediato), acaricia de verdad: POST de caricia al
+// servidor. Solo con red y token y en OPERANDO; si no, queda el saludo solo. Bloquea el bucle lo mismo que una lectura
+// (timeout de config::TIMEOUT_HTTP_MS). 200 = repetida dentro de 10 s (el servidor no guarda otra); 401 = token descartado.
+void acariciarDeVerdad() {
+    if (fase != Fase::Operando || !red::conectada() || !token.length()) {
+        registrar("caricia: sin red o sin token, solo el saludo");
+        return;
+    }
+    const int codigo = api::acariciar(token);
+    registrar("caricia -> HTTP %d%s", codigo, codigo == 200 ? " (repetida, dentro de 10 s)" : codigo == api::SIN_RED ? " (sin red)" : "");
+    if (codigo == 401) { token = ""; identidad::borrarToken(); }
+}
+
 // El boton BOOT: cuenta regresiva en la OLED, a los 5 s borra red y token (no la identidad) y reinicia. Una pulsacion
 // corta hace saludar a la mascota (fase 11); no habla con el servidor.
 void atenderBoton() {
     bool cumplido, corta;
     uint32_t ms = boton::ciclo(cumplido, corta);
-    if (corta) { registrar("BOOT corto: la mascota saluda"); pantalla::saludar(millis()); }
+    if (corta) { registrar("BOOT corto: la mascota saluda"); pantalla::saludar(millis()); acariciarDeVerdad(); }
     if (cumplido) {
         registrar("BOOT sostenido 5 s: se borran Wi-Fi, servidor y token (la identidad se conserva). Reiniciando.");
         pantalla::mensaje("Wi-Fi borrado", "Reiniciando...");
@@ -348,7 +361,8 @@ void vaciarCola() {
         const Lectura &l = cola::frente();
         String estado;
         bool noche = false;
-        int codigo = api::enviarLectura(token, l, estado, noche);
+        EstadoMascota mascota;
+        int codigo = api::enviarLectura(token, l, estado, noche, mascota);
         char marca[24];
         reloj::iso(l.cuando, marca, sizeof marca);
         if (codigo == 201) {
@@ -356,6 +370,10 @@ void vaciarCola() {
             ultimoEstado = estado;
             ultimaNoche = noche;
             if (api::rangos().hay) sensores->adoptarRangos(api::rangos().minimo, api::rangos().maximo);
+            if (mascota.hay) {
+                registrar("mascota: vitalidad=%u animo=%d accesorio=%d eventos=%u", mascota.vitalidad, mascota.animo, mascota.accesorio, mascota.nEventos);
+                pantalla::mascota(mascota, millis());
+            }
             pantalla::mordisco(millis());
             punto = true; apagarPunto = millis() + 300;
             cola::sacar();
