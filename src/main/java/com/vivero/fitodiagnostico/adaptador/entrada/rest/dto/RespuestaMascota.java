@@ -15,7 +15,7 @@ import java.util.UUID;
 public record RespuestaMascota(UUID plantaId, boolean hayLecturas, int vitalidad, boolean desmayada, String animo,
                                Causa causa, String estadoDelDiagnostico, Racha racha, Instant actualizadaEn,
                                List<RespuestaEventoDeMascota> ultimosEventos,
-                               RespuestaAccionDeMascota accionPendiente) {
+                               RespuestaAccionDeMascota accionPendiente, String accesorio) {
 
     /** El parámetro que explica el ánimo: nombre en minúsculas (como en el diagnóstico), BAJO o ALTO, y cuánto. */
     public record Causa(String parametro, String direccion, double desviacion) {
@@ -33,6 +33,6 @@ public record RespuestaMascota(UUID plantaId, boolean hayLecturas, int vitalidad
                 v.estadoDelDiagnostico() == null ? null : v.estadoDelDiagnostico().name(),
                 new Racha(v.rachaDias(), v.rachaDesde()), v.actualizadaEn(),
                 v.ultimosEventos().stream().map(RespuestaEventoDeMascota::desde).toList(),
-                v.accionPendiente().map(RespuestaAccionDeMascota::desde).orElse(null));
+                v.accionPendiente().map(RespuestaAccionDeMascota::desde).orElse(null), v.accesorio().name());
     }
 }

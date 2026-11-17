@@ -9,4 +9,7 @@ import com.vivero.fitodiagnostico.mascota.modelo.AvisoDeMascota;
 public interface PublicadorDeMascota {
 
     void publicar(AvisoDeMascota aviso);
+
+    /** Algo cambió que no es un evento (fase 13, D184: el accesorio). Por defecto no hace nada: no todo canal lo necesita. */
+    default void publicarActualizacion(com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota cambio) { }
 }

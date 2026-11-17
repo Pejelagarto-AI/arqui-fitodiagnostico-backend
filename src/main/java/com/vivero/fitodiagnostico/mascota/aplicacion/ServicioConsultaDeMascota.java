@@ -8,6 +8,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDiagnosticos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
 import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.EventoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.MapaDeAnimo;
@@ -75,7 +76,8 @@ public class ServicioConsultaDeMascota implements ConsultarMascotaPort {
                 estado.map(EstadoDeMascota::rachaDesde).orElse(null),
                 estado.map(EstadoDeMascota::actualizadaEn).orElse(null),
                 eventos.de(plantaId, new Paginacion(0, EVENTOS_EN_LA_VISTA)).elementos(),
-                acciones.pendienteDe(plantaId));
+                acciones.pendienteDe(plantaId),
+                estado.map(EstadoDeMascota::accesorio).orElse(Accesorio.NINGUNO));
     }
 
     @Transactional(readOnly = true)

@@ -1,6 +1,8 @@
 package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 
+import com.vivero.fitodiagnostico.dominio.modelo.Diagnostico;
 import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.mascota.puerto.salida.UltimosDiagnosticosEnLote;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Muestra;
 import com.vivero.fitodiagnostico.dominio.modelo.Pagina;
@@ -14,6 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +28,7 @@ import java.util.UUID;
  * Spring Data vive solo aquí: el dominio habla de {@link Paginacion}.
  */
 @Repository
-public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos {
+public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos, UltimosDiagnosticosEnLote {
 
     private final DiagnosticoDePlantaJpaRepository jpa;
     private final MapeadorDiagnosticoDePlanta mapeador;
@@ -40,6 +45,20 @@ public class AdaptadorDiagnosticoJpa implements RepositorioDiagnosticos {
     @Transactional(readOnly = true)
     public Optional<DiagnosticoDePlanta> ultimoDe(UUID plantaId) {
         return jpa.findFirstByPlantaIdOrderByRegistradoEnDescIdDesc(plantaId).map(mapeador::aDominio);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, Diagnostico> ultimosDe(Collection<UUID> plantaIds) {
+        Map<UUID, Diagnostico> porPlanta = new HashMap<>();
+        if (plantaIds.isEmpty()) {
+            return porPlanta;
+        }
+        // Si dos diagnósticos de una planta comparten registrado_en, gana el de id mayor, como en ultimoDe.
+        jpa.ultimosDe(plantaIds).stream()
+                .sorted(java.util.Comparator.comparing(DiagnosticoDePlantaEntity::getId))
+                .forEach(e -> porPlanta.put(e.getPlantaId(), mapeador.aDominio(e).diagnostico()));
+        return porPlanta;
     }
 
     @Override

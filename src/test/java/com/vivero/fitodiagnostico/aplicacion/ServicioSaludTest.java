@@ -231,4 +231,49 @@ class ServicioSaludTest {
         assertThat(vistas).containsOnlyKeys(SERIAL);
         assertThat(vistas.get(SERIAL).mensaje()).isEqualTo("no sé de la matera desde hace 12 min");
     }
+
+    // ---- fase 13 (D185): la peor salud por planta, para el tablero ----
+
+    private void segundaMatera(String serial, UUID plantaId) {
+        Dispositivo d = Dispositivo.deFabrica(serial, "secreto", reloj.instant());
+        d.reclamar(plantaId, reloj.instant());
+        mundo.dispositivos.guardar(d);
+    }
+
+    @Test
+    void laPeorSaludDeLaPlantaGanaFallaSobreSinNoticiasSobreOkYSinMaterasNoAparece() {
+        salud.vincular(SERIAL, planta.id());
+        salud.vincular("fito-BBBBBB", planta.id());
+        salud.vincular("fito-CCCCCC", planta.id());
+        segundaMatera("fito-BBBBBB", planta.id());
+        segundaMatera("fito-CCCCCC", planta.id());
+        servicio.registrarLectura(SERIAL, planta.id());                                   // OK
+        servicio.registrarLectura("fito-BBBBBB", planta.id());                            // OK, luego calla
+        servicio.reportar("fito-CCCCCC", planta.id(), SIN_TEMPERATURA, "dht22 sin respuesta");   // FALLA
+        Planta sola = Planta.nueva(dueno, "Sola", Muestras.especie("helecho"));
+        mundo.plantas.guardar(sola);
+
+        var vistas = servicio.laPeorDeLasPlantas(java.util.List.of(planta.id(), sola.id()));
+
+        assertThat(vistas).containsOnlyKeys(planta.id());
+        assertThat(vistas.get(planta.id()).salud().estado()).isEqualTo(EstadoDeSalud.FALLA);
+        assertThat(vistas.get(planta.id()).mensaje()).isEqualTo("no te siento la temperatura");
+    }
+
+    @Test
+    void sinFallasLaQueCallaGanaALaQueResponde() {
+        salud.vincular(SERIAL, planta.id());
+        salud.vincular("fito-BBBBBB", planta.id());
+        segundaMatera("fito-BBBBBB", planta.id());
+        servicio.registrarLectura(SERIAL, planta.id());
+        reloj.avanzar(Duration.ofMinutes(10));
+        servicio.registrarLectura("fito-BBBBBB", planta.id());
+        servicio.revisar();   // SERIAL lleva 10 min callada: SIN_NOTICIAS; BBBBBB sigue OK
+
+        var vistas = servicio.laPeorDeLasPlantas(java.util.List.of(planta.id()));
+
+        assertThat(vistas.get(planta.id()).salud().serial()).isEqualTo(SERIAL);
+        assertThat(vistas.get(planta.id()).salud().estado()).isEqualTo(EstadoDeSalud.SIN_NOTICIAS);
+        assertThat(servicio.laPeorDeLasPlantas(java.util.List.of())).isEmpty();
+    }
 }

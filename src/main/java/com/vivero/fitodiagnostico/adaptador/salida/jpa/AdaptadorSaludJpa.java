@@ -6,10 +6,13 @@ import com.vivero.fitodiagnostico.salud.SensorDeMatera;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /** Adaptador JPA del puerto {@link RepositorioDeSalud}. */
 @Repository
@@ -42,6 +45,20 @@ public class AdaptadorSaludJpa implements RepositorioDeSalud {
             return List.of();
         }
         return jpa.findAllById(seriales).stream().map(AdaptadorSaludJpa::aDominio).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, List<SaludDelDispositivo>> dePlantas(Collection<UUID> plantaIds) {
+        if (plantaIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<SaludDelDispositivo>> porPlanta = new LinkedHashMap<>();
+        for (Object[] fila : jpa.dePlantas(plantaIds)) {
+            porPlanta.computeIfAbsent((UUID) fila[0], k -> new ArrayList<>())
+                    .add(aDominio((DispositivoSaludEntity) fila[1]));
+        }
+        return porPlanta;
     }
 
     @Override
