@@ -5,7 +5,16 @@ import com.vivero.fitodiagnostico.dominio.modelo.OrigenDeMedicion;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.RegistrarLecturaPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.VerificarVinculoPort.VinculoVigente;
+import com.vivero.fitodiagnostico.dominio.modelo.DiagnosticoDePlanta;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
+import com.vivero.fitodiagnostico.mascota.modelo.Animo;
+import com.vivero.fitodiagnostico.mascota.modelo.ResumenDeMascota;
+import com.vivero.fitodiagnostico.mascota.modelo.VistaParaLaMatera;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarMascotaDeMateraPort;
+import com.vivero.fitodiagnostico.salud.ConsultarSaludPort;
 import com.vivero.fitodiagnostico.salud.ReportarSaludPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +26,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -40,6 +51,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/dispositivos/{dispositivoId}/lecturas")
 public class LecturasDeDispositivoController {
 
+    private static final Logger log = LoggerFactory.getLogger(LecturasDeDispositivoController.class);
+
     // El contrato del token lo escribe EmisorTokenDispositivoJwt (otro adaptador); aquí se lee, sin depender de él.
     private static final String CLAIM_PLANTA = "planta";
     private static final String CLAIM_ALCANCE = "scope";
@@ -48,12 +61,17 @@ public class LecturasDeDispositivoController {
     private final RegistrarLecturaPort lecturas;
     private final VerificarVinculoPort vinculo;
     private final ReportarSaludPort salud;
+    private final ConsultarSaludPort consultaDeSalud;
+    private final ConsultarMascotaDeMateraPort mascota;
 
     public LecturasDeDispositivoController(RegistrarLecturaPort lecturas, VerificarVinculoPort vinculo,
-                                           ReportarSaludPort salud) {
+                                           ReportarSaludPort salud, ConsultarSaludPort consultaDeSalud,
+                                           ConsultarMascotaDeMateraPort mascota) {
         this.lecturas = lecturas;
         this.vinculo = vinculo;
         this.salud = salud;
+        this.consultaDeSalud = consultaDeSalud;
+        this.mascota = mascota;
     }
 
     /** 201 con el diagnóstico guardado. 400 si el cuerpo es inválido; 403 si el token no es de este dispositivo. */
@@ -71,11 +89,25 @@ public class LecturasDeDispositivoController {
         // El token puede seguir vigente tras desvincular o traspasar la matera: se exige el vínculo actual (D96).
         VinculoVigente vigente = vinculo.exigirVinculo(dispositivoId, plantaId);
 
-        RespuestaLectura respuesta = RespuestaLectura.desde(
-                lecturas.registrar(plantaId, solicitud.aMedicion(), OrigenDeMedicion.DISPOSITIVO,
-                        solicitud.marcaDeTiempo()), vigente.apodo());
+        // Fase 13 (D180): la lectura anterior de ESTA matera, antes de que esta la reemplace. Marca desde dónde mira la mascota.
+        Instant lecturaAnterior = consultaDeSalud.deLosDispositivos(List.of(dispositivoId)).values().stream()
+                .findFirst().map(v -> v.salud().ultimaLecturaEn()).orElse(null);
+        // registrar() vuelve con la lectura ya guardada y la mascota ya alimentada: la alimenta un afterCommit síncrono (D140).
+        DiagnosticoDePlanta registro = lecturas.registrar(plantaId, solicitud.aMedicion(),
+                OrigenDeMedicion.DISPOSITIVO, solicitud.marcaDeTiempo());
         // Fase 10: una lectura completa es noticia de la matera (cuándo llegó la última, y que sus sensores sirven).
         salud.registrarLectura(dispositivoId, plantaId);
+        RespuestaLectura respuesta = RespuestaLectura.desde(registro, vigente.apodo(), mascotaParaLaMatera(plantaId, lecturaAnterior));
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
+    }
+
+    /** La lectura ya quedó: si la mascota falla, el 201 sale igual con la mascota "sin noticias" (no se reintenta la lectura). */
+    private VistaParaLaMatera mascotaParaLaMatera(UUID plantaId, Instant lecturaAnterior) {
+        try {
+            return mascota.paraLaMatera(plantaId, lecturaAnterior);
+        } catch (RuntimeException e) {
+            log.error("no se pudo armar la mascota de la respuesta de la planta {}", plantaId, e);
+            return new VistaParaLaMatera(new ResumenDeMascota(0, Animo.SIN_DATOS, 0, Accesorio.NINGUNO), List.of());
+        }
     }
 }

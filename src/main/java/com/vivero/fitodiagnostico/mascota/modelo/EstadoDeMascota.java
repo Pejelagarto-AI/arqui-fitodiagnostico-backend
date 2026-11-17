@@ -17,12 +17,14 @@ import java.util.UUID;
  * @param rachaDesde      inicio del tramo actual sin CRITICO; nulo si la última lectura fue CRITICO
  * @param ultimaRegadaEn  hora (de la lectura) de la última REGADA, para el enfriamiento
  * @param ultimoSolEn     ídem para SALIO_AL_SOL
+ * @param accesorio       lo que lleva puesta (fase 13, D182); nulo se lee como NINGUNO
  */
 public record EstadoDeMascota(UUID plantaId, double vitalidad, boolean desmayada, EstadoGlobal ultimoEstado,
                               Instant ultimaLecturaEn, Instant actualizadaEn, Instant saludableDesde,
-                              int rachaDias, Instant rachaDesde, Instant ultimaRegadaEn, Instant ultimoSolEn) {
+                              int rachaDias, Instant rachaDesde, Instant ultimaRegadaEn, Instant ultimoSolEn, Accesorio accesorio) {
 
     public EstadoDeMascota {
+        accesorio = accesorio == null ? Accesorio.NINGUNO : accesorio;
         if (plantaId == null || actualizadaEn == null) {
             throw new IllegalArgumentException("el estado de la mascota requiere planta y fecha");
         }
@@ -32,6 +34,14 @@ public record EstadoDeMascota(UUID plantaId, double vitalidad, boolean desmayada
         if (rachaDias < 0) {
             throw new IllegalArgumentException("la racha no puede ser negativa");
         }
+    }
+
+    /** Los diez campos de antes de la fase 13: sin accesorio. */
+    public EstadoDeMascota(UUID plantaId, double vitalidad, boolean desmayada, EstadoGlobal ultimoEstado,
+                           Instant ultimaLecturaEn, Instant actualizadaEn, Instant saludableDesde, int rachaDias,
+                           Instant rachaDesde, Instant ultimaRegadaEn, Instant ultimoSolEn) {
+        this(plantaId, vitalidad, desmayada, ultimoEstado, ultimaLecturaEn, actualizadaEn, saludableDesde, rachaDias,
+                rachaDesde, ultimaRegadaEn, ultimoSolEn, Accesorio.NINGUNO);
     }
 
     /** La mascota de una planta que todavía no tuvo lecturas. */
@@ -47,11 +57,17 @@ public record EstadoDeMascota(UUID plantaId, double vitalidad, boolean desmayada
 
     public EstadoDeMascota conRegadaEn(Instant en) {
         return new EstadoDeMascota(plantaId, vitalidad, desmayada, ultimoEstado, ultimaLecturaEn, actualizadaEn,
-                saludableDesde, rachaDias, rachaDesde, en, ultimoSolEn);
+                saludableDesde, rachaDias, rachaDesde, en, ultimoSolEn, accesorio);
     }
 
     public EstadoDeMascota conSolEn(Instant en) {
         return new EstadoDeMascota(plantaId, vitalidad, desmayada, ultimoEstado, ultimaLecturaEn, actualizadaEn,
-                saludableDesde, rachaDias, rachaDesde, ultimaRegadaEn, en);
+                saludableDesde, rachaDias, rachaDesde, ultimaRegadaEn, en, accesorio);
+    }
+
+    /** Fase 13 (D182): el dueño le puso otro accesorio. */
+    public EstadoDeMascota conAccesorio(Accesorio nuevo) {
+        return new EstadoDeMascota(plantaId, vitalidad, desmayada, ultimoEstado, ultimaLecturaEn, actualizadaEn,
+                saludableDesde, rachaDias, rachaDesde, ultimaRegadaEn, ultimoSolEn, nuevo);
     }
 }

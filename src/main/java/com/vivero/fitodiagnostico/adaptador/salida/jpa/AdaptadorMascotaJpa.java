@@ -19,6 +19,10 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -70,8 +74,19 @@ public class AdaptadorMascotaJpa implements RepositorioMascotas, RepositorioEven
     public void guardar(EstadoDeMascota e) {
         MascotaEntity fila = mascotas.findById(e.plantaId()).orElseGet(() -> new MascotaEntity(e.plantaId()));
         fila.volcar(e.vitalidad(), e.desmayada(), e.ultimoEstado(), e.ultimaLecturaEn(), e.actualizadaEn(),
-                e.saludableDesde(), e.rachaDias(), e.rachaDesde(), e.ultimaRegadaEn(), e.ultimoSolEn());
+                e.saludableDesde(), e.rachaDias(), e.rachaDesde(), e.ultimaRegadaEn(), e.ultimoSolEn(), e.accesorio());
         mascotas.saveAndFlush(fila);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, EstadoDeMascota> deLasPlantas(Collection<UUID> plantaIds) {
+        Map<UUID, EstadoDeMascota> porPlanta = new HashMap<>();
+        if (plantaIds.isEmpty()) {
+            return porPlanta;
+        }
+        mascotas.findAllById(plantaIds).forEach(f -> porPlanta.put(f.getPlantaId(), aModelo(f)));
+        return porPlanta;
     }
 
     @Override
@@ -94,6 +109,17 @@ public class AdaptadorMascotaJpa implements RepositorioMascotas, RepositorioEven
     public Optional<EventoDeMascota> ultimoDeTipo(UUID plantaId, TipoDeEvento tipo) {
         return eventos.findFirstByPlantaIdAndTipoOrderByOcurridoEnDescRegistradoEnDesc(plantaId, tipo)
                 .map(AdaptadorMascotaJpa::aModelo);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventoDeMascota> registradosDespuesDe(UUID plantaId, Instant despuesDe, int maximo) {
+        List<EventoDeMascota> recientes = new ArrayList<>(eventos
+                .findByPlantaIdAndRegistradoEnAfterOrderByRegistradoEnDescOcurridoEnDesc(plantaId, despuesDe,
+                        PageRequest.of(0, maximo))
+                .stream().map(AdaptadorMascotaJpa::aModelo).toList());
+        java.util.Collections.reverse(recientes);   // del más antiguo al más reciente
+        return recientes;
     }
 
     @Override
@@ -129,7 +155,7 @@ public class AdaptadorMascotaJpa implements RepositorioMascotas, RepositorioEven
     private static EstadoDeMascota aModelo(MascotaEntity f) {
         return new EstadoDeMascota(f.getPlantaId(), f.getVitalidad(), f.isDesmayada(), f.getUltimoEstado(),
                 f.getUltimaLecturaEn(), f.getActualizadaEn(), f.getSaludableDesde(), f.getRachaDias(),
-                f.getRachaDesde(), f.getUltimaRegadaEn(), f.getUltimoSolEn());
+                f.getRachaDesde(), f.getUltimaRegadaEn(), f.getUltimoSolEn(), f.getAccesorio());
     }
 
     private static EventoDeMascota aModelo(EventoDeMascotaEntity f) {

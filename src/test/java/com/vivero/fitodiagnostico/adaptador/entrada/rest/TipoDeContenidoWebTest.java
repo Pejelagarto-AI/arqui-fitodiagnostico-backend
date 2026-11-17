@@ -32,6 +32,8 @@ class TipoDeContenidoWebTest {
 
     @MockBean private ServicioDiagnostico diagnostico;
     @MockBean private ServicioPlantas plantas;
+    @MockBean private com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarResumenDeMascotasPort resumenDeMascotas;
+    @MockBean private com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort saludDePlantas;
 
     @Test
     void unaRutaPublicaConTextoPlanoDa415EnJsonUniforme() throws Exception {

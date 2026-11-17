@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /** Doble en memoria del repositorio de salud y del avisador (graba lo que se avisó). */
 public class SaludEnMemoria implements RepositorioDeSalud, AvisadorDeSalud {
@@ -30,6 +31,25 @@ public class SaludEnMemoria implements RepositorioDeSalud, AvisadorDeSalud {
     @Override
     public List<SaludDelDispositivo> de(Collection<String> seriales) {
         return seriales.stream().map(filas::get).filter(java.util.Objects::nonNull).toList();
+    }
+
+    private final Map<String, UUID> plantaDeSerial = new LinkedHashMap<>();
+
+    /** Dice a qué planta pertenece una matera, para {@link #dePlantas}. */
+    public void vincular(String serial, UUID plantaId) {
+        plantaDeSerial.put(serial, plantaId);
+    }
+
+    @Override
+    public Map<UUID, List<SaludDelDispositivo>> dePlantas(Collection<UUID> plantaIds) {
+        Map<UUID, List<SaludDelDispositivo>> porPlanta = new LinkedHashMap<>();
+        filas.values().forEach(s -> {
+            UUID planta = plantaDeSerial.get(s.serial());
+            if (planta != null && plantaIds.contains(planta)) {
+                porPlanta.computeIfAbsent(planta, k -> new ArrayList<>()).add(s);
+            }
+        });
+        return porPlanta;
     }
 
     @Override

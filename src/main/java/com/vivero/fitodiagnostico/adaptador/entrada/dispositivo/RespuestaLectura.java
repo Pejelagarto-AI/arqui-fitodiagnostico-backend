@@ -5,6 +5,9 @@ import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.ResultadoParametro;
 
+import com.vivero.fitodiagnostico.mascota.modelo.ResumenDeMascota;
+import com.vivero.fitodiagnostico.mascota.modelo.VistaParaLaMatera;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -15,11 +18,25 @@ import java.util.UUID;
  * {@code POST /api/v1/plantas/{id}/mediciones}, para que quien lea ambas vea lo mismo; se redefine aquí y
  * no se reutiliza porque un adaptador de entrada no depende de otro.
  *
+ * <p>Fase 13 (D180): agrega {@code mascota}, siempre presente: cómo está la mascota y los eventos que pasaron desde la
+ * lectura anterior de esta matera, para que la OLED se entere sin MQTT.
+ *
  * <p>Fase 8: agrega {@code periodo} (DIA o NOCHE, para que la OLED duerma la planta),
  * {@code exposicionLuminica} y, por parámetro, {@code valorEvaluado}. No cambia ningún campo existente.
  */
 public record RespuestaLectura(UUID id, UUID plantaId, String origen, Instant tomadaEn, Instant registradoEn,
-                               Diagnostico diagnostico, String apodo) {
+                               Diagnostico diagnostico, String apodo, Mascota mascota) {
+
+    /** La mascota tal como la dibuja la OLED. {@code eventos}: del más antiguo al más reciente, a lo sumo 10. */
+    public record Mascota(int vitalidad, String animo, int racha, String accesorio, List<EventoDeMascota> eventos) {
+        public static Mascota de(VistaParaLaMatera v) {
+            ResumenDeMascota r = v.resumen();
+            return new Mascota(r.vitalidad(), r.animo().name(), r.racha(), r.accesorio().name(),
+                    v.eventos().stream().map(e -> new EventoDeMascota(e.tipo().name(), e.ocurridoEn())).toList());
+        }
+    }
+
+    public record EventoDeMascota(String tipo, Instant ocurridoEn) { }
 
     public record Diagnostico(String especie, String estado, List<Parametro> parametros,
                               List<String> recomendaciones, String periodo, Exposicion exposicionLuminica) { }
@@ -30,14 +47,14 @@ public record RespuestaLectura(UUID id, UUID plantaId, String origen, Instant to
     public record Exposicion(String base, Double horasObservadas, Double horasDeLuz, Double luxPromedioEnLuz,
                              Double luxEfectivo, Double horasEnOscuridad) { }
 
-    public static RespuestaLectura desde(DiagnosticoDePlanta registro, String apodo) {
+    public static RespuestaLectura desde(DiagnosticoDePlanta registro, String apodo, VistaParaLaMatera mascota) {
         var diagnostico = registro.diagnostico();
         return new RespuestaLectura(registro.id(), registro.plantaId(), registro.origen().name(),
                 registro.tomadaEn(), registro.registradoEn(),
                 new Diagnostico(diagnostico.especie().nombre(), diagnostico.estado().name(),
                         diagnostico.parametros().stream().map(RespuestaLectura::parametroDesde).toList(),
                         diagnostico.recomendaciones(), diagnostico.periodo().name(),
-                        exposicionDesde(diagnostico)), apodo);
+                        exposicionDesde(diagnostico)), apodo, Mascota.de(mascota));
     }
 
     private static Exposicion exposicionDesde(com.vivero.fitodiagnostico.dominio.modelo.Diagnostico diagnostico) {

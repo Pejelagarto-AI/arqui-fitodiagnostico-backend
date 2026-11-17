@@ -1,6 +1,8 @@
 package com.vivero.fitodiagnostico.adaptador.salida.notificacion;
 
 import com.vivero.fitodiagnostico.adaptador.salida.notificacion.PublicadorDeMascotaPorWebSocket.MensajeDeMascota;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
+import com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.Animo;
 import com.vivero.fitodiagnostico.mascota.modelo.AvisoDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.EventoDeMascota;
@@ -62,5 +64,51 @@ class PublicadorDeMascotaPorWebSocketTest {
         new PublicadorDeMascotaTrasCommit(List.of(roto, sano)).publicar(aviso());
 
         assertThat(recibidos).hasSize(1);
+    }
+
+    @Test
+    void laCariciaLlevaSuOrigenEnLosDatosYLosDemasEventosNo() {
+        EventoDeMascota caricia = new EventoDeMascota(UUID.randomUUID(), planta, TipoDeEvento.ACARICIADA,
+                Instant.parse("2026-11-16T08:05:00Z"), Map.of("origen", "MATERA"));
+
+        new PublicadorDeMascotaPorWebSocket(mensajes).publicar(
+                new AvisoDeMascota(caricia, "Pepa", 80, Animo.FELIZ, Set.of(dueno), Set.of()));
+
+        ArgumentCaptor<MensajeDeMascota> captor = ArgumentCaptor.forClass(MensajeDeMascota.class);
+        verify(mensajes).convertAndSendToUser(eq(dueno.toString()), eq("/queue/plantas/" + planta), captor.capture());
+        assertThat(captor.getValue().datos()).containsEntry("origen", "MATERA");
+        assertThat(captor.getValue().detalle()).containsEntry("origen", "MATERA");
+        assertThat(PublicadorDeMascotaPorWebSocket.datosDe(aviso())).doesNotContainKey("origen");
+    }
+
+    @Test
+    void cambiarElAccesorioSaleComoMascotaActualizadaSinEventoParaCadaPersona() {
+        new PublicadorDeMascotaPorWebSocket(mensajes).publicarActualizacion(new ActualizacionDeMascota(planta, "Pepa",
+                Accesorio.SOMBRERO, Set.of(dueno, invitado)));
+
+        ArgumentCaptor<MensajeDeMascota> captor = ArgumentCaptor.forClass(MensajeDeMascota.class);
+        verify(mensajes).convertAndSendToUser(eq(dueno.toString()), eq("/queue/plantas/" + planta), captor.capture());
+        verify(mensajes).convertAndSendToUser(eq(invitado.toString()), eq("/queue/plantas/" + planta), any(MensajeDeMascota.class));
+        assertThat(captor.getValue().tipo()).isEqualTo("MASCOTA_ACTUALIZADA");
+        assertThat(captor.getValue().datos()).containsEntry("plantaId", planta.toString())
+                .containsEntry("accesorio", "SOMBRERO");
+    }
+
+    @Test
+    void laActualizacionTambienEsperaAlCommitYUnCanalRotoNoFrenaAlOtro() {
+        List<ActualizacionDeMascota> recibidas = new ArrayList<>();
+        PublicadorDeMascota roto = new PublicadorDeMascota() {
+            @Override public void publicar(AvisoDeMascota a) { }
+            @Override public void publicarActualizacion(ActualizacionDeMascota c) { throw new IllegalStateException("caído"); }
+        };
+        PublicadorDeMascota sano = new PublicadorDeMascota() {
+            @Override public void publicar(AvisoDeMascota a) { }
+            @Override public void publicarActualizacion(ActualizacionDeMascota c) { recibidas.add(c); }
+        };
+
+        new PublicadorDeMascotaTrasCommit(List.of(roto, sano)).publicarActualizacion(
+                new ActualizacionDeMascota(planta, "Pepa", Accesorio.MONO, Set.of(dueno)));
+
+        assertThat(recibidas).hasSize(1);
     }
 }

@@ -54,6 +54,8 @@ class SeguridadCompartirYAvisosWebTest {
     @MockBean private ServicioInvitaciones invitaciones;
     @MockBean private ServicioRecuperacion recuperacion;
     @MockBean private ServicioSolicitudes solicitudes;
+    @MockBean private com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarResumenDeMascotasPort resumenDeMascotas;
+    @MockBean private com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort saludDePlantas;
 
     private static RequestPostProcessor comoCliente() {
         return jwt().jwt(j -> j.subject(UN_ID)).authorities(new SimpleGrantedAuthority("ROLE_CLIENTE"));
