@@ -9,6 +9,7 @@ Uso:  python3 firmware/test/probar_nucleo.py
 import base64
 import hashlib
 import hmac
+import json
 import math
 import os
 import random
@@ -386,6 +387,54 @@ def main():
         sin_declarado = copy.deepcopy(datos)
         sin_declarado["evento"]["cactus"].pop("RIEGO_DECLARADO", None)
         comprobar("generar_frases: RIEGO_DECLARADO puede faltar", "True", str(gf.contenido(sin_declarado) is not None))
+
+        # 11. El simulador (fase 14): la linea de la mascota en la 201 y la caricia de dispositivo.
+        cuerpo201 = {"id": "abcdef0123456789", "diagnostico": {"estado": "SALUDABLE"},
+                     "mascota": {"vitalidad": 64, "animo": "FELIZ", "racha": 3, "accesorio": "SOMBRERO",
+                                 "eventos": [{"tipo": "REGADA", "ocurridoEn": "2026-11-16T14:40:05Z"},
+                                             {"tipo": "ACARICIADA", "ocurridoEn": "2026-11-16T14:41:00Z"}]}}
+        comprobar("simulador: linea de la mascota",
+                  " | mascota vitalidad=64 animo=FELIZ racha=3 accesorio=SOMBRERO eventos=[REGADA, ACARICIADA]",
+                  sim.texto_mascota(cuerpo201))
+        comprobar("simulador: sin eventos", " | mascota vitalidad=10 animo=DESMAYADA racha=0 accesorio=NINGUNO eventos=[]",
+                  sim.texto_mascota({"mascota": {"vitalidad": 10, "animo": "DESMAYADA", "racha": 0,
+                                                 "accesorio": "NINGUNO", "eventos": []}}))
+        comprobar("simulador: servidor viejo sin mascota", "", sim.texto_mascota({"id": "x"}))
+        comprobar("simulador: resumen de la 201 incluye la mascota",
+                  "estado=SALUDABLE id=abcdef01" + sim.texto_mascota(cuerpo201), sim.resumen(201, json.dumps(cuerpo201)))
+        comprobar("simulador: resumen de una 201 vieja sigue igual", "estado=SALUDABLE id=abcdef01",
+                  sim.resumen(201, json.dumps({"id": "abcdef0123", "diagnostico": {"estado": "SALUDABLE"}})))
+
+        class CredencialFalsa:
+            def __init__(self, token):
+                self.token, self.descartada = token, False
+
+            def asegurar(self, esperar_red=True):
+                return self.token
+
+            def descartar(self):
+                self.descartada = True
+
+        for respuesta, esperado_descartar in ((201, False), (200, False), (401, True)):
+            llamadas = []
+            original = sim.enviar
+
+            def falso(url, token, cuerpo, r=respuesta, registro=llamadas):
+                registro.append((url, token, cuerpo))
+                return r, "{}"
+
+            sim.enviar = falso
+            try:
+                cred = CredencialFalsa("tok")
+                codigo = sim.acariciar("http://x:8080", "fito-ABC234", cred)
+            finally:
+                sim.enviar = original
+            comprobar("simulador: caricia HTTP %d" % respuesta, "%d True" % respuesta,
+                      "%s %s" % (codigo, cred.descartada == esperado_descartar))
+            comprobar("simulador: la caricia va a /mascota/acciones con el token y {tipo: ACARICIAR}",
+                      "[('http://x:8080/api/v1/dispositivos/fito-ABC234/mascota/acciones', 'tok', '{\"tipo\": \"ACARICIAR\"}')]",
+                      str(llamadas))
+        comprobar("simulador: sin token no acaricia", "None", str(sim.acariciar("http://x", "fito-ABC234", CredencialFalsa(None))))
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 
