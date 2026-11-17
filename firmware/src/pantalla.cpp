@@ -402,14 +402,14 @@ void pintarEfecto() {
     }
 }
 
-// Barra de vitalidad: 78 x 2 px en (50, 44), entre la fila de la temperatura (termina en y 43) y el nombre (empieza en
-// y 47). Relleno proporcional (fito_barra_px) y, en lo vacio, un punto de por medio en la fila de abajo. Solo se pinta
-// mientras la fila de texto muestra una frase: sin frase no cabe sin tapar nada.
-constexpr int BARRA_X = 50, BARRA_Y = 44, BARRA_W = 78;
+// Barra de vitalidad: una linea de 78 x 1 px en (50, 45), entre la fila de la temperatura (sus numeros terminan en y 43) y
+// el nombre (empieza en y 47): deja una fila libre arriba y otra abajo. Relleno proporcional (fito_barra_px) y, en lo
+// vacio, un punto de por medio. Solo se pinta mientras la fila de texto muestra una frase: sin frase no cabe sin tapar nada.
+constexpr int BARRA_X = 50, BARRA_Y = 45, BARRA_W = 78;
 void pintarBarraVitalidad() {
     const int lleno = fito_barra_px(lVitalidad, BARRA_W);
-    oled.fillRect(BARRA_X, BARRA_Y, lleno, 2, SSD1306_WHITE);
-    for (int x = BARRA_X + lleno; x < BARRA_X + BARRA_W; x += 2) oled.drawPixel(x, BARRA_Y + 1, SSD1306_WHITE);
+    oled.drawFastHLine(BARRA_X, BARRA_Y, lleno, SSD1306_WHITE);
+    for (int x = BARRA_X + lleno; x < BARRA_X + BARRA_W; x += 2) oled.drawPixel(x, BARRA_Y, SSD1306_WHITE);
 }
 
 // Girasol: la corona gira medio petalo cada 400 ms, la cabeza cabecea 1 px y la cara mira a los lados.
