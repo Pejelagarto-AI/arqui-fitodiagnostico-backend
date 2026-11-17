@@ -2,6 +2,7 @@
 #pragma once
 #include <Arduino.h>
 #include "sensores.h"
+#include "mascota.h"
 
 namespace api {
 constexpr int SIN_RED = -1;
@@ -23,7 +24,13 @@ const Rangos &rangos();
 
 // POST /dispositivos/{serial}/lecturas con Bearer. `estado` = diagnostico.estado si fue 201; `noche` = true si
 // diagnostico.periodo es "NOCHE" (fase 8 del backend; sin el campo, un servidor viejo, es de dia).
-int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche);
+// `mascota` (fase 14) es la clave "mascota" de la 201: animo, vitalidad, accesorio y los eventos nuevos; con `hay` false si
+// el servidor no la manda (servidor viejo) o la respuesta no fue 201.
+int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche, EstadoMascota &mascota);
+
+// POST /dispositivos/{serial}/mascota/acciones {"tipo":"ACARICIAR"} con Bearer (fase 14). 201 = caricia nueva, 200 = repetida
+// dentro de 10 s (el servidor no guarda otra), 401 = token malo (el llamador lo descarta), SIN_RED. No toca la pantalla.
+int acariciar(const String &token);
 
 // POST /dispositivos/{serial}/salud con Bearer (fase 10): `falla[i]` true = FALLA en humedad, luz, temperatura.
 // `detalle` puede ser vacio. 200 = el servidor lo guardo.

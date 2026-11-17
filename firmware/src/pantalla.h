@@ -4,6 +4,7 @@
 #pragma once
 #include <Arduino.h>
 #include "sensores.h"
+#include "mascota.h"
 
 namespace pantalla {
 bool iniciar();                                         // escanea 0x3C y 0x3D; false si no responde ninguna
@@ -31,6 +32,9 @@ void mordisco(uint32_t ahoraMs);                        // la carnivora muerde (
 // Fase 11: la mascota saluda (pulsacion corta de BOOT). Salto y parpadeo doble de 600 ms con la cara contenta, el
 // bloque SALUDO del front. Solo en la pantalla de lecturas; no habla con el servidor.
 void saludar(uint32_t ahoraMs);
+// Fase 14: lo que el servidor dijo de la mascota en la 201 (animo, vitalidad, accesorio y los eventos nuevos, que se encolan
+// y se reproducen de a uno). No pinta: la siguiente pantalla::lecturas() / animarLecturas() lo muestra. `m.hay` false = servidor viejo.
+void mascota(const EstadoMascota &m, uint32_t ahoraMs);
 void sinRed(size_t guardadas);
 void error(const char *l1, const char *l2 = "", const char *l3 = "");
 void reinicio(int segundos);
