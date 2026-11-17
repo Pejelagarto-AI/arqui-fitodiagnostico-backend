@@ -28,6 +28,18 @@ public class MascotaEnMemoria implements RepositorioMascotas, RepositorioEventos
     private final List<EventoDeMascota> eventos = new ArrayList<>();
     private final Map<UUID, AccionDeMascota> acciones = new LinkedHashMap<>();
     public final List<AvisoDeMascota> publicados = new ArrayList<>();
+    public final List<com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota> actualizaciones = new ArrayList<>();
+    private final Map<UUID, java.time.Instant> registradoEn = new java.util.HashMap<>();
+    private final java.time.Clock reloj;
+
+    public MascotaEnMemoria() {
+        this(java.time.Clock.systemUTC());
+    }
+
+    /** Con el reloj de la prueba, para que {@code registradoEn} avance con él, como el adaptador JPA. */
+    public MascotaEnMemoria(java.time.Clock reloj) {
+        this.reloj = reloj;
+    }
 
     @Override
     public Optional<EstadoDeMascota> de(UUID plantaId) {
@@ -45,6 +57,13 @@ public class MascotaEnMemoria implements RepositorioMascotas, RepositorioEventos
     }
 
     @Override
+    public Map<UUID, EstadoDeMascota> deLasPlantas(java.util.Collection<UUID> plantaIds) {
+        Map<UUID, EstadoDeMascota> r = new LinkedHashMap<>();
+        plantaIds.forEach(id -> de(id).ifPresent(e -> r.put(id, e)));
+        return r;
+    }
+
+    @Override
     public List<UUID> todas() {
         return List.copyOf(mascotas.keySet());
     }
@@ -52,6 +71,7 @@ public class MascotaEnMemoria implements RepositorioMascotas, RepositorioEventos
     @Override
     public void guardar(EventoDeMascota evento) {
         eventos.add(evento);
+        registradoEn.put(evento.id(), reloj.instant());
     }
 
     @Override
@@ -79,6 +99,20 @@ public class MascotaEnMemoria implements RepositorioMascotas, RepositorioEventos
     @Override
     public Optional<AccionDeMascota> pendienteDe(UUID plantaId) {
         return acciones.values().stream().filter(a -> a.plantaId().equals(plantaId) && a.pendiente()).findFirst();
+    }
+
+    @Override
+    public List<EventoDeMascota> registradosDespuesDe(UUID plantaId, java.time.Instant despuesDe, int maximo) {
+        List<EventoDeMascota> filtrados = eventos.stream()
+                .filter(e -> e.plantaId().equals(plantaId) && registradoEn.get(e.id()).isAfter(despuesDe))
+                .sorted(Comparator.comparing((EventoDeMascota e) -> registradoEn.get(e.id())))
+                .toList();
+        return filtrados.subList(Math.max(0, filtrados.size() - maximo), filtrados.size());
+    }
+
+    @Override
+    public void publicarActualizacion(com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota cambio) {
+        actualizaciones.add(cambio);
     }
 
     @Override
