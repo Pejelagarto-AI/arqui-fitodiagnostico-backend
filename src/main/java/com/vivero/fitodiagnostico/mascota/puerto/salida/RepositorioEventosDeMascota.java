@@ -16,6 +16,13 @@ public interface RepositorioEventosDeMascota {
     /** El más reciente de ese tipo, o vacío (fase 12: la última caricia, para el enfriamiento). */
     Optional<EventoDeMascota> ultimoDeTipo(UUID plantaId, TipoDeEvento tipo);
 
+    /**
+     * Los eventos con {@code registradoEn} posterior a {@code despuesDe} (fase 13, D180): los últimos {@code maximo},
+     * del más antiguo al más reciente por hora de registro. Es la hora en que el servidor los anotó, no {@code ocurridoEn}:
+     * una REGADA ocurre a la hora de la lectura que mostró el salto, pero la matera la necesita cuando se anota.
+     */
+    java.util.List<EventoDeMascota> registradosDespuesDe(UUID plantaId, java.time.Instant despuesDe, int maximo);
+
     /** Del más reciente al más antiguo por {@code ocurridoEn}. */
     Pagina<EventoDeMascota> de(UUID plantaId, Paginacion paginacion);
 }

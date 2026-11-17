@@ -3,6 +3,8 @@ package com.vivero.fitodiagnostico.adaptador.entrada.rest;
 import com.vivero.fitodiagnostico.aplicacion.RutasDelFront;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.AceptarInvitacionPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.CompartirPlantaPort;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarResumenDeMascotasPort;
+import com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.adaptador.entrada.rest.dto.RespuestaAceptacionConRegistro;
 import com.vivero.fitodiagnostico.adaptador.entrada.rest.dto.RespuestaInvitacion;
@@ -51,6 +53,8 @@ public class InvitacionesController {
     private final AceptarInvitacionPort aceptacion;
     private final String urlDelFront;
     private final Clock reloj;
+    private final ConsultarResumenDeMascotasPort mascotas;
+    private final ConsultarSaludDePlantasPort saludes;
 
     /**
      * La URL base del front es configuración ({@code FITO_FRONT_URL}); las rutas de las pantallas
@@ -58,11 +62,14 @@ public class InvitacionesController {
      */
     public InvitacionesController(CompartirPlantaPort compartir, AceptarInvitacionPort aceptacion,
                                   @Value("${fitodiagnostico.front.url:http://localhost:5500}") String urlDelFront,
-                                  Clock reloj) {
+                                  Clock reloj, ConsultarResumenDeMascotasPort mascotas,
+                                  ConsultarSaludDePlantasPort saludes) {
         this.compartir = compartir;
         this.aceptacion = aceptacion;
         this.urlDelFront = urlDelFront;
         this.reloj = reloj;
+        this.mascotas = mascotas;
+        this.saludes = saludes;
     }
 
     // ---- del dueño ----
@@ -118,8 +125,7 @@ public class InvitacionesController {
     @GetMapping("/plantas/compartidas")
     public List<RespuestaPlanta> compartidas(Authentication autenticacion) {
         UUID solicitante = IdentidadDelSolicitante.id(autenticacion);
-        return aceptacion.compartidasConmigo(solicitante).stream()
-                .map(planta -> RespuestaPlanta.desde(planta, solicitante)).toList();
+        return TableroDePlantas.armar(aceptacion.compartidasConmigo(solicitante), solicitante, mascotas, saludes);
     }
 
     /** RF-E6. */

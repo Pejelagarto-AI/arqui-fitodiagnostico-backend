@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.adaptador.salida.notificacion;
 
+import com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.AvisoDeMascota;
 import com.vivero.fitodiagnostico.mascota.puerto.salida.PublicadorDeMascota;
 import org.slf4j.Logger;
@@ -39,6 +40,30 @@ public class PublicadorDeMascotaTrasCommit implements PublicadorDeMascota {
             });
         } else {
             entregar(aviso);
+        }
+    }
+
+    @Override
+    public void publicarActualizacion(ActualizacionDeMascota cambio) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    entregarActualizacion(cambio);
+                }
+            });
+        } else {
+            entregarActualizacion(cambio);
+        }
+    }
+
+    private void entregarActualizacion(ActualizacionDeMascota cambio) {
+        for (PublicadorDeMascota canal : canales) {
+            try {
+                canal.publicarActualizacion(cambio);
+            } catch (RuntimeException e) {
+                log.error("no se pudo publicar la actualización de mascota por {}", canal.getClass().getSimpleName(), e);
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 package com.vivero.fitodiagnostico.adaptador.salida.notificacion;
 
+import com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota;
 import com.vivero.fitodiagnostico.mascota.modelo.AvisoDeMascota;
 import com.vivero.fitodiagnostico.mascota.puerto.salida.PublicadorDeMascota;
 import org.slf4j.Logger;
@@ -25,6 +26,8 @@ import java.util.UUID;
 public class PublicadorDeMascotaPorWebSocket implements PublicadorDeMascota {
 
     public static final String TIPO = "EVENTO_DE_MASCOTA";
+    /** Fase 13 (D184): el accesorio cambió; no es un evento de la línea de tiempo. */
+    public static final String TIPO_ACTUALIZADA = "MASCOTA_ACTUALIZADA";
 
     /** Lo que recibe el navegador. */
     public record MensajeDeMascota(String tipo, String mensaje, Map<String, String> datos, Map<String, String> detalle) { }
@@ -51,6 +54,22 @@ public class PublicadorDeMascotaPorWebSocket implements PublicadorDeMascota {
         }
     }
 
+    @Override
+    public void publicarActualizacion(ActualizacionDeMascota cambio) {
+        Map<String, String> datos = new LinkedHashMap<>();
+        datos.put("plantaId", cambio.plantaId().toString());
+        datos.put("accesorio", cambio.accesorio().name());
+        MensajeDeMascota mensaje = new MensajeDeMascota(TIPO_ACTUALIZADA,
+                "«" + cambio.apodo() + "» cambió de accesorio.", datos, Map.of());
+        for (UUID destinatario : cambio.destinatarios()) {
+            try {
+                mensajes.convertAndSendToUser(destinatario.toString(), "/queue/plantas/" + cambio.plantaId(), mensaje);
+            } catch (RuntimeException e) {
+                log.warn("no se pudo empujar la actualización de mascota por WebSocket: {}", e.getMessage());
+            }
+        }
+    }
+
     static Map<String, String> datosDe(AvisoDeMascota aviso) {
         Map<String, String> datos = new LinkedHashMap<>();
         datos.put("plantaId", aviso.evento().plantaId().toString());
@@ -59,6 +78,11 @@ public class PublicadorDeMascotaPorWebSocket implements PublicadorDeMascota {
         datos.put("ocurridoEn", aviso.evento().ocurridoEn().toString());
         datos.put("vitalidad", String.valueOf(aviso.vitalidad()));
         datos.put("animo", aviso.animo().name());
+        // Fase 13 (D181): quién acarició. Solo lo traen los eventos que lo guardan en su detalle (ACARICIADA).
+        String origen = aviso.evento().detalle().get("origen");
+        if (origen != null) {
+            datos.put("origen", origen);
+        }
         return datos;
     }
 }

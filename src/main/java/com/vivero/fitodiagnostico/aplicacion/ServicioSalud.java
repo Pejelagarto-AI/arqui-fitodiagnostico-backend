@@ -6,6 +6,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioAccesos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioDispositivos;
 import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.salud.AvisadorDeSalud;
+import com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort;
 import com.vivero.fitodiagnostico.salud.ConsultarSaludPort;
 import com.vivero.fitodiagnostico.salud.EstadoDeSalud;
 import com.vivero.fitodiagnostico.salud.EstadoDeSensor;
@@ -21,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -45,7 +47,7 @@ import java.util.stream.Collectors;
  * de la salud de la planta (D150).
  */
 @Transactional
-public class ServicioSalud implements ReportarSaludPort, ConsultarSaludPort, RevisarSilencioPort {
+public class ServicioSalud implements ReportarSaludPort, ConsultarSaludPort, ConsultarSaludDePlantasPort, RevisarSilencioPort {
 
     public static final int MULTIPLO_DE_SILENCIO = 3;
 
@@ -120,6 +122,30 @@ public class ServicioSalud implements ReportarSaludPort, ConsultarSaludPort, Rev
         Instant ahora = ahora();
         return salud.de(seriales).stream().collect(Collectors.toMap(SaludDelDispositivo::serial,
                 s -> new Vista(s, s.mensaje(ahora)), (a, b) -> a, LinkedHashMap::new));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, Vista> laPeorDeLasPlantas(Collection<UUID> plantaIds) {
+        if (plantaIds.isEmpty()) {
+            return Map.of();
+        }
+        Instant ahora = ahora();
+        Map<UUID, Vista> peores = new LinkedHashMap<>();
+        salud.dePlantas(plantaIds).forEach((planta, materas) -> materas.stream()
+                .min(Comparator.comparingInt((SaludDelDispositivo s) -> gravedad(s.estado()))
+                        .thenComparing(SaludDelDispositivo::serial))
+                .ifPresent(peor -> peores.put(planta, new Vista(peor, peor.mensaje(ahora)))));
+        return peores;
+    }
+
+    /** Menor es peor: la que más urge va primero. */
+    private static int gravedad(EstadoDeSalud estado) {
+        return switch (estado) {
+            case FALLA -> 0;
+            case SIN_NOTICIAS -> 1;
+            case OK -> 2;
+        };
     }
 
     @Override

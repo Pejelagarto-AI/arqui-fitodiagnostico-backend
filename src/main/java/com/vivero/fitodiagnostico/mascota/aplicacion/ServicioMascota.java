@@ -25,6 +25,11 @@ import com.vivero.fitodiagnostico.mascota.modelo.ReglasDeVitalidad;
 import com.vivero.fitodiagnostico.mascota.modelo.ResultadoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.TipoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.TipoDeEvento;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
+import com.vivero.fitodiagnostico.mascota.modelo.ActualizacionDeMascota;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.ActuarDesdeLaMateraPort;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.CambiarAccesorioPort;
+import com.vivero.fitodiagnostico.dominio.excepcion.PlantaNoEncontradaException;
 import com.vivero.fitodiagnostico.mascota.puerto.entrada.ActuarSobreMascotaPort;
 import com.vivero.fitodiagnostico.mascota.puerto.entrada.AlimentarMascotaPort;
 import com.vivero.fitodiagnostico.mascota.puerto.entrada.AvanzarMascotasPort;
@@ -58,7 +63,12 @@ import java.util.stream.Collectors;
  * ni al notificador del diagnóstico: no puede producir ni avisar un diagnóstico.
  */
 @Service
-public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPort, ActuarSobreMascotaPort {
+public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPort, ActuarSobreMascotaPort,
+        ActuarDesdeLaMateraPort, CambiarAccesorioPort {
+
+    /** Quién originó una caricia (fase 13, D181): va en el detalle del evento y en el aviso en vivo. */
+    public static final String ORIGEN_PERSONA = "PERSONA";
+    public static final String ORIGEN_MATERA = "MATERA";
 
     private final RepositorioPlantas plantas;
     private final RepositorioAccesos accesos;
@@ -177,17 +187,7 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         EstadoDeMascota paraAvisar = estado.orElseGet(() -> EstadoDeMascota.nueva(plantaId, ahora, parametros));
 
         if (tipo == TipoDeAccion.ACARICIAR) {
-            Optional<EventoDeMascota> anterior = eventos.ultimoDeTipo(plantaId, TipoDeEvento.ACARICIADA);
-            if (anterior.isPresent() && Duration.between(anterior.get().ocurridoEn(), ahora)
-                    .compareTo(parametros.enfriamientoDeCaricia()) < 0) {
-                // Demasiado pronto: responde con la última, sin evento, sin aviso y sin mensaje a la matera.
-                return new ResultadoDeAccion(anterior.get().id(), tipo, EstadoDeAccion.HECHA,
-                        anterior.get().ocurridoEn(), null, true);
-            }
-            EventoDeMascota caricia = EventoDeMascota.nuevo(plantaId, TipoDeEvento.ACARICIADA, ahora, Map.of());
-            registrarYPublicar(planta, paraAvisar, ultimo, List.of(caricia));
-            return new ResultadoDeAccion(caricia.id(), tipo, EstadoDeAccion.HECHA,
-                    ahora, null);
+            return acariciar(planta, paraAvisar, ultimo, ahora, ORIGEN_PERSONA, Set.of());
         }
 
         Optional<AccionDeMascota> yaPendiente = acciones.pendienteDe(plantaId);
@@ -211,6 +211,60 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
         return ResultadoDeAccion.de(guardada);
     }
 
+    /**
+     * La matera acaricia (fase 13, D181). Sin autorizador de personas: el controlador del dispositivo ya verificó que el
+     * token es de esa matera y que sigue vinculada a la planta. Mismo enfriamiento que la persona (D172), contado por
+     * planta: una caricia desde el front y otra desde la matera dentro de los 10 s son "la misma". No se publica por MQTT
+     * a la matera que la originó (ya lo sabe: lo dijo ella).
+     */
+    @Transactional
+    @Override
+    public ResultadoDeAccion acariciar(UUID plantaId, String serial) {
+        Planta planta = plantas.buscar(plantaId).orElseThrow(() -> new PlantaNoEncontradaException(plantaId));
+        Instant ahora = reloj.instant();
+        Optional<EstadoDeMascota> estado = mascotas.paraActualizar(plantaId);
+        Optional<Diagnostico> ultimo = diagnosticos.ultimoDe(plantaId).map(DiagnosticoDePlanta::diagnostico);
+        EstadoDeMascota paraAvisar = estado.orElseGet(() -> EstadoDeMascota.nueva(plantaId, ahora, parametros));
+        return acariciar(planta, paraAvisar, ultimo, ahora, ORIGEN_MATERA, Set.of(serial));
+    }
+
+    private ResultadoDeAccion acariciar(Planta planta, EstadoDeMascota paraAvisar, Optional<Diagnostico> ultimo,
+                                        Instant ahora, String origen, Set<String> serialesSinAviso) {
+        UUID plantaId = planta.id();
+        Optional<EventoDeMascota> anterior = eventos.ultimoDeTipo(plantaId, TipoDeEvento.ACARICIADA);
+        if (anterior.isPresent() && Duration.between(anterior.get().ocurridoEn(), ahora)
+                .compareTo(parametros.enfriamientoDeCaricia()) < 0) {
+            // Demasiado pronto: responde con la última, sin evento, sin aviso y sin mensaje a la matera.
+            return new ResultadoDeAccion(anterior.get().id(), TipoDeAccion.ACARICIAR, EstadoDeAccion.HECHA,
+                    anterior.get().ocurridoEn(), null, true);
+        }
+        EventoDeMascota caricia = EventoDeMascota.nuevo(plantaId, TipoDeEvento.ACARICIADA, ahora,
+                Map.of("origen", origen));
+        registrarYPublicar(planta, paraAvisar, ultimo, List.of(caricia), serialesSinAviso);
+        return new ResultadoDeAccion(caricia.id(), TipoDeAccion.ACARICIAR, EstadoDeAccion.HECHA, ahora, null);
+    }
+
+    /**
+     * Fase 13 (D182): el accesorio es una columna de la fila de la mascota, no un evento. Si la planta aún no tiene
+     * fila (nunca tuvo lecturas) se crea con la vitalidad inicial, como la crea la primera lectura. Con el bloqueo de la
+     * fila (D147) no se pisa con una lectura que llega a la vez.
+     */
+    @Transactional
+    @Override
+    public void cambiar(UUID solicitante, UUID plantaId, Accesorio accesorio) {
+        Planta planta = autorizador.paraModificar(solicitante, plantaId);
+        Instant ahora = reloj.instant();
+        Optional<EstadoDeMascota> existente = mascotas.paraActualizar(plantaId);
+        if (existente.isPresent() && existente.get().accesorio() == accesorio) {
+            return;   // idempotente: sin cambio no hay escritura ni aviso
+        }
+        EstadoDeMascota estado = existente.orElseGet(() -> EstadoDeMascota.nueva(plantaId, ahora, parametros));
+        mascotas.guardar(estado.conAccesorio(accesorio));
+        Set<UUID> destinatarios = new HashSet<>(accesos.invitadosDe(plantaId));
+        destinatarios.add(planta.duenoId());
+        publicador.publicarActualizacion(new ActualizacionDeMascota(plantaId, planta.apodo(), accesorio, destinatarios));
+    }
+
     private Optional<EventoDeMascota> resolverPendiente(UUID plantaId, List<LecturaReciente> muestras, EstadoDeMascota estado,
                                                         Instant ahora) {
         return acciones.pendienteDe(plantaId)
@@ -229,13 +283,18 @@ public class ServicioMascota implements AlimentarMascotaPort, AvanzarMascotasPor
 
     private void registrarYPublicar(Planta planta, EstadoDeMascota estado, Optional<Diagnostico> ultimo,
                                     List<EventoDeMascota> nuevos) {
+        registrarYPublicar(planta, estado, ultimo, nuevos, Set.of());
+    }
+
+    private void registrarYPublicar(Planta planta, EstadoDeMascota estado, Optional<Diagnostico> ultimo,
+                                    List<EventoDeMascota> nuevos, Set<String> serialesSinAviso) {
         if (nuevos.isEmpty()) {
             return;
         }
         Set<UUID> destinatarios = new HashSet<>(accesos.invitadosDe(planta.id()));
         destinatarios.add(planta.duenoId());
         Set<String> seriales = dispositivos.porPlanta(planta.id()).stream().map(Dispositivo::serial)
-                .collect(Collectors.toSet());
+                .filter(serial -> !serialesSinAviso.contains(serial)).collect(Collectors.toSet());
         MapaDeAnimo.Resultado comoSeVe = animo.de(ultimo, Optional.of(estado));
         for (EventoDeMascota evento : nuevos) {
             eventos.guardar(evento);

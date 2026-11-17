@@ -9,7 +9,11 @@ import com.vivero.fitodiagnostico.dominio.modelo.Paginacion;
 import com.vivero.fitodiagnostico.mascota.modelo.EstadoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.ResultadoDeAccion;
 import com.vivero.fitodiagnostico.mascota.modelo.TipoDeAccion;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
 import com.vivero.fitodiagnostico.mascota.puerto.entrada.ActuarSobreMascotaPort;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.CambiarAccesorioPort;
+import com.vivero.fitodiagnostico.adaptador.entrada.rest.dto.SolicitudAccesorioDeMascota;
+import org.springframework.web.bind.annotation.PatchMapping;
 import com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarMascotaPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,10 +40,34 @@ public class MascotaController {
 
     private final ConsultarMascotaPort consulta;
     private final ActuarSobreMascotaPort acciones;
+    private final CambiarAccesorioPort accesorios;
 
-    public MascotaController(ConsultarMascotaPort consulta, ActuarSobreMascotaPort acciones) {
+    public MascotaController(ConsultarMascotaPort consulta, ActuarSobreMascotaPort acciones,
+                             CambiarAccesorioPort accesorios) {
         this.consulta = consulta;
         this.acciones = acciones;
+        this.accesorios = accesorios;
+    }
+
+    /**
+     * Fase 13 (D182): el dueño le pone un accesorio. 200 con la misma vista que el GET; 403 al invitado, 404 si no es su
+     * planta (como el resto) y 400 con un valor desconocido. Con la planta sin fila de mascota la crea.
+     */
+    @PatchMapping
+    public RespuestaMascota accesorio(Authentication autenticacion, @PathVariable UUID plantaId,
+                                      @RequestBody SolicitudAccesorioDeMascota solicitud) {
+        UUID solicitante = IdentidadDelSolicitante.id(autenticacion);
+        accesorios.cambiar(solicitante, plantaId, accesorioDe(solicitud));
+        return RespuestaMascota.desde(consulta.consultar(solicitante, plantaId));
+    }
+
+    private static Accesorio accesorioDe(SolicitudAccesorioDeMascota solicitud) {
+        String valor = solicitud == null || solicitud.accesorio() == null ? "" : solicitud.accesorio().trim().toUpperCase(Locale.ROOT);
+        try {
+            return Accesorio.valueOf(valor);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("el campo 'accesorio' debe ser uno de " + Arrays.toString(Accesorio.values()));
+        }
     }
 
     /** Vitalidad, ánimo, racha, los cinco últimos eventos y el "la regué" pendiente. Sin lecturas, 200 igual. */

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +18,12 @@ import java.util.UUID;
 public interface DiagnosticoDePlantaJpaRepository extends JpaRepository<DiagnosticoDePlantaEntity, UUID> {
 
     Optional<DiagnosticoDePlantaEntity> findFirstByPlantaIdOrderByRegistradoEnDescIdDesc(UUID plantaId);
+
+    // Fase 13 (D185): el último diagnóstico de cada planta de un lote, en una sentencia (las colecciones EAGER vienen
+    // en lote por SUBSELECT, no una consulta por diagnóstico). El empate de registrado_en se resuelve en el adaptador.
+    @Query("select d from DiagnosticoDePlantaEntity d where d.plantaId in :plantaIds and d.registradoEn = "
+            + "(select max(u.registradoEn) from DiagnosticoDePlantaEntity u where u.plantaId = d.plantaId)")
+    List<DiagnosticoDePlantaEntity> ultimosDe(@Param("plantaIds") Collection<UUID> plantaIds);
 
     // Fase 12: ¿hay alguna lectura de la planta antes de ese instante? (ix_diagnostico_serie)
     boolean existsByPlantaIdAndTomadaEnBefore(UUID plantaId, Instant instante);
