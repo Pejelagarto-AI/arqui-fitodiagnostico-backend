@@ -6,7 +6,7 @@
 namespace frases {
 constexpr int MAXIMO = 13;
 constexpr int N_FAMILIAS = 6, N_ANIMOS = 11, N_EVENTOS = 9;
-// Cada frase ocupa MAXIMO + 1 bytes (con el NUL). Se leen con strlcpy_P / memcpy_P.
+// Cada frase ocupa MAXIMO + 1 bytes (con el NUL). Se leen con memcpy_P.
 const char ANIMO[N_FAMILIAS][N_ANIMOS][MAXIMO + 1] PROGMEM = {
     {  // generica
         "estoy bien",  // FELIZ

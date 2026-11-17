@@ -47,8 +47,8 @@ def tabla(datos, seccion, claves, opcionales=()):
     return filas
 
 
-def main():
-    datos = json.load(open(ENTRADA, encoding="utf-8"))
+def contenido(datos):
+    """El texto de frases.h para el contenido de frases.json (ya cargado). Falla (SystemExit) si algo no cumple."""
     if datos.get("maximo") != MAXIMO:
         sys.exit(f"frases.json: 'maximo' debe ser {MAXIMO}")
     animos = tabla(datos, "animo", ANIMOS)
@@ -65,18 +65,22 @@ def main():
          "#pragma once", "#include <Arduino.h>", "", "namespace frases {",
          f"constexpr int MAXIMO = {MAXIMO};",
          f"constexpr int N_FAMILIAS = {len(FAMILIAS)}, N_ANIMOS = {len(ANIMOS)}, N_EVENTOS = {len(EVENTOS)};",
-         "// Cada frase ocupa MAXIMO + 1 bytes (con el NUL). Se leen con strlcpy_P / memcpy_P."]
-    for nombre, filas, n in (("ANIMO", animos, len(ANIMOS)), ("EVENTO", eventos, len(EVENTOS))):
-        L.append(f"const char {nombre}[N_FAMILIAS][N_{nombre}S][MAXIMO + 1] PROGMEM = {{" if nombre == "ANIMO"
-                 else f"const char {nombre}[N_FAMILIAS][N_{nombre}S][MAXIMO + 1] PROGMEM = {{")
+         "// Cada frase ocupa MAXIMO + 1 bytes (con el NUL). Se leen con memcpy_P."]
+    for nombre, filas, claves in (("ANIMO", animos, ANIMOS), ("EVENTO", eventos, EVENTOS)):
+        L.append(f"const char {nombre}[N_FAMILIAS][N_{nombre}S][MAXIMO + 1] PROGMEM = {{")
         for fam, fila in zip(FAMILIAS, filas):
             L.append(f"    {{  // {fam}")
-            for k, frase in zip(ANIMOS if nombre == "ANIMO" else EVENTOS, fila):
+            for k, frase in zip(claves, fila):
                 L.append(f'        "{frase}",  // {k}')
             L.append("    },")
         L.append("};")
     L.append("}")
-    open(SALIDA, "w", encoding="utf-8").write("\n".join(L) + "\n")
+    return "\n".join(L) + "\n"
+
+
+def main():
+    datos = json.load(open(ENTRADA, encoding="utf-8"))
+    open(SALIDA, "w", encoding="utf-8").write(contenido(datos))
     print("frases.h escrito (%d animos, %d eventos, %d familias)" % (len(ANIMOS), len(EVENTOS), len(FAMILIAS)))
 
 

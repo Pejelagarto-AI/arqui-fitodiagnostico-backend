@@ -6,8 +6,11 @@
  *   arnes sha256 <texto> / hmac <clave> <texto>
  *   arnes tabla <mv> <mv:valor> [<mv:valor> ...]   (puntos en orden ascendente de mv)
  *   arnes saludo <t_ms> / respira <ms> / zzz <ms> / pulsacion <ms> <tope_ms>   (fase 11)
+ *   arnes texto <animo|accesorio|evento> <texto> / cola <hay_animo> <base_ms> <paso>... / cuadro <efecto> <ms> / desmayo <ms>
+ *         / animacion <tipo> / barra <vitalidad> <ancho>                                (fase 14, mascota)
  */
 #include "fito_nucleo.h"
+#include "fito_mascota.h"
 #include "fito_hash.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +71,46 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc == 3 && !strcmp(argv[1], "hace")) { fito_hace_cuanto(atol(argv[2]), salida, sizeof salida); puts(salida); return 0; }
+    /* fase 14. texto: numero del texto del servidor (-1 si no se conoce). */
+    if (argc == 4 && !strcmp(argv[1], "texto")) {
+        int n = !strcmp(argv[2], "animo") ? fito_animo_desde_texto(argv[3]) : !strcmp(argv[2], "accesorio") ? fito_accesorio_desde_texto(argv[3]) : fito_evento_desde_texto(argv[3]);
+        printf("%d\n", n);
+        return 0;
+    }
+    /* cola <hay_animo 0|1> <base_ms> <paso>...: cada paso es "<ms>" o "<ms>+<tipo>,<tipo>..." (se encolan y luego se avanza a
+     * base + <ms>; una base cerca de 2^32 prueba el desborde de millis()).
+     * Imprime por paso "<evento activo>:<ms desde que empezo>/<fila>" ("-:0/<fila>" si no suena ninguno) y al final
+     * "descartados=<n> esperando=<n>". */
+    if (argc >= 5 && !strcmp(argv[1], "cola")) {
+        fito_cola_ev q;
+        const uint32_t base = (uint32_t)strtoul(argv[3], NULL, 10);
+        fito_ev_iniciar(&q, base);
+        int hay = atoi(argv[2]);
+        for (int i = 4; i < argc; i++) {
+            char *mas = strchr(argv[i], '+');
+            uint32_t t = base + (uint32_t)strtoul(argv[i], NULL, 10);
+            if (mas) {
+                for (char *p = strtok(mas + 1, ","); p; p = strtok(NULL, ",")) fito_ev_empujar(&q, atoi(p));
+            }
+            int tipo = -1;
+            uint32_t dt = 0;
+            int suena = fito_ev_avanzar(&q, t, &tipo, &dt);
+            int fila = fito_fila(&q, t, hay);
+            if (suena) printf("%d:%u/%d ", tipo, (unsigned)dt, fila); else printf("-:0/%d ", fila);
+        }
+        printf("descartados=%u esperando=%u\n", (unsigned)q.descartados, (unsigned)q.n);
+        return 0;
+    }
+    if (argc == 4 && !strcmp(argv[1], "cuadro")) {
+        uint32_t t = (uint32_t)strtoul(argv[3], NULL, 10);
+        int k = !strcmp(argv[2], "rayos") ? fito_rayos_cuadro(t) : !strcmp(argv[2], "corazon") ? fito_corazon_cuadro(t)
+              : !strcmp(argv[2], "destellos") ? fito_destellos_cuadro(t) : fito_estrella_cuadro(t);
+        printf("%d\n", k);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "desmayo")) { printf("%d\n", fito_desmayo_dy((uint32_t)strtoul(argv[2], NULL, 10))); return 0; }
+    if (argc == 3 && !strcmp(argv[1], "animacion")) { printf("%u\n", (unsigned)fito_ev_animacion_ms(atoi(argv[2]))); return 0; }
+    if (argc == 4 && !strcmp(argv[1], "barra")) { printf("%d\n", fito_barra_px(atoi(argv[2]), atoi(argv[3]))); return 0; }
     fprintf(stderr, "uso incorrecto\n");
     return 2;
 }
