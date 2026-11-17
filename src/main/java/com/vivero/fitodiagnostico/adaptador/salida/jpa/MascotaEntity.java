@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.adaptador.salida.jpa;
 
 import com.vivero.fitodiagnostico.dominio.modelo.EstadoGlobal;
+import com.vivero.fitodiagnostico.mascota.modelo.Accesorio;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -51,6 +52,10 @@ public class MascotaEntity {
     @Column(name = "ultimo_sol_en")
     private Instant ultimoSolEn;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "accesorio", nullable = false, length = 16)
+    private Accesorio accesorio = Accesorio.NINGUNO;
+
     protected MascotaEntity() { }   // requerido por JPA
 
     MascotaEntity(UUID plantaId) {
@@ -59,7 +64,8 @@ public class MascotaEntity {
 
     void volcar(double vitalidad, boolean desmayada, EstadoGlobal ultimoEstado, Instant ultimaLecturaEn,
                 Instant actualizadaEn, Instant saludableDesde, int rachaDias, Instant rachaDesde,
-                Instant ultimaRegadaEn, Instant ultimoSolEn) {
+                Instant ultimaRegadaEn, Instant ultimoSolEn, Accesorio accesorio) {
+        this.accesorio = accesorio;
         this.vitalidad = vitalidad;
         this.desmayada = desmayada;
         this.ultimoEstado = ultimoEstado;
@@ -93,4 +99,6 @@ public class MascotaEntity {
     Instant getUltimaRegadaEn() { return ultimaRegadaEn; }
 
     Instant getUltimoSolEn() { return ultimoSolEn; }
+
+    Accesorio getAccesorio() { return accesorio; }
 }

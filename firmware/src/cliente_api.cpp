@@ -117,7 +117,39 @@ int pedirCredencial(String &token, time_t &expira) {
     return codigo;
 }
 
-int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche) {
+// Que se queda del 201 de la lectura. Sin filtro el documento guarda todo (parametros, recomendaciones, historial de la
+// mascota con sus horas): con el filtro solo lo que se usa, y los 10 eventos de la mascota (fase 14) caben holgados.
+static JsonDocument filtroDeLectura() {
+    JsonDocument f;
+    f["apodo"] = true;
+    f["diagnostico"]["estado"] = true;
+    f["diagnostico"]["periodo"] = true;
+    f["diagnostico"]["especie"] = true;
+    f["diagnostico"]["parametros"][0]["nombre"] = true;
+    f["diagnostico"]["parametros"][0]["rangoOptimo"] = true;
+    f["mascota"]["vitalidad"] = true;
+    f["mascota"]["animo"] = true;
+    f["mascota"]["accesorio"] = true;
+    f["mascota"]["eventos"][0]["tipo"] = true;
+    return f;
+}
+
+// "mascota" de la 201 (fase 14). Si la clave no viene (servidor viejo) queda hay = false.
+static void tomarMascota(JsonObject r, EstadoMascota &m) {
+    m = EstadoMascota();
+    JsonObject mj = r["mascota"];
+    if (mj.isNull()) return;
+    m.hay = true;
+    m.vitalidad = (uint8_t)constrain((int)(mj["vitalidad"] | 0), 0, 100);
+    m.animo = (int8_t)fito_animo_desde_texto(mj["animo"] | "");
+    m.accesorio = (int8_t)fito_accesorio_desde_texto(mj["accesorio"] | "NINGUNO");
+    for (JsonObject e : mj["eventos"].as<JsonArray>()) {
+        if (m.nEventos >= FITO_COLA_EV_MAX) break;
+        m.eventos[m.nEventos++] = (int8_t)fito_evento_desde_texto(e["tipo"] | "");
+    }
+}
+
+int enviarLectura(const String &token, const Lectura &l, String &estado, bool &noche, EstadoMascota &mascota) {
     char marca[24];
     reloj::iso(l.cuando, marca, sizeof marca);
     JsonDocument d;
@@ -130,9 +162,11 @@ int enviarLectura(const String &token, const Lectura &l, String &estado, bool &n
     int codigo = post(String("/dispositivos/") + identidad::serial() + "/lecturas", cuerpo, token.c_str(), resp);
     estado = "";
     noche = false;
+    mascota = EstadoMascota();
     if (codigo == 201) {
         JsonDocument r;
-        if (!deserializeJson(r, resp)) {
+        if (!deserializeJson(r, resp, DeserializationOption::Filter(filtroDeLectura()))) {
+            tomarMascota(r.as<JsonObject>(), mascota);
             estado = (const char *)(r["diagnostico"]["estado"] | "");
             noche = !strcmp(r["diagnostico"]["periodo"] | "DIA", "NOCHE");
             tomarApodo(r);
@@ -154,6 +188,16 @@ int enviarLectura(const String &token, const Lectura &l, String &estado, bool &n
     } else if (codigo != SIN_RED) {
         registrar("lectura HTTP %d %s", codigo, mensajeDeError(resp).c_str());
     }
+    return codigo;
+}
+
+int acariciar(const String &token) {
+    JsonDocument d;
+    d["tipo"] = "ACARICIAR";
+    String cuerpo, resp;
+    serializeJson(d, cuerpo);
+    int codigo = post(String("/dispositivos/") + identidad::serial() + "/mascota/acciones", cuerpo, token.c_str(), resp);
+    if (codigo != 200 && codigo != 201 && codigo != SIN_RED) registrar("caricia HTTP %d %s", codigo, mensajeDeError(resp).c_str());
     return codigo;
 }
 

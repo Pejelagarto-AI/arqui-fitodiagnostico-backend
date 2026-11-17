@@ -90,7 +90,7 @@ public final class ReglasDeVitalidad {
 
         EstadoDeMascota nuevo = new EstadoDeMascota(e.plantaId(), vitalidad, desmayada, e.ultimoEstado(),
                 e.ultimaLecturaEn(), hasta, e.saludableDesde(), rachaDias, e.rachaDesde(), e.ultimaRegadaEn(),
-                e.ultimoSolEn());
+                e.ultimoSolEn(), e.accesorio());
         return new Avance(nuevo, eventos);
     }
 
@@ -107,13 +107,13 @@ public final class ReglasDeVitalidad {
         Instant rachaDesde = estado == EstadoGlobal.CRITICO ? null : s.rachaDesde() != null ? s.rachaDesde() : ahora;
         Instant actualizadaEn = ahora.isAfter(s.actualizadaEn()) ? ahora : s.actualizadaEn();
         EstadoDeMascota nuevo = new EstadoDeMascota(s.plantaId(), s.vitalidad(), s.desmayada(), estado, ahora,
-                actualizadaEn, saludableDesde, rachaDias, rachaDesde, s.ultimaRegadaEn(), s.ultimoSolEn());
+                actualizadaEn, saludableDesde, rachaDias, rachaDesde, s.ultimaRegadaEn(), s.ultimoSolEn(), s.accesorio());
         return new Avance(nuevo, avance.eventos());
     }
 
     private static EstadoDeMascota conActualizadaEn(EstadoDeMascota e, Instant en) {
         return new EstadoDeMascota(e.plantaId(), e.vitalidad(), e.desmayada(), e.ultimoEstado(), e.ultimaLecturaEn(),
-                en, e.saludableDesde(), e.rachaDias(), e.rachaDesde(), e.ultimaRegadaEn(), e.ultimoSolEn());
+                en, e.saludableDesde(), e.rachaDias(), e.rachaDesde(), e.ultimaRegadaEn(), e.ultimoSolEn(), e.accesorio());
     }
 
     private static double acotar(double v) {

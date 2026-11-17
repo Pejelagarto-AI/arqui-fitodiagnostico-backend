@@ -14,7 +14,7 @@ import java.util.UUID;
 public record VistaDeMascota(UUID plantaId, boolean hayLecturas, int vitalidad, boolean desmayada, Animo animo,
                              Optional<MapaDeAnimo.Causa> causa, EstadoGlobal estadoDelDiagnostico, int rachaDias,
                              Instant rachaDesde, Instant actualizadaEn, List<EventoDeMascota> ultimosEventos,
-                             Optional<AccionDeMascota> accionPendiente) {
+                             Optional<AccionDeMascota> accionPendiente, Accesorio accesorio) {
 
     public VistaDeMascota {
         ultimosEventos = List.copyOf(ultimosEventos);

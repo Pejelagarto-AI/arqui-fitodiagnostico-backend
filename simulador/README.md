@@ -200,6 +200,17 @@ python3 simulador/simulador_esp32.py --serial auto --falla temperatura --duracio
 
 Las reglas de cuándo reportar están en `MemoriaDeSalud`, traducción literal de `fito_salud_toca` del firmware; `firmware/test/probar_nucleo.py` exige que las dos decidan lo mismo. Detalle en [`docs/fase10/IMPLEMENTACION.md`](../docs/fase10/IMPLEMENTACION.md).
 
+## La mascota (fase 14): `mascota` en la 201 y `--acariciar`
+
+Si el servidor es de la fase 14, cada línea de lectura agrega lo que la matera dibujaría: `| mascota vitalidad=64 animo=FELIZ racha=3 accesorio=SOMBRERO eventos=[REGADA, ACARICIADA]` (los eventos son los ocurridos desde la lectura anterior, del más antiguo al más reciente). Con un servidor viejo la línea queda como antes.
+
+`--acariciar` hace lo que el BOOT corto de la placa: `POST /api/v1/dispositivos/{serial}/mascota/acciones` con `{"tipo":"ACARICIAR"}` y el token de dispositivo. Imprime `caricia -> HTTP 201` (o `HTTP 200 (repetida, dentro de 10 s)`). Sin `--lecturas` termina después de acariciar; con `--lecturas N` sigue con las lecturas, y la caricia vuelve como evento `ACARICIADA` en la siguiente 201.
+
+```bash
+python3 simulador/simulador_esp32.py --serial auto --acariciar
+python3 simulador/simulador_esp32.py --serial auto --acariciar --lecturas 3 --intervalo 2
+```
+
 ## Opciones
 
 | Argumento | Variable de entorno | Por defecto |
@@ -208,6 +219,7 @@ Las reglas de cuándo reportar están en `MemoriaDeSalud`, traducción literal d
 | `--serial` | `FITO_SERIAL` | obligatorio (el del sticker), o `auto` para la fabrica automatica |
 | `--secreto` | `FITO_SECRETO` | obligatorio (el del sticker); no se usa con `--serial auto` |
 | `--clave-flota` | `FITO_CLAVE_FLOTA` | obligatoria con `--serial auto` |
+| `--acariciar` | | no acaricia; si se pone, un POST de caricia antes de las lecturas (termina ahí sin `--lecturas`) |
 | `--falla` | `FITO_FALLA` | ninguno; sensores que fallan (`humedad`, `luz`, `temperatura`, con coma) |
 | `--duracion-falla` | `FITO_DURACION_FALLA` | `0`: el sensor nunca se arregla |
 | `--front-url` | `FITO_FRONT_URL` | `http://localhost:5500` (enlace del sticker) |

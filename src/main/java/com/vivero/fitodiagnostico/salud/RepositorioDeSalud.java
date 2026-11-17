@@ -13,6 +13,12 @@ public interface RepositorioDeSalud {
 
     List<SaludDelDispositivo> de(Collection<String> seriales);
 
+    /**
+     * La salud de las materas vinculadas a esas plantas, en una consulta (fase 13, D185). Solo trae las materas
+     * que alguna vez dejaron noticia.
+     */
+    java.util.Map<java.util.UUID, List<SaludDelDispositivo>> dePlantas(Collection<java.util.UUID> plantaIds);
+
     /** Borra la salud de un dispositivo (al desvincularlo, D173). Sin fila no hace nada. */
     void eliminar(String serial);
 }

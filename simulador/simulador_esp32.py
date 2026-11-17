@@ -48,6 +48,8 @@ Configuracion (argumento de linea de comandos, o variable de entorno):
   --falla         FITO_FALLA               sensor(es) que "fallan": humedad, luz, temperatura (varios con coma). Como la
                                            placa con un DHT22 danado: descarta las lecturas y reporta la salud (fase 10)
   --duracion-falla FITO_DURACION_FALLA     a los N s de fallar el sensor "se arregla" y reporta OK (0 = no se arregla)
+  --acariciar     (sin variable)           como el BOOT corto de la placa: POST /mascota/acciones {"tipo":"ACARICIAR"} con el
+                                           token de dispositivo; sin --lecturas termina despues de acariciar (fase 14)
 
 Transporte MQTT (fase 4): con --transporte mqtt el reto y la credencial siguen por HTTP (el chip consigue su token igual),
 pero cada lectura se publica en fito/dispositivos/{serial}/lecturas (QoS 1, clientId = serial, cleanSession=false) con
@@ -383,6 +385,17 @@ def dormir_atendiendo(segundos):
         time.sleep(segundos)
 
 
+def texto_mascota(datos):
+    """Fase 14: la clave "mascota" de la 201 en una linea: vitalidad, animo, racha, accesorio y los eventos nuevos (los que
+    el firmware encola y reproduce de a uno). Vacio si el servidor no la manda (servidor viejo)."""
+    m = datos.get("mascota")
+    if not isinstance(m, dict):
+        return ""
+    eventos = ", ".join(e.get("tipo", "?") for e in m.get("eventos") or [])
+    return " | mascota vitalidad=%s animo=%s racha=%s accesorio=%s eventos=[%s]" % (
+        m.get("vitalidad", "?"), m.get("animo", "?"), m.get("racha", "?"), m.get("accesorio", "?"), eventos)
+
+
 def resumen(codigo, texto):
     """Una linea legible de la respuesta: estado del diagnostico si fue 201, codigo de error si no."""
     try:
@@ -390,7 +403,7 @@ def resumen(codigo, texto):
     except ValueError:
         return texto[:120]
     if codigo == 201:
-        return "estado=%s id=%s" % (datos["diagnostico"]["estado"], datos["id"][:8])
+        return "estado=%s id=%s%s" % (datos["diagnostico"]["estado"], datos["id"][:8], texto_mascota(datos))
     return "%s: %s" % (datos.get("error", "?"), datos.get("mensaje", ""))
 
 
@@ -694,6 +707,9 @@ def construir_parser():
                         "lecturas y se reporta la salud, como la placa con un sensor danado")
     p.add_argument("--duracion-falla", type=float, default=float(env("FITO_DURACION_FALLA", "0")),
                    help="a los N segundos de arrancar el sensor se arregla y se reporta OK (0 = nunca)")
+    p.add_argument("--acariciar", action="store_true",
+                   help="acaricia la mascota como el BOOT corto de la placa (POST /mascota/acciones, fase 14); sin "
+                        "--lecturas termina despues de acariciar")
     p.add_argument("--semilla", type=int, default=None, help="semilla del azar, para repetir una corrida")
     return p
 
@@ -773,6 +789,27 @@ def vaciar(cola, credencial, url, viejas, titulo):
         print("[%s] #%s %-8s %-38s -> %s%s" % (ahora_iso(), item.get("n", "?"), item.get("tipo", ""),
               item.get("detalle", ""), salida, extra), flush=True)
     return True
+
+
+def acariciar(base, serial, credencial):
+    """POST /dispositivos/{serial}/mascota/acciones {"tipo":"ACARICIAR"} con el token de dispositivo (fase 14): lo que hace
+    la placa al pulsar BOOT corto. 201 = caricia nueva, 200 = repetida dentro de 10 s, 401 = token descartado.
+    Devuelve el codigo HTTP, o None si no hay forma de autenticarse o no hay red."""
+    token = credencial.asegurar()
+    if token is SIN_RED or token is None:
+        print("[%s] caricia: sin token (no hay red o la matera no esta vinculada)" % ahora_iso(), flush=True)
+        return None
+    try:
+        codigo, texto = enviar(base + "/api/v1/dispositivos/" + serial + "/mascota/acciones", token,
+                               json.dumps({"tipo": "ACARICIAR"}))
+    except (urllib.error.URLError, OSError):
+        print("[%s] caricia: sin red" % ahora_iso(), flush=True)
+        return None
+    if codigo == 401:
+        credencial.descartar()
+    nota = " (repetida, dentro de 10 s)" if codigo == 200 else ""
+    print("[%s] caricia -> HTTP %d%s %s" % (ahora_iso(), codigo, nota, "" if codigo in (200, 201) else texto[:120]), flush=True)
+    return codigo
 
 
 def reportar_salud(salud, fallan, url, credencial):
@@ -867,6 +904,10 @@ def main(argv=None):
     url_salud = base + "/api/v1/dispositivos/" + args.serial + "/salud"
     inicio = time.monotonic()
     try:
+        if args.acariciar:
+            acariciar(base, args.serial, credencial)
+            if args.lecturas == 0:
+                return 0
         if cola.items:
             print("[%s] la NVS tiene %d pendientes de una ejecucion anterior: se envian primero"
                   % (ahora_iso(), len(cola.items)), flush=True)

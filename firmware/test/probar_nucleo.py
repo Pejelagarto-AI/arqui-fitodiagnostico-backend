@@ -9,6 +9,7 @@ Uso:  python3 firmware/test/probar_nucleo.py
 import base64
 import hashlib
 import hmac
+import json
 import math
 import os
 import random
@@ -34,7 +35,8 @@ RETOS = ["dGVzdG8tZGVsLXJldG8=", "AAAAAAAAAAAAAAAAAAAAAA==", "x" * 44]
 def compilar(destino):
     cmd = ["gcc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-I", os.path.join(RAIZ, "firmware", "src", "nucleo"),
            os.path.join(AQUI, "arnes.c"), os.path.join(AQUI, "hash_portable.c"),
-           os.path.join(RAIZ, "firmware", "src", "nucleo", "fito_nucleo.c"), "-o", destino]
+           os.path.join(RAIZ, "firmware", "src", "nucleo", "fito_nucleo.c"),
+           os.path.join(RAIZ, "firmware", "src", "nucleo", "fito_mascota.c"), "-o", destino]
     subprocess.run(cmd, check=True)
 
 
@@ -213,6 +215,226 @@ def main():
             comprobar("zzz t=%d" % t, str(esperado), c("zzz", str(t)))
         for ms, esperado in ((0, 0), (29, 0), (30, 1), (400, 1), (999, 1), (1000, 0), (5000, 0)):
             comprobar("pulsacion corta %d ms" % ms, str(esperado), c("pulsacion", str(ms), "1000"))
+
+        # 10. La mascota completa (fase 14). Los numeros son los que el front calca (docs/fase14/IMPLEMENTACION.md).
+        # 10a. Textos del servidor a numeros (el orden es el de frases.h y el de los FITO_* del nucleo).
+        ANIMOS = ["FELIZ", "CANSADA", "SEDIENTA", "AHOGADA", "CON_FRIO", "CON_CALOR", "A_OSCURAS", "DESLUMBRADA",
+                  "DESMAYADA", "DORMIDA", "SIN_DATOS"]
+        ACCESORIOS = ["NINGUNO", "SOMBRERO", "MONO", "GAFAS"]
+        EVENTOS = ["REGADA", "SALIO_AL_SOL", "DESMAYO", "REVIVIO", "ACARICIADA", "RACHA", "RIEGO_DECLARADO",
+                   "RIEGO_CONFIRMADO", "RIEGO_DESMENTIDO"]
+        for kind, lista in (("animo", ANIMOS), ("accesorio", ACCESORIOS), ("evento", EVENTOS)):
+            for i, nombre in enumerate(lista):
+                comprobar("%s %s" % (kind, nombre), str(i), c("texto", kind, nombre))
+            for malo in ("", "feliz", "VOLANDO", "FELIZ "):
+                comprobar("%s desconocido '%s'" % (kind, malo), "-1", c("texto", kind, malo))
+
+        # 10b. La cola de eventos: guiones escritos a mano. Cada paso imprime "tipo:ms/fila" (fila 0 estado, 1 frase del
+        # animo, 2 frase del evento); "-:0/f" si no suena ninguno. Al final, "descartados" y "esperando".
+        def cola(hay, pasos, base=0):
+            return c("cola", str(hay), str(base), *pasos)
+
+        def lista_tipos(tipos):
+            return ",".join(map(str, tipos))
+
+        comprobar("cola: sin eventos alterna cada 3 s", "-:0/0 -:0/0 -:0/1 -:0/1 -:0/0 -:0/1 descartados=0 esperando=0",
+                  cola(1, ["0", "2999", "3000", "5999", "6000", "9000"]))
+        comprobar("cola: sin mascota siempre el estado", "-:0/0 -:0/0 -:0/0 descartados=0 esperando=0",
+                  cola(0, ["0", "3000", "9000"]))
+        comprobar("cola: un evento y vuelve al ciclo (empieza por el estado)",
+                  "4:0/2 4:2999/2 -:0/0 -:0/0 -:0/1 descartados=0 esperando=0",
+                  cola(1, ["1000+4", "3999", "4000", "6999", "7000"]))
+        comprobar("cola: tres eventos de a uno en orden",
+                  "0:0/2 0:2999/2 1:0/2 1:2999/2 4:0/2 4:2999/2 -:0/0 -:0/1 descartados=0 esperando=0",
+                  cola(1, ["0+0,1,4", "2999", "3000", "5999", "6000", "8999", "9000", "12000"]))
+        comprobar("cola: RIEGO_DECLARADO y tipos desconocidos se ignoran", "-:0/0 -:0/0 descartados=0 esperando=0",
+                  cola(1, ["0+6,-1,9,42", "100"]))
+        comprobar("cola: lo ignorado no estorba a lo valido", "7:0/2 8:0/2 descartados=0 esperando=0",
+                  cola(1, ["0+6,7,6,-1,8", "3000"]))
+        comprobar("cola: un bucle lento no recupera tiempo", "0:0/2 1:0/2 1:2999/2 -:0/0 descartados=0 esperando=0",
+                  cola(1, ["0+0,1", "10000", "12999", "13000"]))
+
+        # diez de golpe: suenan los diez en orden, 3 s cada uno (30 s), sin perder ninguno
+        diez = [0, 1, 2, 3, 4, 5, 7, 8, 0, 1]
+        pasos = ["0+" + lista_tipos(diez)]
+        for k in range(10):
+            pasos += [str(3000 * k), str(3000 * k + 2999)]
+        pasos += ["30000", "33000"]
+        salida = cola(1, pasos).split()
+        # salida[0] es el paso "0+..." (ya arranca el primero); luego cada par es (inicio, ultimo ms) de cada evento
+        sonaron = [salida[1 + 2 * k].split(":")[0] for k in range(10)]
+        comprobar("cola: diez de golpe suenan en orden", " ".join(map(str, diez)), " ".join(sonaron))
+        comprobar("cola: diez de golpe, el ultimo suena hasta los 29999 ms", "1:2999/2", salida[-5])
+        comprobar("cola: despues de los diez vuelve al estado y luego a la frase", "-:0/0 -:0/1", " ".join(salida[-4:-2]))
+        comprobar("cola: diez de golpe, nada se pierde", "descartados=0 esperando=0", " ".join(salida[-2:]))
+
+        # once de golpe: se pierde el mas antiguo de los que esperan
+        once = [0, 1, 2, 3, 4, 5, 7, 8, 0, 1, 2]
+        salida = cola(1, ["0+" + lista_tipos(once)]).split()
+        comprobar("cola: once de golpe, suena el segundo (el primero se perdio)", "1:0/2", salida[0])
+        comprobar("cola: once de golpe, cuenta el descarte", "descartados=1 esperando=9", " ".join(salida[1:]))
+        # llegan mientras suena otro: el que suena no se corta
+        salida = cola(1, ["0+5", "100+" + lista_tipos(diez)]).split()
+        comprobar("cola: el que suena no se corta y los diez esperan", "5:0/2 5:100/2 descartados=0 esperando=10",
+                  " ".join(salida))
+        salida = cola(1, ["0+5", "100+" + lista_tipos(once)]).split()
+        comprobar("cola: once mientras suena uno, cae el mas antiguo de los que esperan",
+                  "5:100/2 descartados=1 esperando=10", " ".join(salida[1:]))
+        # desborde de millis(): el mismo guion a 400 ms del final de uint32
+        guion = ["0+4,1", "2999", "3000", "5999", "6000", "9000"]
+        comprobar("cola: desborde de millis() (la salida es igual)", cola(1, guion), cola(1, guion, base=2 ** 32 - 400))
+
+        # 10c. Contra un modelo independiente en Python (lista en vez de anillo), con guiones al azar.
+        class ModeloCola:
+            def __init__(self, ahora):
+                self.espera, self.activo, self.desde, self.ciclo, self.desc = [], None, 0, ahora, 0
+
+            def empujar(self, t):
+                if t < 0 or t > 8 or t == 6:
+                    return
+                if len(self.espera) == 10:
+                    self.espera.pop(0)
+                    self.desc += 1
+                self.espera.append(t)
+
+            def avanzar(self, ahora):
+                if self.activo is not None and (ahora - self.desde) & 0xFFFFFFFF >= 3000:
+                    self.activo, self.ciclo = None, ahora
+                if self.activo is None and self.espera:
+                    self.activo, self.desde = self.espera.pop(0), ahora
+                return self.activo
+
+            def fila(self, ahora, hay):
+                if self.activo is not None:
+                    return 2
+                return ((ahora - self.ciclo) & 0xFFFFFFFF) // 3000 % 2 if hay else 0
+
+        def modelo(hay, pasos, base):
+            m, salida = ModeloCola(base), []
+            for ms, tipos in pasos:
+                ahora = (base + ms) & 0xFFFFFFFF
+                for t in tipos:
+                    m.empujar(t)
+                a = m.avanzar(ahora)
+                salida.append("%d:%d/%d" % (a, (ahora - m.desde) & 0xFFFFFFFF, m.fila(ahora, hay)) if a is not None
+                              else "-:0/%d" % m.fila(ahora, hay))
+            return " ".join(salida) + " descartados=%d esperando=%d" % (m.desc, len(m.espera))
+
+        azar_ev = random.Random(14)
+        for i in range(60):
+            base = azar_ev.choice([0, 1000, 2 ** 32 - 5000, 2 ** 32 - 1])
+            hay = azar_ev.choice([0, 1, 1])
+            t, pasos = 0, []
+            for _ in range(40):
+                t += azar_ev.choice([0, 16, 50, 500, 2999, 3000, 3001, 7000])
+                tipos = [azar_ev.choice([-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+                         for _ in range(azar_ev.choice([0, 0, 0, 1, 2, 4, 11]))]
+                pasos.append((t, tipos))
+            texto = [str(ms) + ("+" + lista_tipos(tipos) if tipos else "") for ms, tipos in pasos]
+            comprobar("cola: guion al azar %d" % i, modelo(hay, pasos, base), cola(hay, texto, base))
+
+        # 10d. Cuadros de las animaciones: ms por cuadro, cuadros por vuelta y vueltas.
+        for efecto, ms, cuadros, vueltas in (("rayos", 250, 3, 2), ("corazon", 300, 2, 3), ("destellos", 200, 3, 2),
+                                             ("estrella", 300, 3, 2)):
+            duracion = ms * cuadros * vueltas
+            for t in list(range(0, duracion, 50)) + [duracion - 1, duracion, duracion + 1, duracion * 3, 4294967295]:
+                esperado = (t // ms) % cuadros if t < duracion else -1
+                comprobar("%s t=%d" % (efecto, t), str(esperado), c("cuadro", efecto, str(t)))
+        comprobar("duraciones (rayos, corazon, destellos, estrella)", "1500 1800 1200 1800",
+                  " ".join(c("animacion", str(t)) for t in (1, 4, 3, 5)))
+        for t, esperado in ((0, 0), (99, 0), (100, 0), (199, 0), (200, 1), (399, 1), (400, 2), (599, 2), (600, 2), (5000, 2)):
+            comprobar("desmayo t=%d" % t, str(esperado), c("desmayo", str(t)))
+        comprobar("desmayo dura 600 ms", "600", c("animacion", "2"))
+        for t in range(9):
+            comprobar("animacion del evento %d cabe en su turno de 3000 ms" % t, "True",
+                      str(0 <= int(c("animacion", str(t))) <= 3000))
+        for t in (0, 6, 7, 8):
+            comprobar("evento %d sin animacion propia (no despierta)" % t, "0", c("animacion", str(t)))
+        for vit, ancho, esperado in ((0, 78, 0), (100, 78, 78), (50, 78, 39), (64, 78, 50), (1, 78, 1), (-5, 78, 0),
+                                     (150, 78, 78), (3, 78, 2), (99, 78, 77)):
+            comprobar("barra vitalidad %d de %d" % (vit, ancho), str(esperado), c("barra", str(vit), str(ancho)))
+        for vit in range(0, 101, 7):
+            comprobar("barra %d = round(v*78/100)" % vit, str(int(vit * 78 / 100 + 0.5)), c("barra", str(vit), "78"))
+
+        # 10e. Las frases: frases.h sale de frases.json y el generador rechaza lo que no cumple.
+        sys.path.insert(0, os.path.join(RAIZ, "firmware", "sprites"))
+        import copy
+        import json
+        import generar_frases as gf  # noqa: E402
+        datos = json.load(open(os.path.join(RAIZ, "firmware", "sprites", "frases.json"), encoding="utf-8"))
+        actual = open(os.path.join(RAIZ, "firmware", "src", "frases.h"), encoding="utf-8").read()
+        comprobar("frases.h esta al dia con frases.json", "True", str(gf.contenido(datos) == actual))
+        todas = [f for sec in ("animo", "evento") for fam in datos[sec].values() for f in fam.values()]
+        comprobar("todas las frases miden 13 o menos y son ASCII", "True",
+                  str(all(len(f) <= 13 and f.isascii() for f in todas)))
+        comprobar("66 frases de animo (6 familias x 11)", "66", str(sum(len(v) for v in datos["animo"].values())))
+        for motivo, cambio in (("14 caracteres", lambda d: d["animo"]["girasol"].__setitem__("FELIZ", "x" * 14)),
+                               ("no ASCII", lambda d: d["animo"]["girasol"].__setitem__("FELIZ", "todo béllo")),
+                               ("falta un animo", lambda d: d["animo"]["cactus"].pop("CANSADA")),
+                               ("falta un evento", lambda d: d["evento"]["helecho"].pop("RACHA")),
+                               ("falta una familia", lambda d: d["animo"].pop("helecho")),
+                               ("familia desconocida", lambda d: d["animo"].__setitem__("rosa", {})),
+                               ("animo desconocido", lambda d: d["animo"]["cactus"].__setitem__("ENOJADA", "hmm")),
+                               ("maximo cambiado", lambda d: d.__setitem__("maximo", 20))):
+            malo = copy.deepcopy(datos)
+            cambio(malo)
+            try:
+                gf.contenido(malo)
+                obtenido = "aceptado"
+            except SystemExit:
+                obtenido = "rechazado"
+            comprobar("generar_frases rechaza: %s" % motivo, "rechazado", obtenido)
+        sin_declarado = copy.deepcopy(datos)
+        sin_declarado["evento"]["cactus"].pop("RIEGO_DECLARADO", None)
+        comprobar("generar_frases: RIEGO_DECLARADO puede faltar", "True", str(gf.contenido(sin_declarado) is not None))
+
+        # 11. El simulador (fase 14): la linea de la mascota en la 201 y la caricia de dispositivo.
+        cuerpo201 = {"id": "abcdef0123456789", "diagnostico": {"estado": "SALUDABLE"},
+                     "mascota": {"vitalidad": 64, "animo": "FELIZ", "racha": 3, "accesorio": "SOMBRERO",
+                                 "eventos": [{"tipo": "REGADA", "ocurridoEn": "2026-11-16T14:40:05Z"},
+                                             {"tipo": "ACARICIADA", "ocurridoEn": "2026-11-16T14:41:00Z"}]}}
+        comprobar("simulador: linea de la mascota",
+                  " | mascota vitalidad=64 animo=FELIZ racha=3 accesorio=SOMBRERO eventos=[REGADA, ACARICIADA]",
+                  sim.texto_mascota(cuerpo201))
+        comprobar("simulador: sin eventos", " | mascota vitalidad=10 animo=DESMAYADA racha=0 accesorio=NINGUNO eventos=[]",
+                  sim.texto_mascota({"mascota": {"vitalidad": 10, "animo": "DESMAYADA", "racha": 0,
+                                                 "accesorio": "NINGUNO", "eventos": []}}))
+        comprobar("simulador: servidor viejo sin mascota", "", sim.texto_mascota({"id": "x"}))
+        comprobar("simulador: resumen de la 201 incluye la mascota",
+                  "estado=SALUDABLE id=abcdef01" + sim.texto_mascota(cuerpo201), sim.resumen(201, json.dumps(cuerpo201)))
+        comprobar("simulador: resumen de una 201 vieja sigue igual", "estado=SALUDABLE id=abcdef01",
+                  sim.resumen(201, json.dumps({"id": "abcdef0123", "diagnostico": {"estado": "SALUDABLE"}})))
+
+        class CredencialFalsa:
+            def __init__(self, token):
+                self.token, self.descartada = token, False
+
+            def asegurar(self, esperar_red=True):
+                return self.token
+
+            def descartar(self):
+                self.descartada = True
+
+        for respuesta, esperado_descartar in ((201, False), (200, False), (401, True)):
+            llamadas = []
+            original = sim.enviar
+
+            def falso(url, token, cuerpo, r=respuesta, registro=llamadas):
+                registro.append((url, token, cuerpo))
+                return r, "{}"
+
+            sim.enviar = falso
+            try:
+                cred = CredencialFalsa("tok")
+                codigo = sim.acariciar("http://x:8080", "fito-ABC234", cred)
+            finally:
+                sim.enviar = original
+            comprobar("simulador: caricia HTTP %d" % respuesta, "%d True" % respuesta,
+                      "%s %s" % (codigo, cred.descartada == esperado_descartar))
+            comprobar("simulador: la caricia va a /mascota/acciones con el token y {tipo: ACARICIAR}",
+                      "[('http://x:8080/api/v1/dispositivos/fito-ABC234/mascota/acciones', 'tok', '{\"tipo\": \"ACARICIAR\"}')]",
+                      str(llamadas))
+        comprobar("simulador: sin token no acaricia", "None", str(sim.acariciar("http://x", "fito-ABC234", CredencialFalsa(None))))
     print("\n%d comprobaciones, %d fallas" % (total, fallos))
     return 1 if fallos else 0
 

@@ -38,6 +38,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  *
  * <p>Dos tipos de token (fase 2): el de PERSONA abre todo lo anterior; el de DISPOSITIVO
  * (alcance {@code lecturas:reportar}) abre únicamente {@code POST /api/v1/dispositivos/{id}/lecturas} y {@code .../salud}
+ * (fase 13: y {@code .../mascota/acciones})
  * y se rechaza con 403 en cualquier otra ruta, públicas incluidas. Al revés, un token de persona
  * tampoco abre el endpoint del dispositivo. Esa distinción es lo único que la cadena sabe del dispositivo.
  * Excepción de la fase 3: {@code POST /api/v1/dispositivos/{serial}/reto} y {@code /credencial} son públicas
@@ -120,7 +121,8 @@ public class ConfiguracionSeguridad {
                 // Fase 2: el ÚNICO endpoint que acepta un token de dispositivo, y solo uno con su alcance.
                 // Un token de usuario no lo tiene: 403.
                 // Fase 10: la salud de la matera lleva el mismo token y el mismo alcance que las lecturas.
-                .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/lecturas", "/api/v1/dispositivos/*/salud")
+                .requestMatchers(HttpMethod.POST, "/api/v1/dispositivos/*/lecturas", "/api/v1/dispositivos/*/salud",
+                        "/api/v1/dispositivos/*/mascota/acciones")
                         .hasAuthority(ConvertidorDeJwt.AUTORIDAD_REPORTAR_LECTURAS)
                 .requestMatchers("/api/v1/admin/**").access(SOLO_NO_DISPOSITIVO_CON_ROL_ADMINISTRADOR)
                 // Todo lo demás exige sesión de PERSONA: un token de dispositivo se rechaza con 403.

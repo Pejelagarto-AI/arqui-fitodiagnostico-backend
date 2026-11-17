@@ -2,6 +2,8 @@ package com.vivero.fitodiagnostico.adaptador.entrada.rest;
 
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.ConsultarPlantasPort;
 import com.vivero.fitodiagnostico.dominio.puerto.entrada.GestionarPlantasPort;
+import com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarResumenDeMascotasPort;
+import com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.adaptador.entrada.rest.dto.RespuestaPlanta;
 import com.vivero.fitodiagnostico.adaptador.entrada.rest.dto.SolicitudPlanta;
@@ -35,10 +37,15 @@ public class PlantasController {
 
     private final ConsultarPlantasPort consulta;
     private final GestionarPlantasPort gestion;
+    private final ConsultarResumenDeMascotasPort mascotas;
+    private final ConsultarSaludDePlantasPort saludes;
 
-    public PlantasController(ConsultarPlantasPort consulta, GestionarPlantasPort gestion) {
+    public PlantasController(ConsultarPlantasPort consulta, GestionarPlantasPort gestion,
+                             ConsultarResumenDeMascotasPort mascotas, ConsultarSaludDePlantasPort saludes) {
         this.consulta = consulta;
         this.gestion = gestion;
+        this.mascotas = mascotas;
+        this.saludes = saludes;
     }
 
     /** RF-D1. 404 si la especie no existe; 409 si está descontinuada (RN11). */
@@ -51,12 +58,11 @@ public class PlantasController {
                 .body(RespuestaPlanta.desde(planta, solicitante));
     }
 
-    /** RF-D2: solo las propias. */
+    /** RF-D2: solo las propias. Desde la fase 13 cada planta trae su mascota y su salud (D185). */
     @GetMapping
     public List<RespuestaPlanta> listar(Authentication autenticacion) {
         UUID solicitante = IdentidadDelSolicitante.id(autenticacion);
-        return consulta.listarPropias(solicitante).stream()
-                .map(planta -> RespuestaPlanta.desde(planta, solicitante)).toList();
+        return TableroDePlantas.armar(consulta.listarPropias(solicitante), solicitante, mascotas, saludes);
     }
 
     /** RF-D3: dueño o invitado. */

@@ -57,6 +57,8 @@ class PlantasControllerTest {
 
     @MockBean
     private ServicioPlantas servicio;
+    @MockBean private com.vivero.fitodiagnostico.mascota.puerto.entrada.ConsultarResumenDeMascotasPort resumenDeMascotas;
+    @MockBean private com.vivero.fitodiagnostico.salud.ConsultarSaludDePlantasPort saludDePlantas;
 
     private static RequestPostProcessor conSesion() {
         return jwt().jwt(j -> j.subject(YO.toString())).authorities(new SimpleGrantedAuthority("ROLE_CLIENTE"));
