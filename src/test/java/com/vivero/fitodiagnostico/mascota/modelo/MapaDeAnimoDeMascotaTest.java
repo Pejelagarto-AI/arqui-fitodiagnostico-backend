@@ -43,6 +43,36 @@ class MapaDeAnimoDeMascotaTest {
                 null, 0, null, null, null));
     }
 
+    private Optional<Diagnostico> recienRegada(ResultadoParametro... parametros) {
+        return Optional.of(new Diagnostico(null, null, EstadoGlobal.SALUDABLE, List.of(parametros), List.of(),
+                Instant.now(), Periodo.DIA, null, Instant.now()));
+    }
+
+    @Test
+    void recienRegadaLaHumedadAltaNoLaAhoga() {
+        MapaDeAnimo.Resultado r = mapa.de(recienRegada(fuera(Magnitud.HUMEDAD, Clasificacion.ALTO, 95),
+                optimo(Magnitud.LUZ), optimo(Magnitud.TEMPERATURA)), conVitalidad(80, false));
+
+        assertThat(r.animo()).isEqualTo(Animo.FELIZ);
+        assertThat(r.causa()).isEmpty();
+    }
+
+    @Test
+    void recienRegadaOtroParametroFueraDeRangoSigueMandando() {
+        MapaDeAnimo.Resultado r = mapa.de(recienRegada(fuera(Magnitud.HUMEDAD, Clasificacion.ALTO, 95),
+                fuera(Magnitud.TEMPERATURA, Clasificacion.BAJO, 10)), conVitalidad(80, false));
+
+        assertThat(r.animo()).isEqualTo(Animo.CON_FRIO);
+    }
+
+    @Test
+    void recienRegadaPeroSecaSigueSedienta() {
+        MapaDeAnimo.Resultado r = mapa.de(recienRegada(fuera(Magnitud.HUMEDAD, Clasificacion.BAJO, 10)),
+                conVitalidad(80, false));
+
+        assertThat(r.animo()).isEqualTo(Animo.SEDIENTA);
+    }
+
     @ParameterizedTest
     @CsvSource({
             "HUMEDAD, BAJO, 10, SEDIENTA",

@@ -65,6 +65,10 @@ public class DiagnosticoDePlantaEntity {
     @Enumerated(EnumType.STRING)
     private Periodo periodo = Periodo.DIA;
 
+    // Fase 15 (V24): cuándo se detectó el último riego de las 24 h previas; null si no hubo.
+    @Column(name = "regada_en")
+    private Instant regadaEn;
+
     @Column(name = "luz_horas_observadas")
     private Double luzHorasObservadas;
 
@@ -133,6 +137,10 @@ public class DiagnosticoDePlantaEntity {
         return periodo;
     }
 
+    public Instant getRegadaEn() {
+        return regadaEn;
+    }
+
     public Double getLuzHorasObservadas() {
         return luzHorasObservadas;
     }
@@ -195,6 +203,10 @@ public class DiagnosticoDePlantaEntity {
 
     void setPeriodo(Periodo periodo) {
         this.periodo = periodo;
+    }
+
+    void setRegadaEn(Instant regadaEn) {
+        this.regadaEn = regadaEn;
     }
 
     /** Las cinco columnas de la exposición a la vez: o todas tienen valor o todas son null. */
