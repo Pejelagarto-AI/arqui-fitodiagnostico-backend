@@ -113,7 +113,7 @@ class ServicioMedicionesTest {
 
     @Test
     void conUnDiaDeHistorialLaPlantaDuermeDeNocheYNoEntraEnRiesgoPorLuz() {
-        Instant noche = reloj.instant();
+        Instant noche = Instant.parse("2026-10-14T03:00:00Z");   // 22:00 en Bogotá
         // Un día de lecturas cada 15 min: sol (700 lux) de hace 13 h a hace 3 h, oscuridad desde entonces.
         for (int k = 96; k >= 1; k--) {
             double lux = k >= 13 && k <= 52 ? 700 : 0;
@@ -133,19 +133,18 @@ class ServicioMedicionesTest {
 
     @Test
     void siElEstadoCambiaSoloPorqueEntroOSalioLaNocheElAvisoLoDiceConMotivoPeriodo() {
-        Instant ahora = reloj.instant();
-        // De más viejo a más nuevo, cada 15 min: 20 h a oscuras, 1 h de sol (700 lux) y oscuridad otra vez.
-        for (int k = 95; k >= 1; k--) {
-            boolean sol = k <= 15 && k >= 12;
-            servicio.registrar(planta.id(), Muestras.medicion(45, sol ? 700 : 0, 22), OrigenDeMedicion.DISPOSITIVO,
-                    ahora.minus(Duration.ofMinutes(15L * k)));
+        // Fase 16: el periodo sale del reloj. Cada 15 min desde las 16:00 hasta las 07:00 de Bogotá, siempre a
+        // oscuras: de día la luz cuenta (CRITICO), a las 18:00 anochece (SALUDABLE) y a las 06:00 amanece (CRITICO).
+        Instant inicio = Instant.parse("2026-10-13T21:00:00Z");
+        for (int k = 0; k <= 60; k++) {
+            servicio.registrar(planta.id(), Muestras.medicion(45, 0, 22), OrigenDeMedicion.DISPOSITIVO,
+                    inicio.plus(Duration.ofMinutes(15L * k)));
         }
-        servicio.registrar(planta.id(), Muestras.medicion(45, 0, 22), OrigenDeMedicion.DISPOSITIVO, ahora);
 
         List<Aviso> cambios = mundo.notificador.avisosDeTipo(TipoDeAviso.CAMBIO_DE_ESTADO);
-        // Anochece (CRITICO a SALUDABLE: la luz deja de contar), amanece (SALUDABLE a CRITICO: la luz mala acumulada
-        // vuelve a contar) y anochece otra vez. Ninguno es por la planta.
-        assertThat(cambios).hasSize(3);
+        // Anochece (CRITICO a SALUDABLE: la luz deja de contar) y amanece (SALUDABLE a CRITICO: la luz mala
+        // acumulada vuelve a contar). Ninguno es por la planta.
+        assertThat(cambios).hasSize(2);
         assertThat(cambios).allSatisfy(c -> assertThat(c.datos())
                 .containsEntry(MotivoDelAviso.CLAVE, MotivoDelAviso.PERIODO));
     }

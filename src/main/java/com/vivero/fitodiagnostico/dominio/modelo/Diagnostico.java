@@ -11,7 +11,8 @@ import java.util.Objects;
  * y {@code exposicion} cuánta luz recibió en las últimas 24 h. {@code exposicion} es
  * {@code null} cuando no había historial y la luz se evaluó con la lectura del
  * momento ({@link #baseDeLuz()} = INSTANTANEA): así queda el diagnóstico suelto de
- * RF-F6 y la primera medición de una planta.
+ * RF-F6 y la primera medición de una planta. Desde la fase 16 (D205) {@code periodo} sale
+ * del reloj, así que puede ser NOCHE sin exposición: la primera lectura de la noche.
  *
  * <p>Fase 15 (D200, D203): {@code regadaEn} es cuándo se detectó el último riego de las 24 h
  * previas ({@code ReglaDeHumedadTrasRiego}), o {@code null} si no hubo. Mientras está, la humedad
@@ -32,9 +33,6 @@ public record Diagnostico(
         parametros = parametros == null ? List.of() : List.copyOf(parametros);
         recomendaciones = recomendaciones == null ? List.of() : List.copyOf(recomendaciones);
         Objects.requireNonNull(periodo, "el diagnóstico requiere un periodo");
-        if (periodo == Periodo.NOCHE && exposicion == null) {
-            throw new IllegalArgumentException("solo con historial de luz se puede saber que es de noche");
-        }
     }
 
     /** Sin riego reciente: la forma que tuvo de la fase 8 a la 14. */
