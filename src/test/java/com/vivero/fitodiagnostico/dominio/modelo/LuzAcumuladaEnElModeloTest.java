@@ -39,13 +39,14 @@ class LuzAcumuladaEnElModeloTest {
     }
 
     @Test
-    void sinExposicionNoSePuedeAfirmarQueEsDeNoche() {
+    void elPeriodoSaleDelRelojAsiQueHayNocheSinExposicion() {
         Especie especie = new Especie("suculenta", Map.of(Magnitud.LUZ, RANGO));
         Medicion medicion = Medicion.de(new Lectura(Magnitud.LUZ, 0));
 
-        assertThatThrownBy(() -> new Diagnostico(especie, medicion, EstadoGlobal.SALUDABLE, List.of(), List.of(),
-                Instant.now(), Periodo.NOCHE, null))
-                .isInstanceOf(IllegalArgumentException.class);
+        Diagnostico deNoche = new Diagnostico(especie, medicion, EstadoGlobal.SALUDABLE, List.of(), List.of(),
+                Instant.now(), Periodo.NOCHE, null);
+        assertThat(deNoche.periodo()).isEqualTo(Periodo.NOCHE);
+        assertThat(deNoche.baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
         assertThat(new Diagnostico(especie, medicion, EstadoGlobal.SALUDABLE, List.of(), List.of(), Instant.now())
                 .baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
     }

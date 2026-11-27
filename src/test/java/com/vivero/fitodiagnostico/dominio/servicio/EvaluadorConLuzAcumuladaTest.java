@@ -68,11 +68,50 @@ class EvaluadorConLuzAcumuladaTest {
     }
 
     @Test
-    void conLaSerieVaciaEsLoMismoQueSinHistorial() {
-        Diagnostico diagnostico = evaluador.evaluar(suculenta, medicion(20, 0, 22), DIEZ_PM, SerieTemporal.vacia());
+    void conLaSerieVaciaEsLoMismoQueSinHistorialSiEsDeDia() {
+        Instant mediodia = Instant.parse("2026-11-16T17:00:00Z");   // 12:00 en Bogotá
+
+        Diagnostico diagnostico = evaluador.evaluar(suculenta, medicion(20, 0, 22), mediodia, SerieTemporal.vacia());
 
         assertThat(diagnostico.baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
+        assertThat(diagnostico.periodo()).isEqualTo(Periodo.DIA);
         assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.CRITICO);
+    }
+
+    @Test
+    void sinHistorialPeroDeNocheLaLuzNoCuentaPorqueElPeriodoSalePorElReloj() {
+        Diagnostico diagnostico = evaluador.evaluar(suculenta, medicion(20, 0, 22), DIEZ_PM, SerieTemporal.vacia());
+
+        assertThat(diagnostico.periodo()).isEqualTo(Periodo.NOCHE);
+        assertThat(diagnostico.exposicion()).isNull();
+        assertThat(diagnostico.baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+    }
+
+    @Test
+    void deDiaUnRinconOscuroSigueBajoAunqueLleveHorasSinLuz() {
+        // 14:00 en Bogotá, 6 h a 20 lux: antes era NOCHE y nadie avisaba; ahora es DIA con luz BAJO.
+        Instant dosPm = Instant.parse("2026-11-16T19:00:00Z");
+        SerieTemporal oscuro = unDiaAntesDe(dosPm, k -> 20);
+
+        Diagnostico diagnostico = evaluador.evaluar(suculenta, medicion(20, 20, 22), dosPm, oscuro);
+
+        assertThat(diagnostico.periodo()).isEqualTo(Periodo.DIA);
+        assertThat(luz(diagnostico).clasificacion()).isEqualTo(Clasificacion.BAJO);
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.CRITICO);
+        assertThat(diagnostico.recomendaciones()).hasSize(1);
+    }
+
+    @Test
+    void deNocheUnaLamparaNoLaVuelveDiaYLaLuzNoCuenta() {
+        // 23:00 en Bogotá, lámpara encendida desde hace 3 h (300 lux): sigue siendo NOCHE.
+        Instant once = Instant.parse("2026-11-17T04:00:00Z");
+        SerieTemporal lampara = unDiaAntesDe(once, k -> k <= 12 ? 300 : 5);
+
+        Diagnostico diagnostico = evaluador.evaluar(suculenta, medicion(20, 300, 22), once, lampara);
+
+        assertThat(diagnostico.periodo()).isEqualTo(Periodo.NOCHE);
+        assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
     }
 
     @Test
