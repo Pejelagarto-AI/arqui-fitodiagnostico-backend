@@ -779,12 +779,19 @@ void portal(const char *redWifi) {
     limpiar();
     char wifi[64];
     snprintf(wifi, sizeof wifi, "WIFI:S:%s;T:nopass;;", redWifi);
-    // Cuadro blanco de 62 px (el QR mide 58) para que el nombre de la red (11 caracteres) quepa a la derecha desde x=63.
+    // Cuadro blanco de 62 px (el QR mide 58); el texto va a la derecha desde x=63.
     const bool conQr = dibujarQr(wifi, 62, 2, 3);
     const int x = conQr ? 63 : 0;
     texto(x, conQr ? 4 : 0, "Conecta tu");
     texto(x, conQr ? 14 : 10, "celular a:");
-    if (strlen(redWifi) * 6 + x <= 128) texto(x, conQr ? 34 : 24, redWifi);
+    // "Fito-XXXXXX" son 11 caracteres (66 px): desde x=63 no cabe el ultimo. Se parte en el guion, en dos renglones.
+    const char *guion = strchr(redWifi, '-');
+    if (conQr && guion && strlen(redWifi) * 6 + x > 128) {
+        char prefijo[16];
+        strlcpy(prefijo, redWifi, (size_t)(guion - redWifi) + 2 < sizeof prefijo ? (size_t)(guion - redWifi) + 2 : sizeof prefijo);
+        texto(x, 32, prefijo);
+        texto(x, 44, guion + 1);
+    } else if (strlen(redWifi) * 6 + x <= 128) texto(x, conQr ? 34 : 24, redWifi);
     else { oled.setCursor(x, conQr ? 34 : 24); oled.println(redWifi); }
     if (!conQr) registrar("el QR de Wi-Fi no cabe en la version 3: solo texto");
     listo();
