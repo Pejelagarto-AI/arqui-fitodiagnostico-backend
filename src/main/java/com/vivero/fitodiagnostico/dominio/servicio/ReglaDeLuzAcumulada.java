@@ -11,8 +11,11 @@ import com.vivero.fitodiagnostico.dominio.modelo.SerieTemporal;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -34,9 +37,10 @@ import java.util.Optional;
  *       proporcionales a lo observado). Con suficientes horas es el promedio de lux en las horas
  *       con luz; con pocas, ese promedio se diluye. Se compara con el rango de la especie:
  *       BAJO si no llega, ALTO si lo pasa, OPTIMO si cae dentro.</li>
- *   <li><b>Noche.</b> Si esta lectura y las anteriores llevan al menos {@link #OSCURIDAD_PARA_NOCHE}
- *       por debajo del umbral de luz, es de noche: la luz no entra al estado global ni a las
- *       recomendaciones.</li>
+ *   <li><b>Periodo (fase 16, D205).</b> Lo decide el reloj, no la luz: de {@link #INICIO_DEL_DIA}
+ *       (incluido) a {@link #FIN_DEL_DIA} (excluido), en la zona horaria de la regla, es DIA; el
+ *       resto es NOCHE. De noche la luz no entra al estado global ni a las recomendaciones; de día
+ *       una planta en un rincón oscuro sí queda BAJO. Aplica con o sin historial.</li>
  *   <li><b>Sin historial.</b> Si no hay lecturas anteriores en la ventana, no hay exposición que
  *       medir: la luz se clasifica con la lectura del momento, como siempre.</li>
  * </ol>
@@ -64,14 +68,39 @@ public final class ReglaDeLuzAcumulada {
      */
     public static final double HORAS_MINIMAS_DE_LUZ = 6.0;
 
-    /** Cuánta oscuridad sostenida hace falta para decir que es de noche. Ver D126. */
-    public static final Duration OSCURIDAD_PARA_NOCHE = Duration.ofHours(2);
+    /** Hora local (inclusive) en que empieza el día. Ver D205. */
+    public static final LocalTime INICIO_DEL_DIA = LocalTime.of(6, 0);
+
+    /** Hora local (exclusive) en que termina el día: a las 18:00 en punto ya es NOCHE. Ver D205. */
+    public static final LocalTime FIN_DEL_DIA = LocalTime.of(18, 0);
+
+    /** Zona horaria de la franja por defecto: Bogotá, donde están las matas. Ver D206. */
+    public static final ZoneId ZONA_POR_DEFECTO = ZoneId.of("America/Bogota");
 
     /** El tramo más largo que puede describir una sola lectura. Ver D123. */
     public static final Duration HUECO_MAXIMO = Duration.ofMinutes(30);
 
     private static final double SEGUNDOS_POR_HORA = 3600.0;
     private static final double HORAS_DE_LA_VENTANA = VENTANA.toSeconds() / SEGUNDOS_POR_HORA;
+
+    private final ZoneId zona;
+    private final LocalTime inicioDelDia;
+    private final LocalTime finDelDia;
+
+    /** La franja por defecto: 06:00 a 18:00 en Bogotá. */
+    public ReglaDeLuzAcumulada() {
+        this(ZONA_POR_DEFECTO, INICIO_DEL_DIA, FIN_DEL_DIA);
+    }
+
+    /** La zona y las horas entran por aquí: el dominio no lee configuración. */
+    public ReglaDeLuzAcumulada(ZoneId zona, LocalTime inicioDelDia, LocalTime finDelDia) {
+        this.zona = Objects.requireNonNull(zona, "zona");
+        this.inicioDelDia = Objects.requireNonNull(inicioDelDia, "inicioDelDia");
+        this.finDelDia = Objects.requireNonNull(finDelDia, "finDelDia");
+        if (!inicioDelDia.isBefore(finDelDia)) {
+            throw new IllegalArgumentException("el día debe empezar antes de terminar: " + inicioDelDia + " a " + finDelDia);
+        }
+    }
 
     /** La magnitud a la que aplica esta regla. */
     public Magnitud magnitud() {
@@ -122,10 +151,14 @@ public final class ReglaDeLuzAcumulada {
                 luxEfectivo, horasEnOscuridad(muestras, ahora)));
     }
 
-    /** NOCHE si la oscuridad lleva al menos {@link #OSCURIDAD_PARA_NOCHE}; el borde exacto ya es noche. */
-    public Periodo periodo(ExposicionLuminica exposicion) {
-        double horasParaNoche = OSCURIDAD_PARA_NOCHE.toSeconds() / SEGUNDOS_POR_HORA;
-        return exposicion.horasEnOscuridad() >= horasParaNoche ? Periodo.NOCHE : Periodo.DIA;
+    /**
+     * DIA de {@code inicioDelDia} (incluido) a {@code finDelDia} (excluido) en la hora local de la
+     * zona; NOCHE el resto. Solo depende de cuándo se tomó la lectura, no de cuánta luz había.
+     */
+    public Periodo periodo(Instant tomadaEn) {
+        LocalTime hora = tomadaEn.atZone(zona).toLocalTime();
+        boolean deDia = !hora.isBefore(inicioDelDia) && hora.isBefore(finDelDia);
+        return deDia ? Periodo.DIA : Periodo.NOCHE;
     }
 
     /** El parámetro de luz clasificado por el lux efectivo; {@code valor} sigue siendo la lectura del momento. */

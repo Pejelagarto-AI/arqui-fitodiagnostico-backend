@@ -76,7 +76,7 @@ class ReglaDeLuzAcumuladaTest {
         assertThat(luz.valor()).isEqualTo(300);
         assertThat(luz.valorEvaluado()).isCloseTo(1500.0, within(1e-9));
         assertThat(luz.base()).isEqualTo(BaseDeEvaluacion.ACUMULADA);
-        assertThat(regla.periodo(exposicion)).isEqualTo(Periodo.DIA);
+        assertThat(regla.periodo(AHORA)).isEqualTo(Periodo.DIA);   // 12:00 en Bogotá
     }
 
     @Test
@@ -118,32 +118,60 @@ class ReglaDeLuzAcumuladaTest {
     }
 
     @Test
-    void tresHorasDeOscuridadDespuesDeUnBuenDiaEsNoche() {
-        // Luz de k = 13 a 52 (10 h), oscuridad desde k = 12 (hace 3 h) hasta ahora.
+    void laOscuridadYaNoDecideElPeriodoSoloElReloj() {
+        // Tres horas de oscuridad a las 12:00 de Bogotá: antes era NOCHE, ahora es DIA.
         ExposicionLuminica exposicion = medir(unDia(k -> k >= 13 && k <= 52 ? 1500 : 0), 0);
 
         assertThat(exposicion.horasEnOscuridad()).isCloseTo(3.0, within(1e-9));
-        assertThat(regla.periodo(exposicion)).isEqualTo(Periodo.NOCHE);
+        assertThat(regla.periodo(AHORA)).isEqualTo(Periodo.DIA);
         assertThat(regla.clasificar(SUCULENTA, 0, exposicion).clasificacion()).isEqualTo(Clasificacion.OPTIMO);
     }
 
-    @Test
-    void laNocheEmpiezaJustoALasDosHorasDeOscuridad() {
-        ExposicionLuminica dosHoras = medir(unDia(k -> k <= 8 ? 0 : 1500), 0);
-        ExposicionLuminica horaYTresCuartos = medir(unDia(k -> k <= 7 ? 0 : 1500), 0);
-
-        assertThat(dosHoras.horasEnOscuridad()).isCloseTo(2.0, within(1e-9));
-        assertThat(regla.periodo(dosHoras)).isEqualTo(Periodo.NOCHE);
-        assertThat(horaYTresCuartos.horasEnOscuridad()).isCloseTo(1.75, within(1e-9));
-        assertThat(regla.periodo(horaYTresCuartos)).isEqualTo(Periodo.DIA);
+    /** Un instante dado por su hora local de Bogotá (UTC-5, sin horario de verano). */
+    private static Instant enBogota(String horaLocal) {
+        return Instant.parse("2026-11-17T" + horaLocal + ":00-05:00");
     }
 
     @Test
-    void siAhoraHayLuzNoEsNocheAunqueAntesEstuvieraOscuro() {
-        ExposicionLuminica exposicion = medir(unDia(k -> 0), 1500);
+    void laFranjaDelDiaEmpiezaALas0600IncluidasYTerminaALas1800Excluidas() {
+        assertThat(regla.periodo(enBogota("05:59"))).isEqualTo(Periodo.NOCHE);
+        assertThat(regla.periodo(enBogota("06:00"))).isEqualTo(Periodo.DIA);
+        assertThat(regla.periodo(enBogota("17:59"))).isEqualTo(Periodo.DIA);
+        assertThat(regla.periodo(enBogota("18:00"))).isEqualTo(Periodo.NOCHE);
+        assertThat(regla.periodo(enBogota("00:00"))).isEqualTo(Periodo.NOCHE);
+    }
 
-        assertThat(exposicion.horasEnOscuridad()).isZero();
-        assertThat(regla.periodo(exposicion)).isEqualTo(Periodo.DIA);
+    @Test
+    void unaLecturaEnUtcSeJuzgaPorLaHoraDeBogota() {
+        // 02:00 UTC son las 21:00 del día anterior en Bogotá: noche. 11:00 UTC son las 06:00: día.
+        assertThat(regla.periodo(Instant.parse("2026-11-17T02:00:00Z"))).isEqualTo(Periodo.NOCHE);
+        assertThat(regla.periodo(Instant.parse("2026-11-17T10:59:00Z"))).isEqualTo(Periodo.NOCHE);
+        assertThat(regla.periodo(Instant.parse("2026-11-17T11:00:00Z"))).isEqualTo(Periodo.DIA);
+        assertThat(regla.periodo(Instant.parse("2026-11-17T22:59:00Z"))).isEqualTo(Periodo.DIA);
+        assertThat(regla.periodo(Instant.parse("2026-11-17T23:00:00Z"))).isEqualTo(Periodo.NOCHE);
+    }
+
+    @Test
+    void laZonaYLasHorasEntranPorElConstructor() {
+        ReglaDeLuzAcumulada enMadrid = new ReglaDeLuzAcumulada(java.time.ZoneId.of("Europe/Madrid"),
+                java.time.LocalTime.of(7, 30), java.time.LocalTime.of(19, 0));
+
+        assertThat(enMadrid.periodo(Instant.parse("2026-11-17T06:29:00Z"))).isEqualTo(Periodo.NOCHE);   // 07:29 local
+        assertThat(enMadrid.periodo(Instant.parse("2026-11-17T06:30:00Z"))).isEqualTo(Periodo.DIA);     // 07:30 local
+        assertThat(enMadrid.periodo(Instant.parse("2026-11-17T18:00:00Z"))).isEqualTo(Periodo.NOCHE);   // 19:00 local
+    }
+
+    @Test
+    void unaFranjaQueNoEmpiezaAntesDeTerminarSeRechaza() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ReglaDeLuzAcumulada(
+                ReglaDeLuzAcumulada.ZONA_POR_DEFECTO, ReglaDeLuzAcumulada.FIN_DEL_DIA, ReglaDeLuzAcumulada.INICIO_DEL_DIA))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void elPeriodoNoDependeDeSiHayHistorial() {
+        assertThat(regla.medir(SerieTemporal.vacia(), AHORA, 0)).isEmpty();
+        assertThat(regla.periodo(enBogota("23:00"))).isEqualTo(Periodo.NOCHE);
     }
 
     @Test

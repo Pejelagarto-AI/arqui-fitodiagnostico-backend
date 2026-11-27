@@ -38,6 +38,7 @@ class LecturasDeDispositivoIntegracionTest {
     private static final String CLAVE = "clave-larga-1";
     private static final String RUTA = "/api/v1/dispositivos/esp32-01/lecturas";
     private static final String MARCA = "2026-10-19T14:30:05Z";
+    private static final String MARCA_DE_NOCHE = "2026-10-20T03:00:00Z";   // 22:00 en Bogotá
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
@@ -156,14 +157,14 @@ class LecturasDeDispositivoIntegracionTest {
     }
 
     @Test
-    void conDosHorasDeOscuridadLaPlantaDuermeYElVigenteLoDice() throws Exception {
-        // Luz hace 3 h, oscuridad desde hace 2 h: es de noche. 10 lux contra 150-800 no la pone en riesgo.
-        Instant ahora = Instant.parse(MARCA);
+    void deNocheLaPlantaDuermeYElVigenteLoDice() throws Exception {
+        // Fase 16: el periodo sale del reloj. 22:00 en Bogotá es de noche; 10 lux contra 150-800 no la pone en riesgo.
+        Instant ahora = Instant.parse(MARCA_DE_NOCHE);
         reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(3 * 3600).toString(), "70", "500", "22"))
                 .andExpect(status().isCreated());
         reportar(tokenDelDispositivo, lecturaEn(ahora.minusSeconds(2 * 3600).toString(), "70", "10", "22"))
                 .andExpect(status().isCreated());
-        reportar(tokenDelDispositivo, lectura("70", "10", "22"))
+        reportar(tokenDelDispositivo, lecturaEn(MARCA_DE_NOCHE, "70", "10", "22"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.diagnostico.periodo").value("NOCHE"))
                 .andExpect(jsonPath("$.diagnostico.estado").value("SALUDABLE"))

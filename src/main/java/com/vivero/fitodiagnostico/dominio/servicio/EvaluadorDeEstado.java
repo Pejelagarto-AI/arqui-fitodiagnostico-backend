@@ -28,6 +28,9 @@ import java.util.Optional;
  * regó en las últimas 24 h; si es así, la humedad ALTO no entra al estado global y su recomendación
  * dice que quedó hidratada (D200, D201). Igual que con la noche, el evaluador recibe la serie ya
  * armada y no sabe de dónde salió.
+ *
+ * <p>Fase 16: el periodo (DIA/NOCHE) sale del reloj, no de la oscuridad (D205): lo decide
+ * {@link ReglaDeLuzAcumulada#periodo(Instant)} con la hora de la lectura, haya o no historial.
  */
 public final class EvaluadorDeEstado {
 
@@ -59,9 +62,12 @@ public final class EvaluadorDeEstado {
         this(clasificador, regla, redactor, new ReglaDeLuzAcumulada());
     }
 
-    /** Sin historial (RF-F6): clasificación instantánea, de día. */
+    /**
+     * Sin historial (RF-F6): clasificación instantánea, de día. Este diagnóstico suelto no trae la
+     * hora de una lectura, así que no hay reloj que consultar y el periodo es DIA (D207).
+     */
     public Diagnostico evaluar(Especie especie, Medicion medicion) {
-        return evaluar(especie, medicion, Instant.now(), SerieTemporal.vacia());
+        return evaluar(especie, medicion, Instant.now(), SerieTemporal.vacia(), SerieTemporal.vacia(), false);
     }
 
     /**
@@ -79,8 +85,14 @@ public final class EvaluadorDeEstado {
      */
     public Diagnostico evaluar(Especie especie, Medicion medicion, Instant tomadaEn, SerieTemporal luzAnterior,
                                SerieTemporal humedadAnterior) {
+        return evaluar(especie, medicion, tomadaEn, luzAnterior, humedadAnterior, true);
+    }
+
+    private Diagnostico evaluar(Especie especie, Medicion medicion, Instant tomadaEn, SerieTemporal luzAnterior,
+                                SerieTemporal humedadAnterior, boolean conHora) {
         List<ResultadoParametro> parametros = new ArrayList<>(clasificador.clasificar(especie, medicion));
-        Periodo periodo = Periodo.DIA;
+        // Fase 16: el periodo sale del reloj, con o sin historial (D205, D207).
+        Periodo periodo = conHora ? reglaDeLuz.periodo(tomadaEn) : Periodo.DIA;
         ExposicionLuminica exposicion = null;
 
         Magnitud luz = reglaDeLuz.magnitud();
@@ -89,7 +101,6 @@ public final class EvaluadorDeEstado {
             Optional<ExposicionLuminica> medida = reglaDeLuz.medir(luzAnterior, tomadaEn, luxAhora);
             if (medida.isPresent()) {
                 exposicion = medida.get();
-                periodo = reglaDeLuz.periodo(exposicion);
                 ResultadoParametro acumulado = reglaDeLuz.clasificar(especie.rango(luz), luxAhora, exposicion);
                 parametros.replaceAll(p -> p.magnitud() == luz ? acumulado : p);
             }

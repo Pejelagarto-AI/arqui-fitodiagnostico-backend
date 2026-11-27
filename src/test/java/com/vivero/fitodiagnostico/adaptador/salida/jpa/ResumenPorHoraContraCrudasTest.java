@@ -5,7 +5,6 @@ import com.vivero.fitodiagnostico.dominio.modelo.Especie;
 import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Muestra;
-import com.vivero.fitodiagnostico.dominio.modelo.Periodo;
 import com.vivero.fitodiagnostico.dominio.modelo.Planta;
 import com.vivero.fitodiagnostico.dominio.modelo.Rango;
 import com.vivero.fitodiagnostico.dominio.modelo.SerieTemporal;
@@ -83,9 +82,8 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
         assertThat(conResumen.luxEfectivo()).isCloseTo(mismaVentana.luxEfectivo(),
                 within(Math.max(1.0, mismaVentana.luxEfectivo() * toleranciaRelativa)));
         assertThat(conResumen.horasEnOscuridad()).isCloseTo(mismaVentana.horasEnOscuridad(), within(0.01));
-        // Lo que importa: la misma clasificación y el mismo periodo que con las 24 h completas.
+        // Lo que importa: la misma clasificación que con las 24 h completas (el periodo ya sale del reloj, D205).
         assertThat(rango.clasificar(conResumen.luxEfectivo())).isEqualTo(rango.clasificar(de24h.luxEfectivo()));
-        assertThat(regla.periodo(conResumen)).isEqualTo(regla.periodo(de24h));
     }
 
     @Test
@@ -98,14 +96,13 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
     }
 
     @Test
-    void deNocheDespuesDeUnBuenDiaEsNocheConLasDosSeries() {
+    void deNocheDespuesDeUnBuenDiaLasDosSeriesDanLasMismasHorasDeOscuridad() {
         Instant noche = Instant.parse("2026-11-16T22:30:07Z");
         sembrar(noche, t -> hora(t) >= 6 && hora(t) < 18 ? 800.0 : 0.0);
 
         comparar(noche, 0, 0.005);
         ExposicionLuminica e = medir(diagnosticos.serieDe(planta.id(), Magnitud.LUZ, noche.minus(Duration.ofHours(24)),
                 noche), noche, 0);
-        assertThat(regla.periodo(e)).isEqualTo(Periodo.NOCHE);
         assertThat(e.horasEnOscuridad()).isCloseTo(4.5, within(0.01));
     }
 
@@ -148,7 +145,7 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
     }
 
     @Test
-    void laNocheSeDeclaraAlLlegarALasDosHorasExactasYNoAntes() {
+    void laOscuridadSeCuentaDesdeLaPrimeraLecturaOscuraAlSegundo() {
         // Oscuridad desde las 13:30:00 (primera lectura oscura): a las 15:30:00 son 2 h exactas, hay luz antes.
         sembrar(Instant.parse("2026-11-16T15:30:30Z"), t -> t.isBefore(Instant.parse("2026-11-16T13:30:00Z"))
                 && hora(t) >= 6 ? 700.0 : 0.0);
@@ -160,8 +157,8 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
         ExposicionLuminica unMinutoAntes = medir(diagnosticos.serieDe(planta.id(), Magnitud.LUZ,
                 casi.minus(Duration.ofHours(24)), casi), casi, 0);
 
-        assertThat(regla.periodo(enElBorde)).isEqualTo(Periodo.NOCHE);
-        assertThat(regla.periodo(unMinutoAntes)).isEqualTo(Periodo.DIA);
+        assertThat(enElBorde.horasEnOscuridad()).isCloseTo(2.0, within(0.001));
+        assertThat(unMinutoAntes.horasEnOscuridad()).isCloseTo(2.0 - 1 / 60.0, within(0.001));
     }
 
     @Test
@@ -181,7 +178,6 @@ class ResumenPorHoraContraCrudasTest extends BaseDePersistenciaDePlantas {
 
         assertThat(conCrudas.horasEnOscuridad()).isCloseTo(2.0, within(0.001));
         assertThat(conResumen.horasEnOscuridad()).isCloseTo(2.0, within(0.001));
-        assertThat(regla.periodo(conResumen)).isEqualTo(Periodo.NOCHE);
     }
 
     @Test
