@@ -83,7 +83,13 @@
 #   FITO_CORREO_REMITENTE   dirección "De:" de los correos.
 #   FITO_CORREO_ASINCRONO   "false" para enviar en el mismo hilo (por defecto true).
 #   FITO_FRONT_URL          base de los enlaces de los correos (invitación y restablecimiento).
+#   FITO_ZONA_HORARIA       zona horaria del día y la noche de las plantas (por defecto America/Bogota).
+#   FITO_DIA_INICIO / FITO_DIA_FIN   franja del día, HH:mm local (por defecto 06:00 a 18:00; el fin no entra).
 fitodiagnostico:
+  zona-horaria: ${FITO_ZONA_HORARIA:America/Bogota}
+  dia:
+    inicio: ${FITO_DIA_INICIO:06:00}
+    fin: ${FITO_DIA_FIN:18:00}
   catalogo:
     fuente: ${FITO_CATALOGO_FUENTE:bd}
   seguridad:
