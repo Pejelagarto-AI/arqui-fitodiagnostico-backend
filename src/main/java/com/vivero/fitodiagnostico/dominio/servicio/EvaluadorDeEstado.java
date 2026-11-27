@@ -29,6 +29,9 @@ import java.util.Optional;
  * dice que quedó hidratada (D200, D201). Igual que con la noche, el evaluador recibe la serie ya
  * armada y no sabe de dónde salió.
  *
+ * <p>Fase 17: la luz evaluada acumulada y fuera de rango la redacta {@link ReglaDeLuzAcumulada#recomendacion}
+ * en su posición (D209).
+ *
  * <p>Fase 16: el periodo (DIA/NOCHE) sale del reloj, no de la oscuridad (D205): lo decide
  * {@link ReglaDeLuzAcumulada#periodo(Instant)} con la hora de la lectura, haya o no historial.
  */
@@ -115,7 +118,7 @@ public final class EvaluadorDeEstado {
         List<ResultadoParametro> queCuentan = reglaDeRiego.queCuentanParaElEstado(
                 reglaDeLuz.queCuentanParaElEstado(parametros, periodo), regadaEn);
         EstadoGlobal estado = queCuentan.isEmpty() ? EstadoGlobal.SALUDABLE : regla.agregar(queCuentan);
-        List<String> recomendaciones = recomendaciones(parametros, queCuentan, regadaEn, tomadaEn);
+        List<String> recomendaciones = recomendaciones(parametros, queCuentan, regadaEn, tomadaEn, exposicion);
         return new Diagnostico(especie, medicion, estado, parametros, recomendaciones, Instant.now(),
                 periodo, exposicion, regadaEn);
     }
@@ -126,16 +129,21 @@ public final class EvaluadorDeEstado {
      * seguir emparejándolas con los parámetros fuera de rango por posición.
      */
     private List<String> recomendaciones(List<ResultadoParametro> parametros, List<ResultadoParametro> queCuentan,
-                                         Instant regadaEn, Instant tomadaEn) {
+                                         Instant regadaEn, Instant tomadaEn, ExposicionLuminica exposicion) {
         List<String> recomendaciones = new ArrayList<>(redactor.redactar(queCuentan));
-        if (regadaEn == null) {
-            return recomendaciones;
-        }
         int posicion = 0;
         for (ResultadoParametro parametro : parametros) {
-            if (reglaDeRiego.tolerada(parametro)) {
+            // Fase 17 (D209): la luz acumulada fuera de rango la redacta la regla de luz, en su lugar.
+            if (exposicion != null && queCuentan.contains(parametro)) {
+                Optional<String> deLuz = reglaDeLuz.recomendacion(parametro, exposicion);
+                if (deLuz.isPresent()) {
+                    recomendaciones.set(posicion, deLuz.get());
+                }
+            }
+            if (regadaEn != null && reglaDeRiego.tolerada(parametro)) {
                 recomendaciones.add(posicion, reglaDeRiego.recomendacionTrasRiego(parametro, regadaEn, tomadaEn));
-                break;
+                posicion++;   // lo que sigue (la luz) queda un lugar más adelante
+                continue;
             }
             if (parametro.fueraDeRango() && queCuentan.contains(parametro)) {
                 posicion++;

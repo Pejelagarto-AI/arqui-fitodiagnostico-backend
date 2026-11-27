@@ -165,8 +165,8 @@ class EvaluadorConLuzAcumuladaTest {
         assertThat(luz(diagnostico).clasificacion()).isEqualTo(Clasificacion.BAJO);
         assertThat(diagnostico.estado()).isEqualTo(EstadoGlobal.EN_RIESGO);
         assertThat(diagnostico.recomendaciones()).containsExactly(
-                "Luz 750 lux de promedio en el día, por debajo del rango óptimo 800–2500 lux: "
-                        + "acercarla a una fuente de luz indirecta.");
+                "Luz 750 lux efectivos por debajo del rango óptimo 800–2500 lux: "
+                        + "ahora le llegan 1500 lux, déjala ahí para que sume la luz que le falta hoy.");
     }
 
     @Test

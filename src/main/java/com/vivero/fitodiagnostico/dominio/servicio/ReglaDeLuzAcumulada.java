@@ -1,6 +1,7 @@
 package com.vivero.fitodiagnostico.dominio.servicio;
 
 import com.vivero.fitodiagnostico.dominio.modelo.BaseDeEvaluacion;
+import com.vivero.fitodiagnostico.dominio.modelo.Clasificacion;
 import com.vivero.fitodiagnostico.dominio.modelo.ExposicionLuminica;
 import com.vivero.fitodiagnostico.dominio.modelo.Magnitud;
 import com.vivero.fitodiagnostico.dominio.modelo.Muestra;
@@ -174,6 +175,53 @@ public final class ReglaDeLuzAcumulada {
             return parametros;
         }
         return parametros.stream().filter(p -> p.magnitud() != magnitud()).toList();
+    }
+
+    /** Unidad con la que se nombra el valor evaluado en la recomendación: es lux de la luz efectiva, no la lectura. */
+    private static final String UNIDAD_EFECTIVA = "lux efectivos";
+
+    /**
+     * Si la luz se evaluó ACUMULADA y quedó fuera de rango, su recomendación la redacta esta regla (fase 17,
+     * D209) y no {@link RedactorDeRecomendaciones}: dice el valor que se evaluó (lux efectivo, no la lectura
+     * del momento) y la acción mira la lectura del momento. Mismo molde que las demás: "descripción valor
+     * comparación rango: acción.", con una sola ": " para que el front parta la acción por la última.
+     *
+     * @return vacío si la luz no se evaluó acumulada o está en rango (nada que redactar aquí)
+     */
+    public Optional<String> recomendacion(ResultadoParametro luz, ExposicionLuminica exposicion) {
+        if (luz.magnitud() != magnitud() || luz.base() != BaseDeEvaluacion.ACUMULADA || !luz.fueraDeRango()) {
+            return Optional.empty();
+        }
+        Rango rango = luz.rangoOptimo();
+        boolean bajo = luz.clasificacion() == Clasificacion.BAJO;
+        double ahora = luz.valor();
+        String unidad = magnitud().unidad();
+        String accion;
+        if (bajo && ahora >= rango.minimo()) {
+            accion = "ahora le llegan " + numero(ahora) + " " + unidad
+                    + ", déjala ahí para que sume la luz que le falta hoy";
+        } else if (!bajo && ahora <= rango.maximo()) {
+            accion = "ahora le llegan " + numero(ahora) + " " + unidad
+                    + " y está bien, mantenla así para que baje el promedio de hoy";
+        } else if (bajo) {
+            accion = magnitud().accionSiBajo() + "; hoy lleva " + numero(exposicion.horasDeLuz()) + " h de luz";
+        } else {
+            accion = magnitud().accionSiAlto();
+        }
+        String descripcion = magnitud().descripcion();
+        return Optional.of(Character.toUpperCase(descripcion.charAt(0)) + descripcion.substring(1) + " "
+                + numero(luz.valorEvaluado()) + " " + UNIDAD_EFECTIVA + " "
+                + (bajo ? "por debajo del" : "por encima del") + " rango óptimo "
+                + numero(rango.minimo()) + "–" + numero(rango.maximo()) + " " + unidad + ": " + accion + ".");
+    }
+
+    /** Sin ".0" en enteros; un decimal en el resto. */
+    private static String numero(double valor) {
+        double redondeado = Math.round(valor * 10.0) / 10.0;
+        if (redondeado == Math.rint(redondeado)) {
+            return String.valueOf((long) redondeado);
+        }
+        return String.valueOf(redondeado);
     }
 
     private static boolean hayLuz(double lux) {
