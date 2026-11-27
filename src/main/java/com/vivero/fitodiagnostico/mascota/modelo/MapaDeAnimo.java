@@ -18,6 +18,10 @@ import java.util.Optional;
  * DESLUMBRADA: se ignora al buscar el parámetro que más se desvía y, si era lo único que fallaba, el ánimo es DORMIDA
  * (sin {@code causa}: dormir no es un problema). Si de noche falla otra magnitud, gana esa.
  *
+ * <p>Fase 15 (D204): recién regada ({@code Diagnostico.recienRegada()}), la humedad ALTO no produce AHOGADA: el
+ * diagnóstico ya no la cuenta en contra y la mascota tampoco; si era lo único que fallaba, el ánimo es FELIZ (o
+ * CANSADA). Si sigue alta pasadas las 24 h del riego, el diagnóstico deja de traer {@code regadaEn} y vuelve AHOGADA.
+ *
  * <p>Precedencia: DESMAYADA (vitalidad en 0) gana sobre todo; sin diagnóstico, SIN_DATOS; con todo en rango,
  * FELIZ, o CANSADA si la vitalidad sigue baja.
  */
@@ -73,8 +77,11 @@ public final class MapaDeAnimo {
 
     private static Optional<Causa> peor(Diagnostico diagnostico) {
         boolean deNoche = diagnostico.periodo() == Periodo.NOCHE;
+        boolean recienRegada = diagnostico.recienRegada();
         return diagnostico.parametros().stream()
                 .filter(r -> !(deNoche && r.magnitud() == Magnitud.LUZ))
+                .filter(r -> !(recienRegada && r.magnitud() == Magnitud.HUMEDAD
+                        && r.clasificacion() == Clasificacion.ALTO))
                 .filter(ResultadoParametro::fueraDeRango)
                 .max(Comparator.comparingDouble(ResultadoParametro::desviacionRelativa)
                         .thenComparing(r -> -r.magnitud().ordinal()))
