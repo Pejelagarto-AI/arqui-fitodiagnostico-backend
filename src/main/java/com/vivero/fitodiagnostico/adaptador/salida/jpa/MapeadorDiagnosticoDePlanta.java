@@ -30,6 +30,9 @@ import java.util.Map;
  * <p>Fase 8: el periodo, la exposición a la luz y el valor evaluado de cada parámetro
  * también salen de la fila. Las filas anteriores a V15 se leen como lo que fueron:
  * de día, con la luz evaluada al instante.
+ *
+ * <p>Fase 15: también el último riego detectado ({@code regada_en}); las filas anteriores a V24
+ * se leen sin riego.
  */
 @Component
 public class MapeadorDiagnosticoDePlanta {
@@ -52,7 +55,7 @@ public class MapeadorDiagnosticoDePlanta {
 
         Diagnostico diagnostico = new Diagnostico(especie, medicion, entidad.getEstado(), parametros,
                 List.copyOf(entidad.getRecomendaciones()), entidad.getEvaluadoEn(), entidad.getPeriodo(),
-                exposicionDesde(entidad));
+                exposicionDesde(entidad), entidad.getRegadaEn());
         return new DiagnosticoDePlanta(entidad.getId(), entidad.getPlantaId(), entidad.getOrigen(),
                 entidad.getTomadaEn(), entidad.getRegistradoEn(), diagnostico);
     }
@@ -88,6 +91,7 @@ public class MapeadorDiagnosticoDePlanta {
         entidad.setEspecieNombre(diagnostico.especie().nombre());
         entidad.setEstado(diagnostico.estado());
         entidad.setPeriodo(diagnostico.periodo());
+        entidad.setRegadaEn(diagnostico.regadaEn());
         ExposicionLuminica e = diagnostico.exposicion();
         if (e == null) {
             entidad.setExposicion(null, null, null, null, null);

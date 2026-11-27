@@ -12,6 +12,10 @@ import java.util.Objects;
  * {@code null} cuando no había historial y la luz se evaluó con la lectura del
  * momento ({@link #baseDeLuz()} = INSTANTANEA): así queda el diagnóstico suelto de
  * RF-F6 y la primera medición de una planta.
+ *
+ * <p>Fase 15 (D200, D203): {@code regadaEn} es cuándo se detectó el último riego de las 24 h
+ * previas ({@code ReglaDeHumedadTrasRiego}), o {@code null} si no hubo. Mientras está, la humedad
+ * ALTO no cuenta en contra: la planta está recién regada, no ahogada.
  */
 public record Diagnostico(
         Especie especie,
@@ -21,7 +25,8 @@ public record Diagnostico(
         List<String> recomendaciones,
         Instant evaluadoEn,
         Periodo periodo,
-        ExposicionLuminica exposicion) {
+        ExposicionLuminica exposicion,
+        Instant regadaEn) {
 
     public Diagnostico {
         parametros = parametros == null ? List.of() : List.copyOf(parametros);
@@ -30,6 +35,13 @@ public record Diagnostico(
         if (periodo == Periodo.NOCHE && exposicion == null) {
             throw new IllegalArgumentException("solo con historial de luz se puede saber que es de noche");
         }
+    }
+
+    /** Sin riego reciente: la forma que tuvo de la fase 8 a la 14. */
+    public Diagnostico(Especie especie, Medicion medicion, EstadoGlobal estado,
+                       List<ResultadoParametro> parametros, List<String> recomendaciones, Instant evaluadoEn,
+                       Periodo periodo, ExposicionLuminica exposicion) {
+        this(especie, medicion, estado, parametros, recomendaciones, evaluadoEn, periodo, exposicion, null);
     }
 
     /** Diagnóstico instantáneo, de día y sin historial: la forma que tuvo hasta la fase 7. */
@@ -41,5 +53,10 @@ public record Diagnostico(
     /** Si la luz se evaluó con la lectura del momento o con lo acumulado en el día. */
     public BaseDeEvaluacion baseDeLuz() {
         return exposicion == null ? BaseDeEvaluacion.INSTANTANEA : BaseDeEvaluacion.ACUMULADA;
+    }
+
+    /** Si hubo un riego en las 24 h previas a esta lectura. */
+    public boolean recienRegada() {
+        return regadaEn != null;
     }
 }

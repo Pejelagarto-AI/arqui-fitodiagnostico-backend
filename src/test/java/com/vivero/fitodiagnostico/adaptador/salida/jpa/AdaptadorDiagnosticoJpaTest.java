@@ -90,6 +90,22 @@ class AdaptadorDiagnosticoJpaTest extends BaseDePersistenciaDePlantas {
     }
 
     @Test
+    void elRiegoRecienteSobreviveALaBase() {
+        // Fase 15 (V24): un diagnóstico de una planta recién regada.
+        Diagnostico d = evaluar(especie, Muestras.medicion(95, 700, 22));
+        Instant regadaEn = Instant.parse("2026-11-26T16:57:00Z");
+        Diagnostico regada = new Diagnostico(d.especie(), d.medicion(), EstadoGlobal.SALUDABLE, d.parametros(),
+                d.recomendaciones(), d.evaluadoEn(), d.periodo(), d.exposicion(), regadaEn);
+        DiagnosticoDePlanta registro = guardar(planta, regada, OrigenDeMedicion.DISPOSITIVO);
+        sincronizar();
+
+        DiagnosticoDePlanta leido = diagnosticos.ultimoDe(planta.id()).orElseThrow();
+
+        assertThat(leido).isEqualTo(registro);
+        assertThat(leido.diagnostico().regadaEn()).isEqualTo(regadaEn);
+    }
+
+    @Test
     void unDiagnosticoInstantaneoSeLeeSinExposicionYDeDia() {
         DiagnosticoDePlanta registro = guardar(planta, evaluar(especie, Muestras.medicionSaludable()),
                 OrigenDeMedicion.MANUAL);
@@ -100,6 +116,7 @@ class AdaptadorDiagnosticoJpaTest extends BaseDePersistenciaDePlantas {
         assertThat(leido).isEqualTo(registro);
         assertThat(leido.diagnostico().exposicion()).isNull();
         assertThat(leido.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
+        assertThat(leido.diagnostico().regadaEn()).isNull();
     }
 
     @Test

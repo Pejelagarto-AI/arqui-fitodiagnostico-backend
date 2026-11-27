@@ -20,6 +20,7 @@ import com.vivero.fitodiagnostico.dominio.puerto.salida.RepositorioPlantas;
 import com.vivero.fitodiagnostico.dominio.servicio.DetectorDeCambioDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.EvaluadorDeEstado;
 import com.vivero.fitodiagnostico.dominio.servicio.PoliticaDeAcceso;
+import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeHumedadTrasRiego;
 import com.vivero.fitodiagnostico.dominio.servicio.ReglaDeLuzAcumulada;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -126,9 +127,12 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
 
         // Fase 8: la luz se evalúa con lo acumulado en el día; el dominio decide qué significa.
         SerieTemporal luzAnterior = luzAnteriorA(planta, medicion, tomadaEn);
+        // Fase 15: la humedad reciente, para ver si la planta se acaba de regar (D200).
+        SerieTemporal humedadAnterior = humedadAnteriorA(planta, medicion, tomadaEn);
 
         // RN11: se evalúa con la especie de la planta aunque ya esté descontinuada.
-        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion, tomadaEn, luzAnterior);
+        Diagnostico evaluado = evaluador.evaluar(planta.especie(), medicion, tomadaEn, luzAnterior,
+                humedadAnterior);
         DiagnosticoDePlanta registro = DiagnosticoDePlanta.deUnaEvaluacion(planta.id(), origen, tomadaEn, evaluado);
         diagnosticos.guardar(registro);
 
@@ -171,6 +175,15 @@ public class ServicioMediciones implements RegistrarMedicionManualPort, Registra
         }
         return diagnosticos.serieDe(planta.id(), Magnitud.LUZ,
                 tomadaEn.minus(ReglaDeLuzAcumulada.VENTANA), tomadaEn);
+    }
+
+    /** La humedad de la planta en el historial que pide la regla de riego, sin esta medición. */
+    private SerieTemporal humedadAnteriorA(Planta planta, Medicion medicion, Instant tomadaEn) {
+        if (!medicion.contiene(Magnitud.HUMEDAD)) {
+            return SerieTemporal.vacia();
+        }
+        return diagnosticos.serieDe(planta.id(), Magnitud.HUMEDAD,
+                tomadaEn.minus(ReglaDeHumedadTrasRiego.HISTORIAL), tomadaEn);
     }
 
     /** RF-G1: el dueño y los invitados. */

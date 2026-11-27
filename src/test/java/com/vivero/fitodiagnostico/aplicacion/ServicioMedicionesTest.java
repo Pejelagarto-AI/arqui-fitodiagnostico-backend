@@ -177,6 +177,28 @@ class ServicioMedicionesTest {
         assertThat(registro.diagnostico().baseDeLuz()).isEqualTo(BaseDeEvaluacion.INSTANTANEA);
     }
 
+    // ---- fase 15: la aplicación trae la humedad del historial y el dominio ve el riego ----
+
+    @Test
+    void recienRegadaConHumedadSobreElMaximoNoEntraEnRiesgo() {
+        Instant ahora = reloj.instant();
+        // Media hora seca (45 % contra 60-85 del helecho), el riego hace 2 min y la lectura de ahora.
+        for (int k = 32; k >= 3; k--) {
+            servicio.registrar(planta.id(), Muestras.medicion(45, 700, 22), OrigenDeMedicion.DISPOSITIVO,
+                    ahora.minus(Duration.ofMinutes(k)));
+        }
+        servicio.registrar(planta.id(), Muestras.medicion(95, 700, 22), OrigenDeMedicion.DISPOSITIVO,
+                ahora.minus(Duration.ofMinutes(2)));
+
+        DiagnosticoDePlanta registro = servicio.registrar(planta.id(), Muestras.medicion(96, 700, 22),
+                OrigenDeMedicion.DISPOSITIVO, ahora);
+
+        assertThat(registro.diagnostico().regadaEn()).isEqualTo(ahora.minus(Duration.ofMinutes(2)));
+        assertThat(registro.estado()).isEqualTo(EstadoGlobal.SALUDABLE);
+        assertThat(registro.diagnostico().recomendaciones()).singleElement().asString()
+                .contains("la regaste hace 2 min");
+    }
+
     @Test
     void registrarSobreUnaPlantaInexistenteLanza() {
         assertThatThrownBy(() -> servicio.registrar(UUID.randomUUID(), Muestras.medicionSaludable(),

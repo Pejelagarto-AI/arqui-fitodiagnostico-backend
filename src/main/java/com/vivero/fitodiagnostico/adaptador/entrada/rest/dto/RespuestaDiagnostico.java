@@ -17,6 +17,10 @@ import java.util.Locale;
  * se juzgó la luz ({@code base}: INSTANTANEA o ACUMULADA) y, si fue acumulada, las
  * horas y lux de las últimas 24 h. En cada parámetro, {@code valor} sigue siendo la
  * lectura y {@code valorEvaluado} es lo que se comparó con el rango.
+ *
+ * <p>Fase 15 (D203): agrega {@code regadaEn} al final, con la misma regla: cuándo se detectó el
+ * último riego de las 24 h previas (ISO-8601), o null si no hubo. Con él, una humedad ALTO es
+ * "recién regada" y no "ahogada".
  */
 public record RespuestaDiagnostico(
         String especie,
@@ -24,7 +28,8 @@ public record RespuestaDiagnostico(
         List<Parametro> parametros,
         List<String> recomendaciones,
         String periodo,
-        Exposicion exposicionLuminica) {
+        Exposicion exposicionLuminica,
+        String regadaEn) {
 
     /** Forma del anexo A: un parámetro clasificado, con la magnitud ya traducida a texto de presentación. */
     public record Parametro(String nombre, double valor, String unidad, double[] rangoOptimo, String estado,
@@ -57,7 +62,8 @@ public record RespuestaDiagnostico(
                 diagnostico.parametros().stream().map(RespuestaDiagnostico::parametroDesde).toList(),
                 diagnostico.recomendaciones(),
                 diagnostico.periodo().name(),
-                Exposicion.desde(diagnostico));
+                Exposicion.desde(diagnostico),
+                diagnostico.regadaEn() == null ? null : diagnostico.regadaEn().toString());
     }
 
     private static Parametro parametroDesde(ResultadoParametro resultado) {
